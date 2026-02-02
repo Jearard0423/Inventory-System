@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Order with CookTime</title>
+    <script>
+        function createTestOrder() {
+            // Create a test order with cookTime
+            const testOrder = {
+                id: 'test-' + Date.now(),
+                orderNumber: '#260114-999',
+                customerName: 'Test Customer',
+                date: new Date().toISOString().split('T')[0],
+                createdAt: new Date().toISOString(),
+                items: [
+                    { id: '1', name: 'Roast Chicken', price: 360, quantity: 1 }
+                ],
+                total: 360,
+                paymentStatus: 'not-paid',
+                mealType: 'Dinner',
+                originalMealType: 'Dinner',
+                cookTime: '19:30', // 7:30 PM
+                deliveryPhone: '0912-345-678',
+                deliveryAddress: 'Test Address'
+            };
+            
+            // Get existing orders
+            const existingOrders = JSON.parse(localStorage.getItem('yellowbell_orders') || '[]');
+            
+            // Add test order
+            existingOrders.push(testOrder);
+            
+            // Save to localStorage
+            localStorage.setItem('yellowbell_orders', JSON.stringify(existingOrders));
+            
+            alert('Test order created! Check the Orders, Kitchen View, and Delivery pages.');
+            
+            // Also create customer order
+            const customerOrder = {
+                id: testOrder.id,
+                customerName: testOrder.customerName,
+                orderedItems: [{ name: 'Roast Chicken', quantity: 1 }],
+                cookedItems: [],
+                status: 'incomplete',
+                createdAt: testOrder.createdAt,
+                deliveryPhone: testOrder.deliveryPhone,
+                deliveryAddress: testOrder.deliveryAddress,
+                mealType: testOrder.mealType,
+                originalMealType: testOrder.originalMealType,
+                cookTime: testOrder.cookTime
+            };
+            
+            const existingCustomerOrders = JSON.parse(localStorage.getItem('yellowbell_customer_orders') || '[]');
+            existingCustomerOrders.push(customerOrder);
+            localStorage.setItem('yellowbell_customer_orders', JSON.stringify(existingCustomerOrders));
+            
+            console.log('Test order created:', testOrder);
+            console.log('Customer order created:', customerOrder);
+        }
+        
+        function clearTestOrders() {
+            localStorage.removeItem('yellowbell_orders');
+            localStorage.removeItem('yellowbell_customer_orders');
+            alert('Test orders cleared!');
+        }
+    </script>
+</head>
+<body>
+    <h1>Test Order Creation</h1>
+    <button onclick="createTestOrder()">Create Test Order with CookTime</button>
+    <br><br>
+    <button onclick="clearTestOrders()">Clear All Test Orders</button>
+    <br><br>
+    <p>After creating a test order, navigate to:</p>
+    <ul>
+        <li><a href="/orders" target="_blank">Orders Page</a></li>
+        <li><a href="/kitchen" target="_blank">Kitchen View</a></li>
+        <li><a href="/delivery" target="_blank">Delivery Page</a></li>
+    </ul>
+</body>
+</html>
