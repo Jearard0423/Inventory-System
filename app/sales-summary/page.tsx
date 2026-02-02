@@ -51,6 +51,7 @@ export default function SalesSummaryPage() {
   const [topProducts, setTopProducts] = useState<ProductSales[]>([])
   const [hourlySales, setHourlySales] = useState<HourlySales[]>([])
   const [paymentMethods, setPaymentMethods] = useState<{method: string; amount: number; percentage: number}[]>([])
+  const [productMealTypeFilter, setProductMealTypeFilter] = useState<string>("all")
   
   const itemsPerPage = 5
   const periods: Period[] = ["Today", "This Week", "This Month", "This Year"]
@@ -133,21 +134,30 @@ export default function SalesSummaryPage() {
     // Calculate growth (simplified - in a real app, compare with previous period)
     const growth = totalOrders > 0 ? "+5.2%" : "0%"
     
-    // Calculate top products
-    const productMap = new Map<string, {sales: number, quantity: number}>()
+    // Calculate top products (filtered by meal type if specified)
+    const productMap = new Map<string, {sales: number, quantity: number, mealType?: string}>()
     
     filteredOrders.forEach(order => {
       order.items.forEach(item => {
-        const existing = productMap.get(item.name) || { sales: 0, quantity: 0 }
+        // Get meal type from order or item
+        const mealType = order.mealType || "other"
+        
+        // If filter is set and item doesn't match, skip it
+        if (productMealTypeFilter !== "all" && mealType !== productMealTypeFilter) {
+          return
+        }
+        
+        const existing = productMap.get(item.name) || { sales: 0, quantity: 0, mealType }
         productMap.set(item.name, {
           sales: existing.sales + (item.price * item.quantity),
-          quantity: existing.quantity + item.quantity
+          quantity: existing.quantity + item.quantity,
+          mealType
         })
       })
     })
     
     // Convert to array and sort by sales
-    const topProducts = Array.from(productMap.entries())
+    const allTopProducts = Array.from(productMap.entries())
       .map(([name, {sales, quantity}]) => ({
         name,
         sales,
@@ -230,7 +240,7 @@ export default function SalesSummaryPage() {
       peakHour
     })
     
-    setTopProducts(topProducts)
+    setTopProducts(allTopProducts)
     setHourlySales(hourlySales)
     setPaymentMethods(paymentMethods)
   }
@@ -359,8 +369,70 @@ export default function SalesSummaryPage() {
           </Card>
 
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle>Top Products</CardTitle>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant={productMealTypeFilter === "all" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => {
+                    setProductMealTypeFilter("all")
+                    setCurrentPage(1)
+                  }}
+                >
+                  All
+                </Button>
+                <Button
+                  variant={productMealTypeFilter === "meals" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => {
+                    setProductMealTypeFilter("meals")
+                    setCurrentPage(1)
+                  }}
+                >
+                  Meals
+                </Button>
+                <Button
+                  variant={productMealTypeFilter === "chicken" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => {
+                    setProductMealTypeFilter("chicken")
+                    setCurrentPage(1)
+                  }}
+                >
+                  Chicken
+                </Button>
+                <Button
+                  variant={productMealTypeFilter === "liempo" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => {
+                    setProductMealTypeFilter("liempo")
+                    setCurrentPage(1)
+                  }}
+                >
+                  Liempo
+                </Button>
+                <Button
+                  variant={productMealTypeFilter === "sisig" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => {
+                    setProductMealTypeFilter("sisig")
+                    setCurrentPage(1)
+                  }}
+                >
+                  Sisig
+                </Button>
+                <Button
+                  variant={productMealTypeFilter === "rice" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => {
+                    setProductMealTypeFilter("rice")
+                    setCurrentPage(1)
+                  }}
+                >
+                  Rice
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">

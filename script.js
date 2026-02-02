@@ -35,8 +35,8 @@ const navItems = document.querySelectorAll(".nav-item")
 
 // Initialize App
 document.addEventListener("DOMContentLoaded", () => {
-  loadPage("dashboard")
-  setupEventListeners()
+    loadPage("dashboard")
+    setupEventListeners()
 })
 
 // Setup Event Listeners
@@ -80,6 +80,7 @@ function setupEventListeners() {
     })
   }
 }
+  
 
 // Toggle Sidebar
 function toggleSidebar() {

@@ -117,7 +117,7 @@ const loadFromLocalStorage = () => {
   };
 };
 
-// Save data to localStorage
+// Save data to localStorage and optionally Firebase
 const saveToLocalStorage = (key: string, data: any) => {
   if (typeof window !== 'undefined') {
     try {
@@ -126,6 +126,15 @@ const saveToLocalStorage = (key: string, data: any) => {
       // Dispatch events for real-time updates
       if (key === INVENTORY_ITEMS_KEY) {
         window.dispatchEvent(new Event("inventory-updated"));
+        // Also try to sync to Firebase asynchronously
+        try {
+          const { saveInventoryToFirebase } = require('./firebase-inventory-sync');
+          saveInventoryToFirebase(data).catch((err: any) => {
+            console.warn('Firebase sync failed (non-critical):', err);
+          });
+        } catch (err) {
+          // Firebase sync not available, continue without it
+        }
       }
       if (key === CUSTOMER_ORDERS_KEY) {
         window.dispatchEvent(new Event("orders-updated"));
@@ -427,7 +436,7 @@ export const getOrderById = (orderId: string): CustomerOrder | undefined => {
   return customerOrders.find(order => order.id === orderId);
 };
 
-export const getLowStockItems = (threshold: number = 10): InventoryItem[] => {
+export const getLowStockItems = (threshold: number = 5): InventoryItem[] => {
   return inventoryItems.filter(item => item.stock <= threshold && item.status === 'low-stock');
 };
 
@@ -435,7 +444,7 @@ export const getInventoryItems = (): InventoryItem[] => {
   return [...inventoryItems];
 };
 
-export const updateInventoryItem = (itemId: string, newStock: number, threshold: number = 10): boolean => {
+export const updateInventoryItem = (itemId: string, newStock: number, threshold: number = 5): boolean => {
   const item = inventoryItems.find(item => item.id === itemId);
   if (!item) return false;
   
@@ -479,7 +488,7 @@ export const reduceStock = (itemId: string, quantity: number): boolean => {
   // Update status based on stock level
   if (item.stock === 0) {
     item.status = 'out-of-stock';
-  } else if (item.stock <= 10) {
+  } else if (item.stock <= 5) {
     item.status = 'low-stock';
   }
   
@@ -499,7 +508,7 @@ export const reduceUtensilsForMeal = (mealType: string): boolean => {
       utensil.stock -= 1;
       if (utensil.stock === 0) {
         utensil.status = 'out-of-stock';
-      } else if (utensil.stock <= 10) {
+      } else if (utensil.stock <= 5) {
         utensil.status = 'low-stock';
       }
     } else {
@@ -511,6 +520,59 @@ export const reduceUtensilsForMeal = (mealType: string): boolean => {
   saveToLocalStorage(INVENTORY_ITEMS_KEY, inventoryItems);
   
   return success;
+};
+
+// Restore utensils by quantity (adds back 1 per utensil per quantity)
+export const restoreUtensilsForQuantity = (quantity: number): boolean => {
+  const utensils = inventoryItems.filter(item => item.isUtensil);
+  if (utensils.length === 0) return false;
+
+  utensils.forEach(utensil => {
+    utensil.stock += quantity;
+    utensil.status = getStockStatus(utensil.stock);
+  });
+
+  saveToLocalStorage(INVENTORY_ITEMS_KEY, inventoryItems);
+  return true;
+};
+
+// Restore containers for an item (adds back quantity)
+export const restoreContainerForItem = (itemName: string, quantity: number = 1): boolean => {
+  let containerName = '';
+
+  if (!itemName.includes('Roast Liempo Jumbo') && !itemName.includes('Roast Liempo Medium')) {
+    if (itemName.includes('Sisig Sharing')) {
+      containerName = 'Small Container';
+    } else if (itemName.includes('Sisig Family') || itemName.includes('Yang Chow Sharing')) {
+      containerName = 'Medium Container';
+    } else if (itemName.includes('Sisig Party Tray') || itemName.includes('Yang Chow Party Tray')) {
+      containerName = 'Big Container';
+    } else if (itemName.includes('Chicken Yangchow Meal') || itemName.includes('Liempo Meal') || itemName.includes('Kare Kare Liempo Meal') || itemName.includes('Sisig Meal')) {
+      containerName = 'Paper Box';
+    }
+  }
+
+  if (containerName) {
+    const container = inventoryItems.find(item => item.name === containerName && item.isContainer);
+    if (container) {
+      container.stock += quantity;
+      container.status = getStockStatus(container.stock);
+      saveToLocalStorage(INVENTORY_ITEMS_KEY, inventoryItems);
+      return true;
+    }
+  }
+
+  return false;
+};
+
+// Determine whether an item requires utensils when ordered
+export const requiresUtensils = (menuItem?: InventoryItem | null): boolean => {
+  if (!menuItem) return false;
+  // Utensils apply to all meal/food categories except 'sisig' and 'rice' and excluding containers/utensils themselves
+  if (menuItem.isContainer || menuItem.isUtensil) return false;
+  const cat = (menuItem.category || '').toLowerCase();
+  if (cat === 'sisig' || cat === 'rice') return false;
+  return true;
 };
 
 export const reduceContainerForItem = (itemName: string, quantity: number = 1): boolean => {
@@ -534,7 +596,7 @@ export const reduceContainerForItem = (itemName: string, quantity: number = 1): 
       container.stock -= quantity;
       if (container.stock === 0) {
         container.status = 'out-of-stock';
-      } else if (container.stock <= 10) {
+      } else if (container.stock <= 5) {
         container.status = 'low-stock';
       }
       
@@ -591,11 +653,11 @@ export const saveOrder = (order: Omit<Order, 'id' | 'orderNumber' | 'createdAt'>
     // Reduce container stock
     reduceContainerForItem(orderedItem.name, orderedItem.quantity);
     
-    // Reduce utensils for meals
+    // Reduce utensils for applicable items (all meal/food categories except sisig and rice)
     const inventory = getInventory();
     const menuItem = inventory.find(item => item.id === orderedItem.id);
-    if (menuItem?.category === "meals") {
-      // Reduce 1 fork and 1 spoon per meal (total 2 utensils)
+    if (requiresUtensils(menuItem)) {
+      // Reduce 1 of each utensil per ordered item
       for (let i = 0; i < orderedItem.quantity; i++) {
         reduceUtensilsForMeal("meal");
       }
@@ -754,7 +816,7 @@ export const deleteMenuItem = (itemId: string): boolean => {
 export const getStockStatus = (stock: number): "in-stock" | "low-stock" | "out-of-stock" => {
   if (stock === 0) {
     return 'out-of-stock';
-  } else if (stock <= 10) {
+  } else if (stock <= 5) {
     return 'low-stock';
   } else {
     return 'in-stock';
@@ -801,7 +863,7 @@ export const checkAndWarnStockForItem = (item: { id: string; name: string; quant
 
   // Check utensil availability for meals
   const menuItem = inventoryItems.find(inv => inv.id === item.id);
-  if (menuItem?.category === "meals") {
+  if (requiresUtensils(menuItem)) {
     const utensils = inventoryItems.filter(inv => inv.isUtensil);
     utensils.forEach(utensil => {
       // Check if utensil stock is insufficient for the quantity being added
@@ -829,7 +891,7 @@ export const checkTotalCartStockRequirements = (cartItems: Array<{ id: string; n
   const totalMeals = cartItems
     .filter(item => {
       const menuItem = inventoryItems.find(inv => inv.id === item.id);
-      return menuItem?.category === "meals";
+      return requiresUtensils(menuItem);
     })
     .reduce((total, item) => total + item.quantity, 0);
   
@@ -916,12 +978,20 @@ export const restoreStockForOrder = (order: { items: { id: string; quantity: num
       // Update status based on new stock level
       if (item.stock === 0) {
         item.status = 'out-of-stock';
-      } else if (item.stock <= 10) {
+      } else if (item.stock <= 5) {
         item.status = 'low-stock';
       } else {
         item.status = 'in-stock';
       }
       
+      // Restore container stock if applicable
+      restoreContainerForItem(item.name, orderItem.quantity);
+
+      // Restore utensils if this item requires utensils
+      if (requiresUtensils(item)) {
+        restoreUtensilsForQuantity(orderItem.quantity);
+      }
+
       // Save to localStorage
       saveToLocalStorage(INVENTORY_ITEMS_KEY, inventoryItems);
     } else {

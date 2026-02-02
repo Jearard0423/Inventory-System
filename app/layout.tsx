@@ -2,6 +2,8 @@ import type { Metadata } from "next"
 import { Geist, Geist_Mono } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { AppLayout } from "@/components/app-layout"
+import AuthProvider from "@/components/AuthProvider"
+import { FirebaseSyncInitializer } from "@/components/firebase-sync-initializer"
 import "./globals.css"
 
 const _geist = Geist({ subsets: ["latin"] })
@@ -25,9 +27,12 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`font-sans antialiased`} suppressHydrationWarning>
-        <AppLayout>
-          {children}
-        </AppLayout>
+        <FirebaseSyncInitializer />
+        <AuthProvider>
+          <AppLayout>
+            {children}
+          </AppLayout>
+        </AuthProvider>
         <Analytics />
       </body>
     </html>

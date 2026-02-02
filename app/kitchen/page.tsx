@@ -64,7 +64,7 @@ export default function KitchenPage() {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
     
-    // Filter orders for today and exclude advanced orders
+    // Filter orders for today and exclude advanced orders and delivered orders
     const filtered = allOrders
       .filter(order => {
         const orderDate = new Date(order.createdAt)
@@ -76,13 +76,16 @@ export default function KitchenPage() {
         // Check if it's an advanced order (order is for a future date)
         const isAdvancedOrder = orderDate > today
         
+        // Check if order is delivered (exclude from kitchen view)
+        const isDelivered = order.status === 'delivered'
+        
         // Check meal type filter
         const matchesMealType = filterMealType === "all" || 
           (order.mealType && order.mealType.toLowerCase() === filterMealType) ||
           (order.originalMealType && order.originalMealType.toLowerCase() === filterMealType)
         
-        // Only include orders from today that match the meal type and are not advanced orders
-        return isToday && !isAdvancedOrder && matchesMealType
+        // Only include orders from today that match the meal type, are not advanced orders, and are not delivered
+        return isToday && !isAdvancedOrder && !isDelivered && matchesMealType
       })
       // Sort orders: incomplete first, then complete, both sorted by time (newest first)
       .sort((a, b) => {
@@ -137,7 +140,7 @@ export default function KitchenPage() {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   
-  // Only show items from today's orders with meal type filter
+  // Only show items from today's orders with meal type filter (excluding delivered orders)
   const toCookItems = kitchenItems
     .filter((item) => {
       const order = customerOrders.find(order => order.id === item.orderId)
@@ -150,8 +153,9 @@ export default function KitchenPage() {
       const matchesMealType = filterMealType === "all" || 
         (order.mealType && order.mealType.toLowerCase() === filterMealType) ||
         (order.originalMealType && order.originalMealType.toLowerCase() === filterMealType)
+      const isNotDelivered = order.status !== 'delivered'
       
-      return item.status === "to-cook" && matchesDate && matchesMealType
+      return item.status === "to-cook" && matchesDate && matchesMealType && isNotDelivered
     })
     // Sort to put completed items at the back
     .sort((a, b) => {
@@ -173,8 +177,9 @@ export default function KitchenPage() {
     const matchesMealType = filterMealType === "all" || 
       (order.mealType && order.mealType.toLowerCase() === filterMealType) ||
       (order.originalMealType && order.originalMealType.toLowerCase() === filterMealType)
+    const isNotDelivered = order.status !== 'delivered'
     
-    return item.status === "cooked" && matchesDate && matchesMealType
+    return item.status === "cooked" && matchesDate && matchesMealType && isNotDelivered
   })
 
   // Group items by name and sort by completion status
@@ -489,9 +494,13 @@ export default function KitchenPage() {
   const currentOrders = sortedTodayOrders.slice(indexOfFirstOrder, indexOfLastOrder)
 
   const getMissingItems = (order: CustomerOrder) => {
-    const missingItems = order.orderedItems.filter(
-      (orderedItem) => !order.cookedItems.some((cookedItem) => cookedItem.name === orderedItem.name),
-    )
+    const missingItems = order.orderedItems
+      .map(orderedItem => {
+        const cookedQty = order.cookedItems?.find(ci => ci.name === orderedItem.name)?.quantity || 0
+        const remainingQty = orderedItem.quantity - cookedQty
+        return remainingQty > 0 ? { ...orderedItem, quantity: remainingQty } : null
+      })
+      .filter(Boolean) as typeof order.orderedItems
     return missingItems
   }
 
