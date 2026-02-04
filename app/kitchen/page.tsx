@@ -123,16 +123,21 @@ export default function KitchenPage() {
     // Update meal type every minute
     const mealTypeInterval = setInterval(updateMealType, 60000)
 
-    const handleUpdate = () => loadData()
+    const handleUpdate = () => {
+      loadData()
+    }
+    
     window.addEventListener("kitchen-updated", handleUpdate)
     window.addEventListener("orders-updated", handleUpdate)
     window.addEventListener("customer-orders-updated", handleUpdate)
+    window.addEventListener("inventory-updated", handleUpdate)
 
     return () => {
       clearInterval(mealTypeInterval)
       window.removeEventListener("kitchen-updated", handleUpdate)
       window.removeEventListener("orders-updated", handleUpdate)
       window.removeEventListener("customer-orders-updated", handleUpdate)
+      window.removeEventListener("inventory-updated", handleUpdate)
     }
   }, [filterMealType])
 
@@ -206,12 +211,13 @@ export default function KitchenPage() {
       return a.customerName.localeCompare(b.customerName)
     })
     
-    // Group the sorted items
+    // Group the sorted items (sum quantities)
     sortedItems.forEach(item => {
+      const qty = item.quantity || 1
       if (!grouped[item.itemName]) {
         grouped[item.itemName] = { count: 0, items: [], customers: [] }
       }
-      grouped[item.itemName].count += 1
+      grouped[item.itemName].count += qty
       grouped[item.itemName].items.push(item)
       if (!grouped[item.itemName].customers.includes(item.customerName)) {
         grouped[item.itemName].customers.push(item.customerName)

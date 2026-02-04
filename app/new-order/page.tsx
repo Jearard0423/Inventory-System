@@ -12,7 +12,7 @@ import { MobileTimePicker } from "@/components/ui/mobile-time-picker"
 import { Plus, Search, Trash2, X, Package, Calendar, Clock, User, MapPin, CreditCard, ChevronDown, PlusCircle, Trash, Loader2, Check, ChevronLeft, ChevronRight, Calendar as CalendarIcon, Plus as PlusIcon, AlertTriangle, AlertCircle } from "lucide-react"
 import { useState, useEffect } from "react"
 import { cn } from "@/lib/utils"
-import { getInventory, getMenuItems, reduceStock, reduceUtensilsForMeal, reduceContainerForItem, saveOrder, checkAndWarnStockForItem, checkTotalCartStockRequirements, type InventoryItem, addMenuItem, deleteMenuItem } from "@/lib/inventory-store"
+import { getInventory, getMenuItems, reduceStock, reduceUtensilsForMeal, reduceContainerForItem, saveOrder, checkAndWarnStockForItem, checkTotalCartStockRequirements, type InventoryItem, addMenuItem, deleteMenuItem, canOrderItem, canOrderCart, getItemStock } from "@/lib/inventory-store"
 import { getCustomerAnalytics, type CustomerData } from "@/lib/customers"
 import { generateOrderNumber } from "@/lib/orders"
 import { useRouter } from "next/navigation"
@@ -207,15 +207,18 @@ export default function NewOrderPage() {
   })
 
   const addToOrder = (item: InventoryItem) => {
-    if (item.stock === 0) {
-      alert("This item is out of stock!")
+    // Check if item is out of stock
+    if (item.stock <= 0) {
+      setErrors(prev => ({ ...prev, orderItems: `${item.name} is out of stock!` }))
       return
     }
 
     const existing = orderItems.find((i) => i.id === item.id)
     const newQuantity = existing ? existing.quantity + 1 : 1
     
-    if (newQuantity > item.stock) {
+    // Validate against actual stock
+    if (!canOrderItem(item.id, newQuantity)) {
+      setErrors(prev => ({ ...prev, orderItems: `Only ${item.stock} units of ${item.name} available!` }))
       return
     }
     
@@ -226,6 +229,9 @@ export default function NewOrderPage() {
     } else {
       updatedCart = [...orderItems, { id: item.id, name: item.name, price: item.price, quantity: 1 }]
     }
+    
+    // Clear previous error for orderItems
+    setErrors(prev => ({ ...prev, orderItems: "" }))
     
     // Update the cart
     setOrderItems(updatedCart);
@@ -249,10 +255,16 @@ export default function NewOrderPage() {
     const item = orderItems.find((i) => i.id === id)
     const inventoryItem = menuItems.find(inv => inv.id === id)
     
-    if (item && inventoryItem && quantity > inventoryItem.stock) {
-      return
+    if (item && inventoryItem) {
+      // Use canOrderItem to check actual stock
+      if (!canOrderItem(id, quantity)) {
+        const currentStock = getItemStock(id)
+        setErrors(prev => ({ ...prev, orderItems: `Only ${currentStock} units of ${inventoryItem.name} available!` }))
+        return
+      }
     }
     
+    setErrors(prev => ({ ...prev, orderItems: "" }))
     const updatedCart = orderItems.map((i) => (i.id === id ? { ...i, quantity } : i))
     setOrderItems(updatedCart);
     checkTotalCartStockRequirements(updatedCart);

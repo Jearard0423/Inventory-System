@@ -9,6 +9,7 @@ export interface KitchenItem {
   pending: number
   category: string
   orderId?: string
+  orderedItemId?: string
   status?: 'pending' | 'cooking' | 'ready' | 'served' | 'to-cook' | 'cooked'
   customerName: string
   itemName: string
@@ -139,6 +140,9 @@ const saveToLocalStorage = (key: string, data: any) => {
       if (key === CUSTOMER_ORDERS_KEY) {
         window.dispatchEvent(new Event("orders-updated"));
       }
+      if (key === KITCHEN_ITEMS_KEY) {
+        window.dispatchEvent(new Event("kitchen-updated"));
+      }
     } catch (error) {
       console.error('Error saving to localStorage:', error);
     }
@@ -237,6 +241,64 @@ initializeInventoryItems();
 // Reset all stock to 10 units for testing
 resetInventoryToNewMenu();
 
+// Get current stock for a specific item
+export const getItemStock = (itemId: string): number => {
+  const item = inventoryItems.find(inv => inv.id === itemId);
+  return item?.stock || 0;
+};
+
+// Check if item can be ordered in requested quantity
+export const canOrderItem = (itemId: string, quantity: number): boolean => {
+  const stock = getItemStock(itemId);
+  return stock >= quantity;
+};
+
+// Check if all items in cart can be ordered
+export const canOrderCart = (cartItems: Array<{ id: string; quantity: number }>): boolean => {
+  return cartItems.every(item => canOrderItem(item.id, item.quantity));
+};
+
+// Get aggregated kitchen items by name, showing total quantities for today
+export const getAggregatedKitchenItems = (): Record<string, { total: number; cooked: number; pending: number; items: KitchenItem[] }> => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  const todayItems = kitchenItems.filter(item => {
+    const order = customerOrders.find(o => o.id === item.orderId);
+    if (!order) return false;
+    
+    const itemDate = new Date(order.createdAt);
+    itemDate.setHours(0, 0, 0, 0);
+    
+    return itemDate.getTime() === today.getTime() && order.status !== 'delivered';
+  });
+  
+  const grouped: Record<string, { total: number; cooked: number; pending: number; items: KitchenItem[] }> = {};
+  
+  todayItems.forEach(item => {
+    if (!grouped[item.itemName]) {
+      grouped[item.itemName] = {
+        total: 0,
+        cooked: 0,
+        pending: 0,
+        items: []
+      };
+    }
+    
+    const quantity = item.quantity || 1;
+    grouped[item.itemName].total += quantity;
+    grouped[item.itemName].items.push(item);
+    
+    if (item.status === 'cooked') {
+      grouped[item.itemName].cooked += quantity;
+    } else {
+      grouped[item.itemName].pending += quantity;
+    }
+  });
+  
+  return grouped;
+};
+
 
 export const getKitchenItems = (): KitchenItem[] => {
   return [...kitchenItems];
@@ -269,24 +331,33 @@ export const markItemAsCooked = (itemId: string, quantity?: number, orderId?: st
   if (orderId) {
     const order = customerOrders.find(o => o.id === orderId);
     if (order) {
-      // Update the status of the cooked item in the order
-      const cookedItem = order.orderedItems.find(i => i.id === itemId);
-      if (cookedItem) {
+      // Try to locate which orderedItem this kitchen item corresponds to
+      const orderedItemId = item.orderedItemId;
+      let cookedSource: OrderItem | undefined;
+      if (orderedItemId) {
+        cookedSource = order.orderedItems.find(i => i.id === orderedItemId);
+      }
+      // Fallback: match by name
+      if (!cookedSource) {
+        cookedSource = order.orderedItems.find(i => i.name === item.itemName);
+      }
+
+      if (cookedSource) {
         if (!order.cookedItems) order.cookedItems = [];
-        const existingCookedItem = order.cookedItems.find(i => i.id === itemId);
+        const existingCookedItem = order.cookedItems.find(i => i.name === cookedSource!.name);
         if (existingCookedItem) {
           existingCookedItem.quantity += cookQuantity;
         } else {
-          order.cookedItems.push({ ...cookedItem, quantity: cookQuantity });
+          order.cookedItems.push({ name: cookedSource.name, quantity: cookQuantity });
         }
       }
-      
+
       // Update order status if all items are cooked
       const allCooked = order.orderedItems.every(orderedItem => {
         const cooked = order.cookedItems?.find(c => c.name === orderedItem.name);
         return cooked && cooked.quantity >= orderedItem.quantity;
       });
-      
+
       if (allCooked) {
         order.status = 'ready';
       } else {
@@ -297,6 +368,10 @@ export const markItemAsCooked = (itemId: string, quantity?: number, orderId?: st
   
   // Update the kitchen items
   updateKitchenItems([...kitchenItems]);
+  // Persist customer orders update for downstream views
+  saveToLocalStorage(CUSTOMER_ORDERS_KEY, customerOrders);
+  // Persist kitchen items update
+  saveToLocalStorage(KITCHEN_ITEMS_KEY, kitchenItems);
   return true;
 };
 
@@ -345,6 +420,8 @@ export const addCustomerOrder = (order: NewOrder): CustomerOrder => {
 
   // Update kitchen items with new order quantities
   order.items.forEach(orderedItem => {
+    // Find the corresponding orderedItem (with generated id) for mapping
+    const mappedOrderedItem = newOrder.orderedItems.find(i => i.name === orderedItem.name);
     let kitchenItem = kitchenItems.find(item => item.name === orderedItem.name);
     if (!kitchenItem) {
       kitchenItem = {
@@ -355,6 +432,7 @@ export const addCustomerOrder = (order: NewOrder): CustomerOrder => {
         pending: 0,
         category: 'other',
         orderId: newOrder.id,
+        orderedItemId: mappedOrderedItem?.id,
         status: 'to-cook',
         customerName: order.customerName,
         itemName: orderedItem.name,
@@ -669,34 +747,38 @@ export const saveOrder = (order: Omit<Order, 'id' | 'orderNumber' | 'createdAt'>
     window.dispatchEvent(new Event("inventory-updated"));
   }
 
-  // Update kitchen items
+  // Update kitchen items: create one kitchen entry per unit ordered (so kitchen can mark individual units)
   newOrder.items.forEach(orderedItem => {
-    let kitchenItem = kitchenItems.find(item => item.name === orderedItem.name);
-    if (!kitchenItem) {
-      kitchenItem = {
+    // Find the mapped orderedItem id generated in customerOrder
+    const mappedOrderedItem = customerOrder.orderedItems.find(i => i.name === orderedItem.name);
+    for (let i = 0; i < orderedItem.quantity; i++) {
+      const kitchenItem = {
         id: generateId(),
         name: orderedItem.name,
-        totalOrdered: 0,
+        totalOrdered: 1,
         totalCooked: 0,
-        pending: 0,
+        pending: 1,
         category: 'other',
         orderId: customerOrder.id,
+        orderedItemId: mappedOrderedItem?.id,
         status: 'to-cook',
         customerName: newOrder.customerName,
         itemName: orderedItem.name,
-        quantity: orderedItem.quantity
-      };
+        quantity: 1
+      } as KitchenItem;
       kitchenItems.push(kitchenItem);
     }
-    
-    kitchenItem.totalOrdered += orderedItem.quantity;
-    kitchenItem.pending = kitchenItem.totalOrdered - (kitchenItem.totalCooked || 0);
-    kitchenItem.status = 'to-cook';
   });
   
   // Save to localStorage
   saveToLocalStorage(CUSTOMER_ORDERS_KEY, customerOrders);
   saveToLocalStorage(KITCHEN_ITEMS_KEY, kitchenItems);
+  
+  // Dispatch multiple events for real-time updates
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event("kitchen-updated"));
+    window.dispatchEvent(new Event("customer-orders-updated"));
+  }
   
   // Also save to orders format for compatibility with orders page
   if (typeof window !== 'undefined') {

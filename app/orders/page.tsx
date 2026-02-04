@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { getOrders, deleteOrder } from "@/lib/orders"
 import { Pagination } from "@/components/pagination"
+import { getCustomerOrders } from "@/lib/inventory-store"
 
 // Helper function to convert 24-hour time to 12-hour format
 const formatTimeForDisplay = (time24: string): string => {
@@ -26,6 +27,42 @@ const formatTimeForDisplay = (time24: string): string => {
     return `${displayHour}:${minute.toString().padStart(2, '0')} ${period}`
   } catch (error) {
     return time24 // Fallback to original format if parsing fails
+  }
+}
+
+// Helper function to get delivery status from customer orders
+const getDeliveryStatus = (orderId: string, customerOrders: any[]): string => {
+  const customerOrder = customerOrders.find(o => o.id === orderId)
+  if (!customerOrder) return ""
+  
+  switch (customerOrder.status) {
+    case "delivered":
+      return customerOrder.deliveryMethod === "lalamove" ? "Delivered" : "Handed In"
+    case "complete":
+      return "Ready for Delivery"
+    case "cooking":
+      return "Cooking"
+    case "incomplete":
+      return "Pending"
+    default:
+      return ""
+  }
+}
+
+// Helper function to get delivery status color
+const getDeliveryStatusColor = (status: string): string => {
+  switch (status) {
+    case "Delivered":
+    case "Handed In":
+      return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
+    case "Ready for Delivery":
+      return "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
+    case "Cooking":
+      return "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300"
+    case "Pending":
+      return "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300"
+    default:
+      return "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300"
   }
 }
 
@@ -54,6 +91,7 @@ export default function OrdersPage() {
   const [currentDate, setCurrentDate] = useState(new Date())
   const [mounted, setMounted] = useState(false)
   const [orders, setOrders] = useState<Order[]>([])
+  const [customerOrders, setCustomerOrders] = useState<any[]>([])
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
@@ -179,6 +217,10 @@ export default function OrdersPage() {
       // Get regular orders
       const regularOrders = getOrders()
       
+      // Load customer orders for delivery status
+      const custOrders = getCustomerOrders()
+      setCustomerOrders(custOrders)
+      
       // Only include regular orders (not converted prepared orders since they're already in regularOrders)
       setOrders(regularOrders)
     }
@@ -186,9 +228,11 @@ export default function OrdersPage() {
     loadOrders()
     window.addEventListener("orders-updated", loadOrders)
     window.addEventListener("prepared-orders-updated", loadOrders)
+    window.addEventListener("customer-orders-updated", loadOrders)
     return () => {
       window.removeEventListener("orders-updated", loadOrders)
       window.removeEventListener("prepared-orders-updated", loadOrders)
+      window.removeEventListener("customer-orders-updated", loadOrders)
     }
   }, [mounted])
 
@@ -1101,6 +1145,17 @@ export default function OrdersPage() {
                                   🕒 {formatTimeForDisplay(order.cookTime)}
                                 </Badge>
                               )}
+                              
+                              {/* Show delivery status */}
+                              {(() => {
+                                const status = getDeliveryStatus(order.id, customerOrders)
+                                const statusColor = getDeliveryStatusColor(status)
+                                return status ? (
+                                  <Badge className={`text-xs ${statusColor}`}>
+                                    {status}
+                                  </Badge>
+                                ) : null
+                              })()}
                             </div>
                           </div>
                           <div className="flex items-center gap-2 flex-shrink-0">

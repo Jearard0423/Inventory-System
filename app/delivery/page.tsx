@@ -633,18 +633,33 @@ export default function DeliveryPage() {
                                 <CheckCircle className="h-3 w-3 mr-1" />
                                 Mark as Delivered
                               </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  setSelectedOrder(order)
-                                  setLalamoveDetailsModalOpen(true)
-                                }}
-                                className="w-full"
-                              >
-                                <Truck className="h-3 w-3 mr-1" />
-                                Deliver by Lalamove
-                              </Button>
+                              {order.deliveryMethod === 'lalamove' ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    setSelectedOrder(order)
+                                    setLalamoveDetailsModalOpen(true)
+                                  }}
+                                  className="w-full border-blue-500 text-blue-700 hover:bg-blue-50"
+                                >
+                                  <Truck className="h-3 w-3 mr-1" />
+                                  Mark as Delivered (Lalamove)
+                                </Button>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    setSelectedOrder(order)
+                                    setOrderDetailsModalOpen(true)
+                                  }}
+                                  className="w-full border-green-500 text-green-700 hover:bg-green-50"
+                                >
+                                  <CheckCircle className="h-3 w-3 mr-1" />
+                                  Mark as Handed In
+                                </Button>
+                              )}
                             </div>
                           )}
                         </div>
@@ -761,9 +776,15 @@ export default function DeliveryPage() {
         <Dialog open={markDeliveredModalOpen} onOpenChange={setMarkDeliveredModalOpen}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Mark as Delivered</DialogTitle>
+              <DialogTitle>
+                {selectedOrder?.deliveryMethod === 'lalamove' 
+                  ? 'Mark as Delivered (Lalamove)' 
+                  : 'Mark as Handed In'}
+              </DialogTitle>
               <DialogDescription>
-                Select an order to mark as delivered
+                {selectedOrder?.deliveryMethod === 'lalamove'
+                  ? 'Confirm the Lalamove delivery for this order'
+                  : 'Confirm that the customer has picked up their order'}
               </DialogDescription>
             </DialogHeader>
             <div className="max-h-96 overflow-y-auto space-y-3">
