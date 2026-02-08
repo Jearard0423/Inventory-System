@@ -267,8 +267,7 @@ export const resetInventoryMenu = () => {
 initializeCustomerOrders();
 initializeInventoryItems();
 
-// Reset all stock to 10 units for testing
-resetInventoryToNewMenu();
+// Note: removed unconditional reset here so inventory persists across reloads.
 
 // Get current stock for a specific item
 export const getItemStock = (itemId: string): number => {
@@ -568,6 +567,21 @@ export const updateInventoryItem = (itemId: string, newStock: number, threshold:
   
   // Save to localStorage
   saveToLocalStorage(INVENTORY_ITEMS_KEY, inventoryItems);
+
+  // Also persist the single item to Firestore if available
+  try {
+    // Async import to avoid circular dependency when running server-side
+    const { saveInventoryToFirestore } = require('./firestore-sync');
+    // saveInventoryToFirestore expects an InventoryItem and returns a Promise
+    try {
+      console.debug('[inventory-store] saving inventory item to Firestore:', item.id, item.name)
+    } catch (e) {}
+    Promise.resolve(saveInventoryToFirestore(item)).catch((err: any) => {
+      console.warn('Failed to save inventory item to Firestore (non-critical):', err);
+    });
+  } catch (err) {
+    // Firestore sync not available in this environment - ignore silently
+  }
   
   return true;
 };
@@ -584,6 +598,21 @@ export const getMenuItems = (): InventoryItem[] => {
 export const updateInventory = (items: InventoryItem[]): void => {
   inventoryItems = [...items];
   saveToLocalStorage(INVENTORY_ITEMS_KEY, inventoryItems);
+  // Also persist bulk updates to Firestore (best-effort, non-blocking)
+  try {
+    const { saveInventoryToFirestore } = require('./firestore-sync');
+    // Save each item individually to avoid overwriting fields unintentionally
+    inventoryItems.forEach((it) => {
+      try {
+        console.debug('[inventory-store] bulk save to Firestore:', it.id, it.name)
+      } catch (e) {}
+      Promise.resolve(saveInventoryToFirestore(it)).catch((err: any) => {
+        console.warn('Failed to save inventory item to Firestore (non-critical):', err);
+      });
+    });
+  } catch (err) {
+    // Firestore sync not available or running in server environment - ignore
+  }
 };
 
 export const reduceStock = (itemId: string, quantity: number): boolean => {

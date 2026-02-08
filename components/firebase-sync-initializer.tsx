@@ -17,6 +17,23 @@ export function FirebaseSyncInitializer() {
       console.warn("Firestore sync initialization encountered an error. App will use localStorage.", err)
     }
 
+    // Expose a debug helper in development to manually sync localStorage -> Firestore
+    // Usage in browser console: `window.syncLocalToFirestore()`
+    try {
+      // Attach only in browser/dev
+      if (typeof window !== 'undefined') {
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        import('@/lib/firestore-sync').then((mod) => {
+          // @ts-ignore - attach for debugging
+          window.syncLocalToFirestore = mod.syncLocalToFirestore
+        }).catch(() => {
+          // ignore
+        })
+      }
+    } catch (err) {
+      // ignore
+    }
+
     // Initialize Firebase Realtime Database sync (for backward compatibility)
     try {
       initializeFirebaseSync()

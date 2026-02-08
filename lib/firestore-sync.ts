@@ -68,9 +68,9 @@ export const saveInventoryToFirestore = async (item: InventoryItem): Promise<voi
       ...item,
       updatedAt: Timestamp.now(),
     })
-    console.log(`Saved item ${item.name} to Firestore`)
+    console.log(`[firestore-sync] Saved item to Firestore:`, item.id, item.name)
   } catch (error) {
-    console.error("Error saving inventory to Firestore:", error)
+    console.error("[firestore-sync] Error saving inventory to Firestore:", error)
   }
 }
 
@@ -159,5 +159,38 @@ export const cleanupFirestoreSync = () => {
   if (inventoryListener) {
     inventoryListener()
     inventoryListener = null
+  }
+}
+
+/**
+ * Sync localStorage inventory to Firestore (manual debug helper).
+ * Writes each local item to the `inventory` collection using the item's `id` as doc id.
+ */
+export const syncLocalToFirestore = async (): Promise<void> => {
+  try {
+    if (typeof window === 'undefined') return
+
+    const local = localStorage.getItem('yellowbell_inventory_items')
+    if (!local) {
+      console.log('No local inventory found to sync')
+      return
+    }
+
+    const items: InventoryItem[] = JSON.parse(local)
+    for (const item of items) {
+      try {
+        const docRef = doc(firestore, 'inventory', item.id)
+        await setDoc(docRef, {
+          ...item,
+          updatedAt: Timestamp.now(),
+        })
+      } catch (err) {
+        console.error('Failed to write item to Firestore:', item.id, err)
+      }
+    }
+
+    console.log('Synced local inventory to Firestore:', items.length, 'items')
+  } catch (error) {
+    console.error('Error syncing local inventory to Firestore:', error)
   }
 }
