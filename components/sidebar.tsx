@@ -4,16 +4,27 @@ import { useState, useEffect } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import Image from "next/image"
-import { Home, ShoppingCart, Package, ChefHat, Truck, Bell, TrendingUp, ChevronLeft, Menu, Clock, CheckCircle, X, ArrowLeft, Plus, ClipboardList, BarChart3 } from "lucide-react"
+import { Home, ShoppingCart, Package, ChefHat, Truck, Bell, TrendingUp, ChevronLeft, Menu, Clock, CheckCircle, X, ArrowLeft, Plus, ClipboardList, BarChart3, LogOut } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { getUnreadCount } from "@/lib/notifications-store"
 import { getTodaysOrderCount } from "@/lib/orders"
+import { useAuth } from "@/components/AuthProvider"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 const navItems = [
   { href: "/", icon: Home, label: "Dashboard" },
   { href: "/new-order", icon: Plus, label: "New Order" },
   { href: "/orders", icon: ShoppingCart, label: "Orders" },
+  { href: "/order-history", icon: Clock, label: "Order History" },
   { href: "/prepared-orders", icon: ClipboardList, label: "Prepared Orders" },
   { href: "/prepared-orders-inventory", icon: BarChart3, label: "Prepared Orders Inventory" },
   { href: "/kitchen", icon: ChefHat, label: "Kitchen View" },
@@ -29,7 +40,9 @@ export function Sidebar() {
   const [unreadCount, setUnreadCount] = useState(0)
   const [todaysOrderCount, setTodaysOrderCount] = useState(0)
   const [mounted, setMounted] = useState(false)
+  const [showLogoutDialog, setShowLogoutDialog] = useState(false)
   const pathname = usePathname()
+  const auth = useAuth()
 
   // Initialize client-side state after mount
   useEffect(() => {
@@ -226,7 +239,53 @@ export function Sidebar() {
           </ul>
         </nav>
 
-        <div className="hidden md:block border-t border-sidebar-border p-3 sm:p-4 flex-shrink-0 bg-sidebar">
+        <div className="hidden md:block border-t border-sidebar-border p-3 sm:p-4 space-y-2 flex-shrink-0 bg-sidebar">
+          {/* User Profile Section */}
+          {auth?.user && (
+            <div className={cn(
+              "mb-4 pb-4 border-b border-sidebar-border",
+              collapsed ? "flex justify-center" : ""
+            )}>
+              <div className={cn(
+                "flex items-center gap-3",
+                collapsed && "justify-center"
+              )}>
+                <div className={cn(
+                  "w-10 h-10 rounded-full bg-gradient-to-br from-yellow-400 to-orange-400 flex items-center justify-center text-white font-semibold text-sm shrink-0",
+                  collapsed && "w-8 h-8"
+                )}>
+                  {(auth.user.email || "A").split("@")[0].split(".").slice(0, 2).map((p: string) => p[0].toUpperCase()).join("")}
+                </div>
+                {!collapsed && (
+                  <div className="flex flex-col min-w-0">
+                    <p className="text-xs sm:text-sm font-semibold text-sidebar-foreground truncate">
+                      {(auth.user.email || "Admin").split("@")[0]}
+                    </p>
+                    <p className="text-xs text-sidebar-foreground/70 truncate">
+                      {auth.user.email}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Logout Button */}
+          <Button
+            onClick={() => setShowLogoutDialog(true)}
+            className={cn(
+              "w-full text-sidebar-foreground hover:bg-red-500/20 hover:text-red-400",
+              "py-3 sm:py-4 px-2 sm:px-3 h-auto rounded-md transition-colors justify-start",
+              collapsed && "px-0 justify-center"
+            )}
+            variant="ghost"
+            size="sm"
+          >
+            <LogOut className="h-3 w-3 sm:h-4 sm:w-4" />
+            {!collapsed && <span className="ml-1 sm:ml-2 text-xs sm:text-sm">Logout</span>}
+          </Button>
+
+          {/* Collapse Button */}
           <Button
             variant="ghost"
             size="sm"
@@ -241,6 +300,31 @@ export function Sidebar() {
             {!collapsed && <span className="ml-1 sm:ml-2 text-xs sm:text-sm">Collapse</span>}
           </Button>
         </div>
+
+        {/* Logout Confirmation Dialog */}
+        <AlertDialog open={showLogoutDialog} onOpenChange={setShowLogoutDialog}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Sign Out?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to sign out? You'll need to sign in again to access the dashboard.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="flex gap-3">
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={async () => {
+                  if (auth?.signOut) {
+                    await auth.signOut()
+                  }
+                }}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                Sign Out
+              </AlertDialogAction>
+            </div>
+          </AlertDialogContent>
+        </AlertDialog>
       </aside>
     </>
   )

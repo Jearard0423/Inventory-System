@@ -149,6 +149,35 @@ const saveToLocalStorage = (key: string, data: any) => {
   }
 };
 
+// Ingredient and container mapping for meals
+const MEAL_INGREDIENTS_MAP: Record<string, { ingredient: string; category: string }> = {
+  'Chicken Yangchow Meal': { ingredient: 'Roast Chicken', category: 'chicken' },
+  'Liempo Meal': { ingredient: 'Roast Liempo Medium', category: 'liempo' },
+  'Kare Kare Liempo Meal': { ingredient: 'Roast Liempo Medium', category: 'liempo' },
+  'Sisig Meal': { ingredient: 'Sisig Family', category: 'sisig' },
+};
+
+// Container mapping by category
+const CONTAINER_MAP: Record<string, string> = {
+  'chicken': 'Paper Box',
+  'liempo': 'Paper Box',
+  'sisig': 'Paper Box',
+  'meals': 'Paper Box',
+  'rice': 'Paper Box',
+};
+
+// Save inventory item to Firestore - will be imported from firestore-sync
+// This is defined here as a wrapper for now
+export const saveInventoryItemToFirebase = async (item: InventoryItem) => {
+  try {
+    // Async import to avoid circular dependency
+    const { saveInventoryToFirestore } = await import('./firestore-sync');
+    await saveInventoryToFirestore(item);
+  } catch (error) {
+    console.warn('Firestore save failed:', error);
+  }
+};
+
 // Load initial data from localStorage
 const initialData = loadFromLocalStorage();
 
@@ -728,6 +757,16 @@ export const saveOrder = (order: Omit<Order, 'id' | 'orderNumber' | 'createdAt'>
     // Reduce main item stock
     reduceStock(orderedItem.id, orderedItem.quantity);
     
+    // Reduce parent ingredient stock if this is a meal with ingredients
+    const ingredient = MEAL_INGREDIENTS_MAP[orderedItem.name];
+    if (ingredient) {
+      const inventoryList = getInventory();
+      const ingredientItem = inventoryList.find(item => item.name === ingredient.ingredient);
+      if (ingredientItem) {
+        reduceStock(ingredientItem.id, orderedItem.quantity);
+      }
+    }
+    
     // Reduce container stock
     reduceContainerForItem(orderedItem.name, orderedItem.quantity);
     
@@ -848,6 +887,9 @@ export const addMenuItem = (item: Omit<InventoryItem, 'id'>): InventoryItem => {
   
   // Save to localStorage
   saveToLocalStorage(INVENTORY_ITEMS_KEY, inventoryItems);
+  
+  // Save to Firebase
+  saveInventoryItemToFirebase(newItem);
   
   // Create notification for new menu item
   if (typeof window !== 'undefined') {

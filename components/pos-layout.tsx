@@ -3,7 +3,6 @@
 import type { ReactNode } from "react"
 import { useState, useEffect } from "react"
 import { Sidebar } from "./sidebar"
-import { ProfileHeader } from "./profile-header"
 
 export function POSLayout({ children }: { children: ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -48,7 +47,6 @@ export function POSLayout({ children }: { children: ReactNode }) {
         <Sidebar />
         <main className={`flex-1 transition-all duration-300 ${sidebarCollapsed ? "lg:pl-20" : "lg:pl-64"} overflow-y-auto`}>
           <div className="container mx-auto p-4 lg:p-8 pt-4 lg:pt-6">
-            <ProfileHeader />
             {children}
           </div>
         </main>

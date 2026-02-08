@@ -2,6 +2,7 @@
 
 import { useEffect } from "react"
 import { initializeFirebaseSync, cleanupFirebaseSync, initializeCategoriesInFirebase } from "@/lib/firebase-inventory-sync"
+import { initializeFirestoreSync, cleanupFirestoreSync } from "@/lib/firestore-sync"
 
 /**
  * Component to initialize Firebase sync on app startup
@@ -9,11 +10,18 @@ import { initializeFirebaseSync, cleanupFirebaseSync, initializeCategoriesInFire
  */
 export function FirebaseSyncInitializer() {
   useEffect(() => {
-    // Initialize Firebase sync with error handling
+    // Initialize Firestore sync for inventory
+    try {
+      initializeFirestoreSync()
+    } catch (err) {
+      console.warn("Firestore sync initialization encountered an error. App will use localStorage.", err)
+    }
+
+    // Initialize Firebase Realtime Database sync (for backward compatibility)
     try {
       initializeFirebaseSync()
     } catch (err) {
-      console.warn("Firebase sync initialization encountered an error. App will use localStorage.")
+      console.warn("Firebase RTDB sync initialization encountered an error. App will use localStorage.")
     }
 
     // Initialize categories in Firebase if not already done
@@ -51,6 +59,7 @@ export function FirebaseSyncInitializer() {
       window.removeEventListener("firebase-orders-updated", handleOrdersUpdate)
       window.removeEventListener("firebase-kitchen-updated", handleKitchenUpdate)
       cleanupFirebaseSync()
+      cleanupFirestoreSync()
     }
   }, [])
 
