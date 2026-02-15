@@ -7,7 +7,11 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Search, Package, Plus, Pencil, Trash2, X } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet"
+import { Search, Package, Plus, Pencil, Trash2, X, Check, ChevronsUpDown } from "lucide-react"
 import { useState, useEffect } from "react"
 import { getInventory, updateInventory, getStockStatus, type InventoryItem } from "@/lib/inventory-store"
 
@@ -18,6 +22,8 @@ export default function InventoryPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [categoryFilter, setCategoryFilter] = useState("all-categories")
   const [statusFilter, setStatusFilter] = useState("all-status")
+  const [showSuccessSheet, setShowSuccessSheet] = useState(false)
+  const [lastAddedItem, setLastAddedItem] = useState<InventoryItem | null>(null)
 
   const [formData, setFormData] = useState({
     name: "",
@@ -25,6 +31,12 @@ export default function InventoryPage() {
     stock: 0,
     price: 0,
   })
+
+  // Linked items state
+  const [linkedItems, setLinkedItems] = useState<Array<{ itemId: string; ratio: number }>>([])
+  const [openCombobox, setOpenCombobox] = useState(false)
+  const [selectedItemForLink, setSelectedItemForLink] = useState("")
+  const [linkRatio, setLinkRatio] = useState(1)
 
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 10
@@ -55,6 +67,7 @@ export default function InventoryPage() {
               stock: formData.stock,
               price: formData.price,
               status: getStockStatus(formData.stock),
+              linkedItems: linkedItems.length > 0 ? linkedItems : undefined,
             }
           : item,
       )
@@ -66,6 +79,7 @@ export default function InventoryPage() {
         stock: formData.stock,
         status: getStockStatus(formData.stock),
         price: formData.price,
+        linkedItems: linkedItems.length > 0 ? linkedItems : undefined,
       }
       updatedItems = [...menuItems, newItem]
     }
@@ -73,8 +87,14 @@ export default function InventoryPage() {
     updateInventory(updatedItems)
     setMenuItems(updatedItems)
     setFormData({ name: "", category: "chicken", stock: 0, price: 0 })
+    setLinkedItems([])
     setShowAddDialog(false)
     setEditingItem(null)
+    
+    // Show success confirmation
+    const addedItem = editingItem || newItem
+    setLastAddedItem(addedItem)
+    setShowSuccessSheet(true)
   }
 
   const handleDelete = (id: string) => {
@@ -85,16 +105,23 @@ export default function InventoryPage() {
     }
   }
 
-  const handleEdit = (item: InventoryItem) => {
-    setEditingItem(item)
-    setFormData({
-      name: item.name,
-      category: item.category,
-      stock: item.stock,
-      price: item.price,
-    })
-    setShowAddDialog(true)
-  }
+  const addLinkedItem = () => {
+    if (!selectedItemForLink || linkedItems.some(link => link.itemId === selectedItemForLink)) return;
+    
+    setLinkedItems([...linkedItems, { itemId: selectedItemForLink, ratio: linkRatio }]);
+    setSelectedItemForLink("");
+    setLinkRatio(1);
+    setOpenCombobox(false);
+  };
+
+  const removeLinkedItem = (itemId: string) => {
+    setLinkedItems(linkedItems.filter(link => link.itemId !== itemId));
+  };
+
+  const availableItems = menuItems.filter(item => 
+    item.id !== (editingItem?.id || "") && 
+    !linkedItems.some(link => link.itemId === item.id)
+  );
 
   const filteredItems = menuItems.filter((item) => {
     const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase())
@@ -153,6 +180,7 @@ export default function InventoryPage() {
             onClick={() => {
               setEditingItem(null)
               setFormData({ name: "", category: "chicken", stock: 0, price: 0 })
+              setLinkedItems([])
               setShowAddDialog(true)
             }}
           >
@@ -226,6 +254,7 @@ export default function InventoryPage() {
                           onClick={() => {
                             setEditingItem(null)
                             setFormData({ name: "", category: "chicken", stock: 0, price: 0 })
+                            setLinkedItems([])
                             setShowAddDialog(true)
                           }}
                         >
@@ -285,6 +314,7 @@ export default function InventoryPage() {
                     onClick={() => {
                       setEditingItem(null)
                       setFormData({ name: "", category: "chicken", stock: 0, price: 0 })
+                      setLinkedItems([])
                       setShowAddDialog(true)
                     }}
                   >
@@ -351,7 +381,7 @@ export default function InventoryPage() {
 
       {showAddDialog && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-md">
+          <Card className="w-full max-w-md max-h-[90vh] overflow-y-auto">
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
                 <h2 className="text-xl font-bold">{editingItem ? "Edit Product" : "Add New Product"}</h2>
@@ -364,6 +394,7 @@ export default function InventoryPage() {
                   setShowAddDialog(false)
                   setEditingItem(null)
                   setFormData({ name: "", category: "chicken", stock: 0, price: 0 })
+                  setLinkedItems([])
                 }}
               >
                 <X className="h-5 w-5" />
@@ -380,6 +411,7 @@ export default function InventoryPage() {
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   />
                 </div>
+                
                 <div>
                   <label className="text-sm font-medium mb-2 block">Category</label>
                   <Select
@@ -396,10 +428,13 @@ export default function InventoryPage() {
                       <SelectItem value="rice">Rice</SelectItem>
                       <SelectItem value="meals">Meals</SelectItem>
                       <SelectItem value="utensils">Utensils</SelectItem>
+                      <SelectItem value="raw-stock">Raw Stock</SelectItem>
+                      <SelectItem value="container">Container</SelectItem>
                       <SelectItem value="others">Others</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
+                
                 <div>
                   <label className="text-sm font-medium mb-2 block">Stock Level</label>
                   <Input
@@ -411,6 +446,7 @@ export default function InventoryPage() {
                     onChange={(e) => setFormData({ ...formData, stock: Number.parseInt(e.target.value) || 0 })}
                   />
                 </div>
+                
                 <div>
                   <label className="text-sm font-medium mb-2 block">Price (₱)</label>
                   <Input
@@ -423,6 +459,97 @@ export default function InventoryPage() {
                     onChange={(e) => setFormData({ ...formData, price: Number.parseFloat(e.target.value) || 0 })}
                   />
                 </div>
+                
+                <div>
+                  <label className="text-sm font-medium mb-2 block">Linked Items (optional)</label>
+                  
+                  {/* Display selected linked items */}
+                  {linkedItems.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {linkedItems.map(link => {
+                        const item = menuItems.find(mi => mi.id === link.itemId);
+                        return item ? (
+                          <Badge key={link.itemId} variant="secondary" className="flex items-center gap-1">
+                            {item.name} ({link.ratio}:1)
+                            <X 
+                              className="h-3 w-3 cursor-pointer hover:text-destructive" 
+                              onClick={() => removeLinkedItem(link.itemId)}
+                            />
+                          </Badge>
+                        ) : null;
+                      })}
+                    </div>
+                  )}
+
+                  {/* Add new linked item */}
+                  <div className="flex gap-2">
+                    <Popover open={openCombobox} onOpenChange={setOpenCombobox}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={openCombobox}
+                          className="flex-1 justify-between"
+                        >
+                          {selectedItemForLink 
+                            ? menuItems.find(item => item.id === selectedItemForLink)?.name || "Select item..."
+                            : "Select item to link..."
+                          }
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[300px] p-0">
+                        <Command>
+                          <CommandInput placeholder="Search items..." />
+                          <CommandList>
+                            <CommandEmpty>No items found.</CommandEmpty>
+                            <CommandGroup>
+                              {availableItems.map((item) => (
+                                <CommandItem
+                                  key={item.id}
+                                  value={item.name}
+                                  onSelect={() => {
+                                    setSelectedItemForLink(item.id);
+                                    setOpenCombobox(false);
+                                  }}
+                                >
+                                  <Check
+                                    className={`mr-2 h-4 w-4 ${
+                                      selectedItemForLink === item.id ? "opacity-100" : "opacity-0"
+                                    }`}
+                                  />
+                                  {item.name}
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+
+                    <Input
+                      type="number"
+                      placeholder="Ratio"
+                      value={linkRatio}
+                      onChange={(e) => setLinkRatio(Number.parseFloat(e.target.value) || 1)}
+                      className="w-20"
+                      min="0.1"
+                      step="0.1"
+                    />
+
+                    <Button 
+                      type="button" 
+                      onClick={addLinkedItem}
+                      disabled={!selectedItemForLink}
+                    >
+                      Add
+                    </Button>
+                  </div>
+
+                  <p className="text-xs text-muted-foreground mt-1">
+                    When this item's stock is reduced, linked items will be reduced by the specified ratio.
+                  </p>
+                </div>
                 <div className="flex gap-3 pt-4">
                   <Button
                     type="button"
@@ -432,6 +559,7 @@ export default function InventoryPage() {
                       setShowAddDialog(false)
                       setEditingItem(null)
                       setFormData({ name: "", category: "chicken", stock: 0, price: 0 })
+                      setLinkedItems([])
                     }}
                   >
                     Cancel
@@ -445,6 +573,77 @@ export default function InventoryPage() {
           </Card>
         </div>
       )}
+
+      <Sheet open={showSuccessSheet} onOpenChange={setShowSuccessSheet}>
+        <SheetContent side="right" className="w-full sm:max-w-sm">
+          <SheetHeader>
+            <SheetTitle className="text-green-600">✓ Product Added Successfully</SheetTitle>
+            <p className="text-sm text-muted-foreground">Your product has been added to inventory</p>
+          </SheetHeader>
+          
+          {lastAddedItem && (
+            <div className="py-6 space-y-4">
+              <div className="bg-green-50 dark:bg-green-950 p-4 rounded-lg border border-green-200 dark:border-green-800">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-10 h-10 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center">
+                    <Package className="w-5 h-5 text-green-600 dark:text-green-400" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-green-800 dark:text-green-200">{lastAddedItem.name}</h3>
+                    <p className="text-sm text-green-600 dark:text-green-400">₱{lastAddedItem.price.toFixed(2)}</p>
+                  </div>
+                </div>
+                
+                <div className="space-y-1 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-green-700 dark:text-green-300">Category:</span>
+                    <span className="font-medium">{lastAddedItem.category}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-green-700 dark:text-green-300">Stock:</span>
+                    <span className="font-medium">{lastAddedItem.stock} units</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-green-700 dark:text-green-300">Status:</span>
+                    <span className="font-medium capitalize">{lastAddedItem.status.replace('-', ' ')}</span>
+                  </div>
+                </div>
+                
+                {lastAddedItem.linkedItems && lastAddedItem.linkedItems.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-green-200 dark:border-green-700">
+                    <p className="text-sm text-green-700 dark:text-green-300 mb-2">Linked Items:</p>
+                    <div className="flex flex-wrap gap-1">
+                      {lastAddedItem.linkedItems.map(link => {
+                        const linkedItem = menuItems.find(item => item.id === link.itemId);
+                        return linkedItem ? (
+                          <Badge key={link.itemId} variant="outline" className="text-xs">
+                            {linkedItem.name} ({link.ratio}:1)
+                          </Badge>
+                        ) : null;
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              <div className="text-center">
+                <p className="text-sm text-muted-foreground">
+                  The product is now available in your inventory and can be used for orders.
+                </p>
+              </div>
+            </div>
+          )}
+          
+          <SheetFooter>
+            <Button 
+              onClick={() => setShowSuccessSheet(false)} 
+              className="w-full bg-green-600 hover:bg-green-700"
+            >
+              Continue
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </POSLayout>
   )
 }

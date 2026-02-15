@@ -9,7 +9,10 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { TimePicker } from "@/components/ui/time-picker"
 import { MobileTimePicker } from "@/components/ui/mobile-time-picker"
-import { Plus, Search, Trash2, X, Package, Calendar, Clock, User, MapPin, CreditCard, ChevronDown, PlusCircle, Trash, Loader2, Check, ChevronLeft, ChevronRight, Calendar as CalendarIcon, Plus as PlusIcon, AlertTriangle, AlertCircle } from "lucide-react"
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { Plus, Search, Trash2, X, Package, Calendar, Clock, User, MapPin, CreditCard, ChevronDown, PlusCircle, Trash, Loader2, Check, ChevronLeft, ChevronRight, Calendar as CalendarIcon, Plus as PlusIcon, AlertTriangle, AlertCircle, ChevronsUpDown } from "lucide-react"
 import { useState, useEffect } from "react"
 import { cn } from "@/lib/utils"
 import { getInventory, getMenuItems, reduceStock, reduceUtensilsForMeal, reduceContainerForItem, saveOrder, checkAndWarnStockForItem, checkTotalCartStockRequirements, type InventoryItem, addMenuItem, deleteMenuItem, canOrderItem, canOrderCart, getItemStock } from "@/lib/inventory-store"
@@ -139,6 +142,17 @@ export default function NewOrderPage() {
     stock: 10,
     price: 0
   })
+  
+  // Linked items state for menu items
+  const [menuLinkedItems, setMenuLinkedItems] = useState<Array<{ itemId: string; ratio: number }>>([])
+  const [openMenuCombobox, setOpenMenuCombobox] = useState(false)
+  const [selectedMenuItemForLink, setSelectedMenuItemForLink] = useState("")
+  const [menuLinkRatio, setMenuLinkRatio] = useState(1)
+  
+  // Success confirmation state
+  const [showMenuSuccessSheet, setShowMenuSuccessSheet] = useState(false)
+  const [lastAddedMenuItem, setLastAddedMenuItem] = useState<InventoryItem | null>(null)
+  
   const [deliveryType, setDeliveryType] = useState<"Hand in" | "Lalamove">("Hand in")
   const [showGcashQrModal, setShowGcashQrModal] = useState(false)
 
@@ -500,12 +514,13 @@ export default function NewOrderPage() {
       return
     }
     
-    addMenuItem({
+    const addedItem = addMenuItem({
       name: newMenuItem.name.trim(),
       category: newMenuItem.category,
       stock: newMenuItem.stock,
       price: newMenuItem.price,
-      status: "in-stock"
+      status: "in-stock",
+      linkedItems: menuLinkedItems.length > 0 ? menuLinkedItems : undefined
     })
     
     // Reset form
@@ -516,9 +531,31 @@ export default function NewOrderPage() {
       price: 0
     })
     
+    setMenuLinkedItems([])
     setErrors({})
     setShowAddMenuModal(false)
+    
+    // Show success confirmation
+    setLastAddedMenuItem(addedItem)
+    setShowMenuSuccessSheet(true)
   }
+
+  const addMenuLinkedItem = () => {
+    if (!selectedMenuItemForLink || menuLinkedItems.some(link => link.itemId === selectedMenuItemForLink)) return;
+    
+    setMenuLinkedItems([...menuLinkedItems, { itemId: selectedMenuItemForLink, ratio: menuLinkRatio }]);
+    setSelectedMenuItemForLink("");
+    setMenuLinkRatio(1);
+    setOpenMenuCombobox(false);
+  };
+
+  const removeMenuLinkedItem = (itemId: string) => {
+    setMenuLinkedItems(menuLinkedItems.filter(link => link.itemId !== itemId));
+  };
+
+  const availableMenuItems = getInventory().filter(item => 
+    !menuLinkedItems.some(link => link.itemId === item.id)
+  );
 
   const openDeleteMenuModal = (item: InventoryItem) => {
     setItemToDelete(item)
@@ -1023,12 +1060,16 @@ export default function NewOrderPage() {
         </div>
       )}
 
-      {showAddMenuModal && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-background rounded-lg shadow-2xl max-w-md w-full p-6">
-            <h3 className="text-xl font-bold mb-4">Add Menu Item</h3>
-            <div className="space-y-4">
-              <div className="space-y-2">
+      <Sheet open={showAddMenuModal} onOpenChange={setShowAddMenuModal}>
+        <SheetContent side="right" className="w-full sm:max-w-md">
+          <SheetHeader>
+            <SheetTitle>Add Menu Item</SheetTitle>
+            <p className="text-sm text-muted-foreground">Add a new item to your menu</p>
+          </SheetHeader>
+          
+          <form onSubmit={(e) => { e.preventDefault(); handleAddMenuItem(); }} className="flex flex-col h-full">
+            <div className="flex-1 space-y-6 py-6">
+              <div>
                 <Label htmlFor="menu-item-name" className={cn(errors.name && "text-destructive")}>
                   Item Name *
                 </Label>
@@ -1045,7 +1086,7 @@ export default function NewOrderPage() {
                 {errors.name && <p className="text-sm text-destructive">{errors.name}</p>}
               </div>
 
-              <div className="space-y-2">
+              <div>
                 <Label htmlFor="menu-item-category">Category</Label>
                 <div className="flex gap-2">
                   <select
@@ -1077,7 +1118,7 @@ export default function NewOrderPage() {
                 </div>
               </div>
 
-              <div className="space-y-2">
+              <div>
                 <Label htmlFor="menu-item-stock" className={cn(errors.stock && "text-destructive")}>
                   Stock *
                 </Label>
@@ -1095,7 +1136,7 @@ export default function NewOrderPage() {
                 {errors.stock && <p className="text-sm text-destructive">{errors.stock}</p>}
               </div>
 
-              <div className="space-y-2">
+              <div>
                 <Label htmlFor="menu-item-price" className={cn(errors.price && "text-destructive")}>
                   Price (₱) *
                 </Label>
@@ -1113,27 +1154,122 @@ export default function NewOrderPage() {
                 />
                 {errors.price && <p className="text-sm text-destructive">{errors.price}</p>}
               </div>
+
+              <div>
+                <Label className="text-sm font-medium mb-2 block">Linked Items (optional)</Label>
+                
+                {/* Display selected linked items */}
+                {menuLinkedItems.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {menuLinkedItems.map(link => {
+                      const item = getInventory().find(mi => mi.id === link.itemId);
+                      return item ? (
+                        <Badge key={link.itemId} variant="secondary" className="flex items-center gap-1">
+                          {item.name} ({link.ratio}:1)
+                          <X 
+                            className="h-3 w-3 cursor-pointer hover:text-destructive" 
+                            onClick={() => removeMenuLinkedItem(link.itemId)}
+                          />
+                        </Badge>
+                      ) : null;
+                    })}
+                  </div>
+                )}
+
+                {/* Add new linked item */}
+                <div className="flex gap-2">
+                  <Popover open={openMenuCombobox} onOpenChange={setOpenMenuCombobox}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={openMenuCombobox}
+                        className="flex-1 justify-between"
+                      >
+                        {selectedMenuItemForLink 
+                          ? getInventory().find(item => item.id === selectedMenuItemForLink)?.name || "Select item..."
+                          : "Select item to link..."
+                        }
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[300px] p-0">
+                      <Command>
+                        <CommandInput placeholder="Search items..." />
+                        <CommandList>
+                          <CommandEmpty>No items found.</CommandEmpty>
+                          <CommandGroup>
+                            {availableMenuItems.map((item) => (
+                              <CommandItem
+                                key={item.id}
+                                value={item.name}
+                                onSelect={() => {
+                                  setSelectedMenuItemForLink(item.id);
+                                  setOpenMenuCombobox(false);
+                                }}
+                              >
+                                <Check
+                                  className={`mr-2 h-4 w-4 ${
+                                    selectedMenuItemForLink === item.id ? "opacity-100" : "opacity-0"
+                                  }`}
+                                />
+                                {item.name}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+
+                  <Input
+                    type="number"
+                    placeholder="Ratio"
+                    value={menuLinkRatio}
+                    onChange={(e) => setMenuLinkRatio(Number.parseFloat(e.target.value) || 1)}
+                    className="w-20"
+                    min="0.1"
+                    step="0.1"
+                  />
+
+                  <Button 
+                    type="button" 
+                    onClick={addMenuLinkedItem}
+                    disabled={!selectedMenuItemForLink}
+                  >
+                    Add
+                  </Button>
+                </div>
+
+                <p className="text-xs text-muted-foreground mt-1">
+                  When this item's stock is reduced, linked items will be reduced by the specified ratio.
+                </p>
+              </div>
             </div>
 
-            <div className="flex gap-3 mt-6">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowAddMenuModal(false)
-                  setNewMenuItem({ name: "", category: "chicken", stock: 0, price: 0 })
-                  setErrors({})
-                }}
-                className="flex-1"
-              >
-                Cancel
-              </Button>
-              <Button onClick={handleAddMenuItem} className="flex-1">
-                Add Item
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+            <SheetFooter>
+              <div className="flex gap-3 w-full">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => {
+                    setShowAddMenuModal(false)
+                    setNewMenuItem({ name: "", category: "chicken", stock: 0, price: 0 })
+                    setMenuLinkedItems([])
+                    setErrors({})
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" className="flex-1">
+                  Add Item
+                </Button>
+              </div>
+            </SheetFooter>
+          </form>
+        </SheetContent>
+      </Sheet>
 
       {showDeleteMenuModal && itemToDelete && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
@@ -1979,6 +2115,77 @@ export default function NewOrderPage() {
           </div>
         </div>
       )}
+
+      <Sheet open={showMenuSuccessSheet} onOpenChange={setShowMenuSuccessSheet}>
+        <SheetContent side="right" className="w-full sm:max-w-sm">
+          <SheetHeader>
+            <SheetTitle className="text-green-600">✓ Menu Item Added Successfully</SheetTitle>
+            <p className="text-sm text-muted-foreground">Your menu item has been added and is now available for orders</p>
+          </SheetHeader>
+          
+          {lastAddedMenuItem && (
+            <div className="py-6 space-y-4">
+              <div className="bg-green-50 dark:bg-green-950 p-4 rounded-lg border border-green-200 dark:border-green-800">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-10 h-10 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center">
+                    <Package className="w-5 h-5 text-green-600 dark:text-green-400" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-green-800 dark:text-green-200">{lastAddedMenuItem.name}</h3>
+                    <p className="text-sm text-green-600 dark:text-green-400">₱{lastAddedMenuItem.price.toFixed(2)}</p>
+                  </div>
+                </div>
+                
+                <div className="space-y-1 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-green-700 dark:text-green-300">Category:</span>
+                    <span className="font-medium capitalize">{lastAddedMenuItem.category}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-green-700 dark:text-green-300">Stock:</span>
+                    <span className="font-medium">{lastAddedMenuItem.stock} units</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-green-700 dark:text-green-300">Status:</span>
+                    <span className="font-medium capitalize">{lastAddedMenuItem.status.replace('-', ' ')}</span>
+                  </div>
+                </div>
+                
+                {lastAddedMenuItem.linkedItems && lastAddedMenuItem.linkedItems.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-green-200 dark:border-green-700">
+                    <p className="text-sm text-green-700 dark:text-green-300 mb-2">Linked Items:</p>
+                    <div className="flex flex-wrap gap-1">
+                      {lastAddedMenuItem.linkedItems.map(link => {
+                        const linkedItem = getInventory().find(item => item.id === link.itemId);
+                        return linkedItem ? (
+                          <Badge key={link.itemId} variant="outline" className="text-xs">
+                            {linkedItem.name} ({link.ratio}:1)
+                          </Badge>
+                        ) : null;
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              <div className="text-center">
+                <p className="text-sm text-muted-foreground">
+                  The menu item is now available for customer orders and will automatically manage inventory.
+                </p>
+              </div>
+            </div>
+          )}
+          
+          <SheetFooter>
+            <Button 
+              onClick={() => setShowMenuSuccessSheet(false)} 
+              className="w-full bg-green-600 hover:bg-green-700"
+            >
+              Continue
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </POSLayout>
   )
 }

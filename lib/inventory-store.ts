@@ -26,6 +26,7 @@ export interface InventoryItem {
   status: "in-stock" | "low-stock" | "out-of-stock"
   isUtensil?: boolean
   isContainer?: boolean
+  linkedItems?: Array<{ itemId: string; ratio: number }>
 }
 
 export interface Order {
@@ -157,6 +158,20 @@ const MEAL_INGREDIENTS_MAP: Record<string, { ingredient: string; category: strin
   'Sisig Meal': { ingredient: 'Sisig Family', category: 'sisig' },
 };
 
+// Raw stock deduction mapping
+export const RAW_STOCK_DEDUCTION_MAP: Record<string, { rawStock: string; amount: number }> = {
+  'Roast Chicken': { rawStock: 'Whole Chicken', amount: 1 },
+  'Chicken Yangchow Meal': { rawStock: 'Whole Chicken', amount: 0.25 },
+  'Roast Liempo Jumbo': { rawStock: 'Whole Liempo', amount: 1 },
+  'Roast Liempo Medium': { rawStock: 'Whole Liempo', amount: 0.5 },
+  'Sisig Family': { rawStock: 'Whole Liempo', amount: 0.5 },
+  'Sisig Sharing': { rawStock: 'Whole Liempo', amount: 0.5 },
+  'Sisig Party Tray': { rawStock: 'Whole Liempo', amount: 0.5 },
+  'Liempo Meal': { rawStock: 'Whole Liempo', amount: 0.5 },
+  'Kare Kare Liempo Meal': { rawStock: 'Whole Liempo', amount: 0.5 },
+  'Sisig Meal': { rawStock: 'Whole Liempo', amount: 0.5 },
+};
+
 // Container mapping by category
 const CONTAINER_MAP: Record<string, string> = {
   'chicken': 'Paper Box',
@@ -213,6 +228,10 @@ const initializeCustomerOrders = () => {
 // Force reset inventory to new menu items
 const resetInventoryToNewMenu = () => {
   const newInventoryItems: InventoryItem[] = [
+    // Raw Stocks (main inventory)
+    { id: 'raw1', name: 'Whole Chicken', category: 'raw-stock', stock: 10, price: 0, status: 'in-stock' },
+    { id: 'raw2', name: 'Whole Liempo', category: 'raw-stock', stock: 10, price: 0, status: 'in-stock' },
+    
     // Food Items Only (visible to customers)
     { id: '1', name: 'Roast Chicken', category: 'chicken', stock: 10, price: 360, status: 'in-stock' },
     { id: '2', name: 'Chicken Yangchow Meal', category: 'meals', stock: 10, price: 160, status: 'in-stock' },
@@ -592,10 +611,30 @@ export const getInventory = (): InventoryItem[] => {
 
 // Get only food items (visible to customers in menu)
 export const getMenuItems = (): InventoryItem[] => {
-  return inventoryItems.filter(item => !item.isUtensil && !item.isContainer);
+  return inventoryItems.filter(item => !item.isUtensil && !item.isContainer && item.category !== 'raw-stock');
 };
 
 export const updateInventory = (items: InventoryItem[]): void => {
+  // Handle linked items: when an item's stock is reduced, reduce linked items
+  const currentItems = [...inventoryItems];
+  items.forEach(newItem => {
+    const currentItem = currentItems.find(item => item.id === newItem.id);
+    if (currentItem && newItem.stock < currentItem.stock) {
+      // Stock was reduced
+      const reduction = currentItem.stock - newItem.stock;
+      if (newItem.linkedItems) {
+        newItem.linkedItems.forEach(link => {
+          const linkedItem = items.find(item => item.id === link.itemId);
+          if (linkedItem) {
+            const linkedReduction = reduction * link.ratio;
+            linkedItem.stock = Math.max(0, linkedItem.stock - linkedReduction);
+            linkedItem.status = getStockStatus(linkedItem.stock);
+          }
+        });
+      }
+    }
+  });
+
   inventoryItems = [...items];
   saveToLocalStorage(INVENTORY_ITEMS_KEY, inventoryItems);
   // Also persist bulk updates to Firestore (best-effort, non-blocking)
@@ -793,6 +832,18 @@ export const saveOrder = (order: Omit<Order, 'id' | 'orderNumber' | 'createdAt'>
       const ingredientItem = inventoryList.find(item => item.name === ingredient.ingredient);
       if (ingredientItem) {
         reduceStock(ingredientItem.id, orderedItem.quantity);
+      }
+    }
+    
+    // Reduce raw stock based on item type
+    const rawStockDeduction = RAW_STOCK_DEDUCTION_MAP[orderedItem.name];
+    if (rawStockDeduction) {
+      const inventoryList = getInventory();
+      const rawStockItem = inventoryList.find(item => item.name === rawStockDeduction.rawStock);
+      if (rawStockItem) {
+        // Since amount can be fractional, we need to handle fractional deductions
+        const totalDeduction = rawStockDeduction.amount * orderedItem.quantity;
+        reduceStock(rawStockItem.id, totalDeduction);
       }
     }
     

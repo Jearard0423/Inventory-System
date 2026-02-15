@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Plus, Minus, X, Check, Clock, Package, ArrowRight, Users, Trash2, BarChart3 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { cn } from "@/lib/utils"
-import { getMenuItems, reduceStock, reduceUtensilsForMeal, reduceContainerForItem, type InventoryItem } from "@/lib/inventory-store"
+import { getMenuItems, reduceStock, reduceUtensilsForMeal, reduceContainerForItem, type InventoryItem, RAW_STOCK_DEDUCTION_MAP } from "@/lib/inventory-store"
 import { generateOrderNumber, generatePreparedOrderNumber, getOrders } from "@/lib/orders"
 
 const categories = ["All", "Chicken", "Liempo", "Sisig", "Rice", "Meals"]
@@ -210,6 +210,17 @@ export default function PreparedOrdersPage() {
     preparedItems.forEach(item => {
       // Reduce main item stock
       reduceStock(item.id, item.quantity)
+      
+      // Reduce raw stock based on item type
+      const rawStockDeduction = RAW_STOCK_DEDUCTION_MAP[item.name];
+      if (rawStockDeduction) {
+        const inventoryList = getMenuItems();
+        const rawStockItem = inventoryList.find(invItem => invItem.name === rawStockDeduction.rawStock);
+        if (rawStockItem) {
+          const totalDeduction = rawStockDeduction.amount * item.quantity;
+          reduceStock(rawStockItem.id, totalDeduction);
+        }
+      }
       
       // Reduce container stock
       reduceContainerForItem(item.name, item.quantity)
