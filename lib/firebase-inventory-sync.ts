@@ -11,6 +11,9 @@
  *   /orders/ - Customer orders
  *   /kitchen/ - Kitchen items and status
  *   /sync-metadata/ - Last sync timestamps and version info
+ * /menu/
+ *   /{itemId} - Menu items (food items with inventory linking)
+ *     /linkedItems - Items required for this menu item
  */
 
 import {
@@ -29,10 +32,11 @@ import { InventoryItem, CustomerOrder, KitchenItem } from "./inventory-store"
 let inventoryListener: Unsubscribe | null = null
 let ordersListener: Unsubscribe | null = null
 let kitchenListener: Unsubscribe | null = null
+let menuListener: Unsubscribe | null = null
 
 /**
  * Initialize Firebase sync on app start
- * Sets up real-time listeners for inventory, orders, and kitchen items
+ * Sets up real-time listeners for inventory, orders, kitchen items, and menu
  * Gracefully falls back to localStorage if permissions are denied
  */
 export const initializeFirebaseSync = () => {
@@ -123,7 +127,36 @@ export const initializeFirebaseSync = () => {
       }
     )
 
-    console.log("Firebase sync initialized (with fallback to localStorage)")
+    // Set up menu listener with error handling
+    // Menu items are food items from inventory (no containers, utensils, or raw stock)
+    const menuRef = ref(database, "menu")
+    menuListener = onValue(
+      menuRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const menuItems = snapshot.val()
+          window.dispatchEvent(
+            new CustomEvent("firebase-menu-updated", { detail: menuItems })
+          )
+          // Menu is derived from inventory, so we sync to localStorage separately
+          localStorage.setItem(
+            "yellowbell_menu_items",
+            JSON.stringify(Object.values(menuItems))
+          )
+        }
+      },
+      (error) => {
+        if (error.code === "PERMISSION_DENIED") {
+          console.warn(
+            "Firebase permission denied for menu. Using localStorage only."
+          )
+        } else {
+          console.error("Firebase menu sync error:", error)
+        }
+      }
+    )
+
+    console.log("Firebase sync initialized with menu support (with fallback to localStorage)")
   } catch (error) {
     console.error("Failed to initialize Firebase sync:", error)
     console.log("Falling back to localStorage only")
@@ -137,6 +170,7 @@ export const cleanupFirebaseSync = () => {
   if (inventoryListener) inventoryListener()
   if (ordersListener) ordersListener()
   if (kitchenListener) kitchenListener()
+  if (menuListener) menuListener()
 }
 
 /**
@@ -187,7 +221,113 @@ export const saveInventoryToFirebase = async (items: InventoryItem[]) => {
 }
 
 /**
- * Save customer order to Firebase
+ * Save menu item to Firebase (with linked items for inventory tracking)
+ * Falls back silently if permissions denied
+ */
+export const saveMenuItemToFirebase = async (itemId: string, item: InventoryItem) => {
+  try {
+    const menuItemRef = ref(database, `menu/${itemId}`)
+    await set(menuItemRef, {
+      id: item.id,
+      name: item.name,
+      category: item.category,
+      stock: item.stock,
+      price: item.price,
+      status: item.status,
+      linkedItems: item.linkedItems || [],
+      lastUpdated: new Date().toISOString(),
+    })
+  } catch (error: any) {
+    if (error.code !== "PERMISSION_DENIED") {
+      console.error("Error saving menu item to Firebase:", error)
+    }
+    // Silently fail for permission denied (app continues with localStorage)
+  }
+}
+
+/**
+ * Save all menu items to Firebase
+ * Menu items are the food items from inventory (excluding containers, utensils, raw stock)
+ * Falls back silently if permissions denied
+ */
+export const saveMenuToFirebase = async (menuItems: InventoryItem[]) => {
+  try {
+    const menuRef = ref(database, "menu")
+    const updates: Record<string, any> = {}
+
+    menuItems.forEach((item) => {
+      if (!item.isUtensil && !item.isContainer && item.category !== 'raw-stock') {
+        updates[item.id] = {
+          id: item.id,
+          name: item.name,
+          category: item.category,
+          stock: item.stock,
+          price: item.price,
+          status: item.status,
+          linkedItems: item.linkedItems || [],
+          lastUpdated: new Date().toISOString(),
+        }
+      }
+    })
+
+    if (Object.keys(updates).length > 0) {
+      await update(menuRef.parent!, updates)
+      console.log(`[firebase-inventory-sync] Synced ${Object.keys(updates).length} menu items to Firebase`)
+    }
+  } catch (error: any) {
+    if (error.code !== "PERMISSION_DENIED") {
+      console.error("Error saving menu to Firebase:", error)
+    }
+    // Silently fail for permission denied (app continues with localStorage)
+  }
+}
+
+/**
+ * Update menu item stock in Firebase (reflecting inventory changes)
+ * Falls back silently if permissions denied
+ */
+export const updateMenuStockInFirebase = async (
+  itemId: string,
+  newStock: number,
+  status: "in-stock" | "low-stock" | "out-of-stock"
+) => {
+  try {
+    const menuItemRef = ref(database, `menu/${itemId}`)
+    await update(menuItemRef, {
+      stock: newStock,
+      status: status,
+      lastUpdated: new Date().toISOString(),
+    })
+  } catch (error: any) {
+    if (error.code !== "PERMISSION_DENIED") {
+      console.error("Error updating menu stock in Firebase:", error)
+    }
+    // Silently fail for permission denied (app continues with localStorage)
+  }
+}
+
+/**
+ * Get menu from Firebase
+ * Returns empty array if permission denied or error occurs
+ */
+export const getMenuFromFirebase = async () => {
+  try {
+    const menuRef = ref(database, "menu")
+    const snapshot = await get(menuRef)
+    if (snapshot.exists()) {
+      return Object.values(snapshot.val())
+    }
+    return []
+  } catch (error: any) {
+    if (error.code !== "PERMISSION_DENIED") {
+      console.error("Error fetching menu from Firebase:", error)
+    }
+    return []
+  }
+}
+
+/**
+ * Customer order to Firebase
  * Falls back silently if permissions denied
  */
 export const saveOrderToFirebase = async (orderId: string, order: CustomerOrder) => {
@@ -259,6 +399,7 @@ export const initializeCategoriesInFirebase = async () => {
       meals: { name: "Meals", requiresUtensils: true },
       sisig: { name: "Sisig", requiresUtensils: false },
       rice: { name: "Rice", requiresUtensils: false },
+      "raw-stock": { name: "Raw Stocks", requiresUtensils: false, isRawStock: true },
       container: { name: "Container", requiresUtensils: false, isContainer: true },
       utensil: { name: "Utensil", requiresUtensils: false, isUtensil: true },
     }
@@ -329,6 +470,8 @@ export const syncLocalToFirebase = async () => {
     if (localInventory) {
       const items = JSON.parse(localInventory)
       await saveInventoryToFirebase(items)
+      // Also sync menu items (food items from inventory)
+      await saveMenuToFirebase(items)
     }
 
     if (localOrders) {
@@ -344,7 +487,7 @@ export const syncLocalToFirebase = async () => {
       await update(ordersRef.parent!, updates)
     }
 
-    console.log("Local data synced to Firebase successfully")
+    console.log("Local data synced to Firebase successfully (including menu)")
   } catch (error: any) {
     if (error.code !== "PERMISSION_DENIED") {
       console.error("Error syncing local data to Firebase:", error)

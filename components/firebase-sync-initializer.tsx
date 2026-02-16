@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
-import { initializeFirebaseSync, cleanupFirebaseSync, initializeCategoriesInFirebase } from "@/lib/firebase-inventory-sync"
+import { initializeFirebaseSync, cleanupFirebaseSync, initializeCategoriesInFirebase, getCategoriesFromFirebase } from "@/lib/firebase-inventory-sync"
 import { initializeFirestoreSync, cleanupFirestoreSync } from "@/lib/firestore-sync"
 
 /**
@@ -41,11 +41,25 @@ export function FirebaseSyncInitializer() {
       console.warn("Firebase RTDB sync initialization encountered an error. App will use localStorage.")
     }
 
-    // Initialize categories in Firebase if not already done
-    // Silently fails if permissions denied
-    initializeCategoriesInFirebase().catch((err) => {
-      console.warn("Firebase categories initialization skipped. Using localStorage only.")
-    })
+    // Initialize categories in Firebase and fetch them
+    const initCategories = async () => {
+      try {
+        // First, ensure categories exist in Firebase
+        await initializeCategoriesInFirebase()
+        
+        // Then fetch categories from Firebase to ensure we have the latest
+        const categoriesFromFirebase = await getCategoriesFromFirebase()
+        if (categoriesFromFirebase && typeof window !== 'undefined') {
+          // Cache categories in localStorage for the app to use
+          localStorage.setItem('firebase_categories', JSON.stringify(categoriesFromFirebase))
+          console.log("Categories loaded from Firebase:", categoriesFromFirebase)
+        }
+      } catch (err) {
+        console.warn("Firebase categories initialization skipped. Using localStorage only.", err)
+      }
+    }
+    
+    initCategories()
 
     // Set up event listeners for Firebase updates (optional enhancement)
     const handleInventoryUpdate = (event: Event) => {

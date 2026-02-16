@@ -128,11 +128,15 @@ const saveToLocalStorage = (key: string, data: any) => {
       // Dispatch events for real-time updates
       if (key === INVENTORY_ITEMS_KEY) {
         window.dispatchEvent(new Event("inventory-updated"));
-        // Also try to sync to Firebase asynchronously
+        // Also try to sync to Firebase asynchronously (inventory + menu)
         try {
-          const { saveInventoryToFirebase } = require('./firebase-inventory-sync');
+          const { saveInventoryToFirebase, saveMenuToFirebase } = require('./firebase-inventory-sync');
           saveInventoryToFirebase(data).catch((err: any) => {
-            console.warn('Firebase sync failed (non-critical):', err);
+            console.warn('Firebase inventory sync failed (non-critical):', err);
+          });
+          // Also sync menu items (food items from inventory)
+          saveMenuToFirebase(data).catch((err: any) => {
+            console.warn('Firebase menu sync failed (non-critical):', err);
           });
         } catch (err) {
           // Firebase sync not available, continue without it
@@ -232,17 +236,17 @@ const resetInventoryToNewMenu = () => {
     { id: 'raw1', name: 'Whole Chicken', category: 'raw-stock', stock: 10, price: 0, status: 'in-stock' },
     { id: 'raw2', name: 'Whole Liempo', category: 'raw-stock', stock: 10, price: 0, status: 'in-stock' },
     
-    // Food Items Only (visible to customers)
-    { id: '1', name: 'Roast Chicken', category: 'chicken', stock: 10, price: 360, status: 'in-stock' },
-    { id: '2', name: 'Chicken Yangchow Meal', category: 'meals', stock: 10, price: 160, status: 'in-stock' },
-    { id: '3', name: 'Roast Liempo Jumbo', category: 'liempo', stock: 10, price: 590, status: 'in-stock' },
-    { id: '4', name: 'Roast Liempo Medium', category: 'liempo', stock: 10, price: 295, status: 'in-stock' },
-    { id: '5', name: 'Sisig Family', category: 'sisig', stock: 10, price: 299, status: 'in-stock' },
-    { id: '6', name: 'Sisig Sharing', category: 'sisig', stock: 10, price: 150, status: 'in-stock' },
-    { id: '7', name: 'Sisig Party Tray', category: 'sisig', stock: 10, price: 1550, status: 'in-stock' },
-    { id: '8', name: 'Liempo Meal', category: 'meals', stock: 10, price: 190, status: 'in-stock' },
-    { id: '9', name: 'Kare Kare Liempo Meal', category: 'meals', stock: 10, price: 195, status: 'in-stock' },
-    { id: '10', name: 'Sisig Meal', category: 'meals', stock: 10, price: 190, status: 'in-stock' },
+    // Food Items Only (visible to customers) - linked to raw stocks
+    { id: '1', name: 'Roast Chicken', category: 'chicken', stock: 10, price: 360, status: 'in-stock', linkedItems: [{ itemId: 'raw1', ratio: 1 }] },
+    { id: '2', name: 'Chicken Yangchow Meal', category: 'meals', stock: 10, price: 160, status: 'in-stock', linkedItems: [{ itemId: 'raw1', ratio: 0.25 }] },
+    { id: '3', name: 'Roast Liempo Jumbo', category: 'liempo', stock: 10, price: 590, status: 'in-stock', linkedItems: [{ itemId: 'raw2', ratio: 1 }] },
+    { id: '4', name: 'Roast Liempo Medium', category: 'liempo', stock: 10, price: 295, status: 'in-stock', linkedItems: [{ itemId: 'raw2', ratio: 0.5 }] },
+    { id: '5', name: 'Sisig Family', category: 'sisig', stock: 10, price: 299, status: 'in-stock', linkedItems: [{ itemId: 'raw2', ratio: 0.5 }] },
+    { id: '6', name: 'Sisig Sharing', category: 'sisig', stock: 10, price: 150, status: 'in-stock', linkedItems: [{ itemId: 'raw2', ratio: 0.25 }] },
+    { id: '7', name: 'Sisig Party Tray', category: 'sisig', stock: 10, price: 1550, status: 'in-stock', linkedItems: [{ itemId: 'raw2', ratio: 1 }] },
+    { id: '8', name: 'Liempo Meal', category: 'meals', stock: 10, price: 190, status: 'in-stock', linkedItems: [{ itemId: 'raw2', ratio: 0.5 }] },
+    { id: '9', name: 'Kare Kare Liempo Meal', category: 'meals', stock: 10, price: 195, status: 'in-stock', linkedItems: [{ itemId: 'raw2', ratio: 0.5 }] },
+    { id: '10', name: 'Sisig Meal', category: 'meals', stock: 10, price: 190, status: 'in-stock', linkedItems: [{ itemId: 'raw2', ratio: 0.5 }] },
     { id: '11', name: 'Yang Chow Party Tray', category: 'rice', stock: 10, price: 360, status: 'in-stock' },
     { id: '12', name: 'Yang Chow Sharing', category: 'rice', stock: 10, price: 260, status: 'in-stock' },
     
@@ -513,6 +517,16 @@ export const markOrderAsDelivered = (orderId: string): boolean => {
     return item;
   });
   
+  // Persist changes
+  saveToLocalStorage(CUSTOMER_ORDERS_KEY, customerOrders);
+  saveToLocalStorage(KITCHEN_ITEMS_KEY, kitchenItems);
+  
+  // Dispatch events for UI updates
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event("orders-updated"));
+    window.dispatchEvent(new Event("delivery-updated"));
+  }
+  
   return true;
 };
 
@@ -529,6 +543,16 @@ export const markOrderAsUndelivered = (orderId: string): boolean => {
     }
     return item;
   });
+  
+  // Persist changes
+  saveToLocalStorage(CUSTOMER_ORDERS_KEY, customerOrders);
+  saveToLocalStorage(KITCHEN_ITEMS_KEY, kitchenItems);
+  
+  // Dispatch events for UI updates
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event("orders-updated"));
+    window.dispatchEvent(new Event("delivery-updated"));
+  }
   
   return true;
 };
@@ -601,6 +625,18 @@ export const updateInventoryItem = (itemId: string, newStock: number, threshold:
   } catch (err) {
     // Firestore sync not available in this environment - ignore silently
   }
+
+  // Sync menu item to Firebase RTDB if this is a menu item (not container/utensil/raw-stock)
+  if (!item.isUtensil && !item.isContainer && item.category !== 'raw-stock') {
+    try {
+      const { updateMenuStockInFirebase } = require('./firebase-inventory-sync');
+      Promise.resolve(updateMenuStockInFirebase(itemId, newStock, item.status)).catch((err: any) => {
+        console.warn('Failed to update menu stock in Firebase (non-critical):', err);
+      });
+    } catch (err) {
+      // Firebase sync not available in this environment - ignore silently
+    }
+  }
   
   return true;
 };
@@ -615,19 +651,23 @@ export const getMenuItems = (): InventoryItem[] => {
 };
 
 export const updateInventory = (items: InventoryItem[]): void => {
-  // Handle linked items: when an item's stock is reduced, reduce linked items
+  // Handle linked items: bidirectional stock management
+  // When a derived item stock increases, consume raw materials
+  // When a derived item stock decreases, restore raw materials
   const currentItems = [...inventoryItems];
   items.forEach(newItem => {
     const currentItem = currentItems.find(item => item.id === newItem.id);
-    if (currentItem && newItem.stock < currentItem.stock) {
-      // Stock was reduced
-      const reduction = currentItem.stock - newItem.stock;
-      if (newItem.linkedItems) {
+    if (currentItem) {
+      const stockChange = newItem.stock - currentItem.stock;
+      
+      if (newItem.linkedItems && newItem.linkedItems.length > 0) {
         newItem.linkedItems.forEach(link => {
           const linkedItem = items.find(item => item.id === link.itemId);
           if (linkedItem) {
-            const linkedReduction = reduction * link.ratio;
-            linkedItem.stock = Math.max(0, linkedItem.stock - linkedReduction);
+            // When derived item stock increases, consume from linked items
+            // When derived item stock decreases, restore to linked items
+            const linkedChange = stockChange * link.ratio;
+            linkedItem.stock = Math.max(0, linkedItem.stock - linkedChange);
             linkedItem.status = getStockStatus(linkedItem.stock);
           }
         });

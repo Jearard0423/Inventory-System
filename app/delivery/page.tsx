@@ -217,6 +217,7 @@ export default function DeliveryPage() {
 
   const confirmLalamoveDelivery = () => {
     if (selectedOrder) {
+      markOrderAsDelivered(selectedOrder.id)
       saveNotification({
         type: "delivery",
         title: "Lalamove Delivery Initiated",
@@ -226,6 +227,7 @@ export default function DeliveryPage() {
       setLalamoveDetailsModalOpen(false)
       setLalamoveModalOpen(false)
       setSelectedOrder(null)
+      loadData()
       window.open("https://www.lalamove.com/", "_blank")
     }
   }

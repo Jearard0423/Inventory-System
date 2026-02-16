@@ -24,6 +24,8 @@ export default function InventoryPage() {
   const [statusFilter, setStatusFilter] = useState("all-status")
   const [showSuccessSheet, setShowSuccessSheet] = useState(false)
   const [lastAddedItem, setLastAddedItem] = useState<InventoryItem | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [hasReceivedFirebaseData, setHasReceivedFirebaseData] = useState(false)
 
   const [formData, setFormData] = useState({
     name: "",
@@ -42,14 +44,59 @@ export default function InventoryPage() {
   const itemsPerPage = 10
 
   useEffect(() => {
-    setMenuItems(getInventory())
-
-    const handleInventoryUpdate = () => {
-      setMenuItems(getInventory())
+    let isMounted = true
+    
+    // Load initial data from localStorage (fallback)
+    const loadInitialData = () => {
+      if (isMounted) {
+        setMenuItems(getInventory())
+        setIsLoading(false)
+      }
+    }
+    
+    // Firebase data handler - fires when Firebase RTDB updates
+    const handleFirebaseInventoryUpdate = () => {
+      if (isMounted) {
+        console.log("Firebase inventory update received - loading fresh data")
+        const freshData = getInventory()
+        setMenuItems(freshData)
+        setHasReceivedFirebaseData(true)
+        setIsLoading(false)
+      }
     }
 
+    // Local inventory update handler
+    const handleInventoryUpdate = () => {
+      if (isMounted) {
+        setMenuItems(getInventory())
+      }
+    }
+
+    // Load initial data after a brief delay to allow Firebase to initialize
+    const initialLoadTimer = setTimeout(() => {
+      loadInitialData()
+    }, 100)
+
+    // After 3 seconds, if no Firebase data has arrived, just proceed with what we have
+    const fallbackTimer = setTimeout(() => {
+      if (isMounted && !hasReceivedFirebaseData) {
+        console.warn("Firebase data not received after 3 seconds, using localStorage")
+        setHasReceivedFirebaseData(true)
+      }
+    }, 3000)
+
+    // Listen for Firebase updates (highest priority)
+    window.addEventListener("firebase-inventory-updated", handleFirebaseInventoryUpdate)
+    // Listen for local updates (lower priority)
     window.addEventListener("inventory-updated", handleInventoryUpdate)
-    return () => window.removeEventListener("inventory-updated", handleInventoryUpdate)
+    
+    return () => {
+      isMounted = false
+      clearTimeout(initialLoadTimer)
+      clearTimeout(fallbackTimer)
+      window.removeEventListener("firebase-inventory-updated", handleFirebaseInventoryUpdate)
+      window.removeEventListener("inventory-updated", handleInventoryUpdate)
+    }
   }, [])
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -147,7 +194,9 @@ export default function InventoryPage() {
       sisig: "Sisig",
       rice: "Rice",
       meals: "Meals",
+      "raw-stock": "Raw Stocks",
       utensils: "Utensils",
+      container: "Container",
       others: "Others",
     }
     return categories[category] || category
@@ -212,7 +261,9 @@ export default function InventoryPage() {
                   <SelectItem value="sisig">Sisig</SelectItem>
                   <SelectItem value="rice">Rice</SelectItem>
                   <SelectItem value="meals">Meals</SelectItem>
+                  <SelectItem value="raw-stock">Raw Stocks</SelectItem>
                   <SelectItem value="utensils">Utensils</SelectItem>
+                  <SelectItem value="container">Container</SelectItem>
                   <SelectItem value="others">Others</SelectItem>
                 </SelectContent>
               </Select>
@@ -427,8 +478,8 @@ export default function InventoryPage() {
                       <SelectItem value="sisig">Sisig</SelectItem>
                       <SelectItem value="rice">Rice</SelectItem>
                       <SelectItem value="meals">Meals</SelectItem>
+                      <SelectItem value="raw-stock">Raw Stocks</SelectItem>
                       <SelectItem value="utensils">Utensils</SelectItem>
-                      <SelectItem value="raw-stock">Raw Stock</SelectItem>
                       <SelectItem value="container">Container</SelectItem>
                       <SelectItem value="others">Others</SelectItem>
                     </SelectContent>
@@ -597,7 +648,7 @@ export default function InventoryPage() {
                 <div className="space-y-1 text-sm">
                   <div className="flex justify-between">
                     <span className="text-green-700 dark:text-green-300">Category:</span>
-                    <span className="font-medium">{lastAddedItem.category}</span>
+                    <span className="font-medium">{getCategoryName(lastAddedItem.category)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-green-700 dark:text-green-300">Stock:</span>

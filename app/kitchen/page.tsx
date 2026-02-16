@@ -37,19 +37,28 @@ export default function KitchenPage() {
   const [kitchenItems, setKitchenItems] = useState<KitchenItem[]>([])
   const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([])
   const [todayOrders, setTodayOrders] = useState<CustomerOrder[]>([])
-  // Set initial filter based on current time
-  const getCurrentMealType = () => {
-    const hours = new Date().getHours()
-    if (hours >= 6 && hours < 11) return 'breakfast'
-    return (hours >= 11 && hours < 17) ? 'lunch' : 'dinner'
-  }
-
-  const [filterMealType, setFilterMealType] = useState<"all" | "breakfast" | "lunch" | "dinner" | "other">(getCurrentMealType())
-  const [autoMealType, setAutoMealType] = useState<"breakfast" | "lunch" | "dinner">(getCurrentMealType())
+  
+  // Initialize to 'lunch' as default, will be updated on client only
+  const [filterMealType, setFilterMealType] = useState<"all" | "breakfast" | "lunch" | "dinner" | "other">("lunch")
+  const [autoMealType, setAutoMealType] = useState<"breakfast" | "lunch" | "dinner">("lunch")
   const [quantityInputs, setQuantityInputs] = useState<Record<string, string>>({})
   const [selectedOrder, setSelectedOrder] = useState<CustomerOrder | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const ordersPerPage = 5
+  const [markedItemDialogOpen, setMarkedItemDialogOpen] = useState(false)
+  const [markedItemName, setMarkedItemName] = useState<string>("")
+  const [markedItemQuantity, setMarkedItemQuantity] = useState<number>(0)
+
+  // Set initial filter based on current time (client-side only)
+  useEffect(() => {
+    const getCurrentMealType = () => {
+      const hours = new Date().getHours()
+      if (hours >= 6 && hours < 11) return 'breakfast'
+      return (hours >= 11 && hours < 17) ? 'lunch' : 'dinner'
+    }
+    setFilterMealType(getCurrentMealType())
+    setAutoMealType(getCurrentMealType())
+  }, [])
 
   const handleFilterChange = (mealType: "all" | "breakfast" | "lunch" | "dinner" | "other") => {
     setFilterMealType(mealType)
@@ -268,7 +277,7 @@ export default function KitchenPage() {
     const itemsToMark = itemsToCook.slice(0, Math.min(quantity, itemsToCook.length))
     
     itemsToMark.forEach(itemToMark => {
-      markItemAsCooked(itemToMark.id)
+      markItemAsCooked(itemToMark.id, 1, itemToMark.orderId)
     })
 
     const orders = getCustomerOrders()
@@ -305,6 +314,11 @@ export default function KitchenPage() {
     window.dispatchEvent(new Event("delivery-updated"))
     loadData()
     
+    // Show success dialog
+    setMarkedItemName(itemName)
+    setMarkedItemQuantity(itemsToMark.length)
+    setMarkedItemDialogOpen(true)
+    
     // Reset quantity input
     setQuantityInputs(prev => ({ ...prev, [itemName]: "" }))
   }
@@ -325,7 +339,7 @@ export default function KitchenPage() {
     
     // Mark all items as cooked
     allItemsToCook.forEach(itemToMark => {
-      markItemAsCooked(itemToMark.id)
+      markItemAsCooked(itemToMark.id, 1, itemToMark.orderId)
     })
 
     // Update customer orders
@@ -363,6 +377,11 @@ export default function KitchenPage() {
     updateCustomerOrders(updatedWithStatus)
     window.dispatchEvent(new Event("delivery-updated"))
     loadData()
+    
+    // Show success dialog
+    setMarkedItemName("All Items")
+    setMarkedItemQuantity(allItemsToCook.length)
+    setMarkedItemDialogOpen(true)
     
     // Reset all quantity inputs
     setQuantityInputs({})
@@ -1231,6 +1250,52 @@ export default function KitchenPage() {
               className="w-full sm:w-auto"
             >
               Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Marked Item Success Dialog */}
+      <Dialog open={markedItemDialogOpen} onOpenChange={setMarkedItemDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <div className="flex justify-center mb-4">
+              <CheckCircle className="h-12 w-12 text-green-500" />
+            </div>
+            <DialogTitle className="text-center">Items Marked as Done</DialogTitle>
+            <DialogDescription className="text-center">
+              Successfully completed
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="font-medium">Item:</span>
+                <span className="text-green-600 dark:text-green-400 font-semibold">{markedItemName}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="font-medium">Quantity:</span>
+                <span className="text-green-600 dark:text-green-400 font-semibold">{markedItemQuantity}</span>
+              </div>
+            </div>
+            <p className="text-sm text-muted-foreground text-center">
+              The customer has been notified that their item is ready.
+            </p>
+          </div>
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              onClick={() => setMarkedItemDialogOpen(false)}
+              className="flex-1"
+            >
+              Close
+            </Button>
+            <Button
+              onClick={() => setMarkedItemDialogOpen(false)}
+              className="flex-1 bg-green-600 hover:bg-green-700"
+            >
+              <CheckCircle className="h-4 w-4 mr-2" />
+              Done
             </Button>
           </div>
         </DialogContent>

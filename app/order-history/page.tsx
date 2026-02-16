@@ -20,9 +20,9 @@ export default function OrderHistoryPage() {
 
   useEffect(() => {
     const allOrders = getCustomerOrders()
-    // Filter only delivered and handed-in orders
+    // Filter only delivered orders (both delivery and hand-in/pickup)
     const completedOrders = allOrders.filter(
-      order => order.status === "delivered" || order.deliveryMethod === "hand-in"
+      order => order.status === "delivered"
     )
     setOrders(completedOrders.sort((a, b) => 
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
@@ -31,7 +31,7 @@ export default function OrderHistoryPage() {
     const handleOrdersUpdate = () => {
       const updated = getCustomerOrders()
       const completed = updated.filter(
-        order => order.status === "delivered" || order.deliveryMethod === "hand-in"
+        order => order.status === "delivered"
       )
       setOrders(completed.sort((a, b) => 
         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
