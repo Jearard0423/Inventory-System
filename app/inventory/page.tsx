@@ -102,7 +102,17 @@ export default function InventoryPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
+    // Normalize category - convert "raw-stocks" to "raw-stock" for consistency
+    const normalizedCategory = formData.category === "raw-stocks" ? "raw-stock" : formData.category
+
+    // Prevent saving if stock exceeds the limit based on linked items
+    if (stockExceedsLimit) {
+      alert(`Cannot save! You can only add up to ${maxStockAllowed} units based on available raw materials.`)
+      return
+    }
+
     let updatedItems: InventoryItem[]
+    let addedItem: InventoryItem | null = null
 
     if (editingItem) {
       updatedItems = menuItems.map((item) =>
@@ -110,7 +120,7 @@ export default function InventoryPage() {
           ? {
               ...item,
               name: formData.name,
-              category: formData.category,
+              category: normalizedCategory,
               stock: formData.stock,
               price: formData.price,
               status: getStockStatus(formData.stock),
@@ -118,17 +128,19 @@ export default function InventoryPage() {
             }
           : item,
       )
+      addedItem = editingItem
     } else {
       const newItem: InventoryItem = {
         id: Date.now().toString(),
         name: formData.name,
-        category: formData.category,
+        category: normalizedCategory,
         stock: formData.stock,
         status: getStockStatus(formData.stock),
         price: formData.price,
         linkedItems: linkedItems.length > 0 ? linkedItems : undefined,
       }
       updatedItems = [...menuItems, newItem]
+      addedItem = newItem
     }
 
     updateInventory(updatedItems)
@@ -138,10 +150,35 @@ export default function InventoryPage() {
     setShowAddDialog(false)
     setEditingItem(null)
     
-    // Show success confirmation
-    const addedItem = editingItem || newItem
-    setLastAddedItem(addedItem)
-    setShowSuccessSheet(true)
+    // Show success confirmation with updated data
+    if (addedItem) {
+      // Update the item with the new form data before showing in success dialog
+      const updatedAddedItem = {
+        ...addedItem,
+        name: formData.name,
+        category: normalizedCategory,
+        stock: formData.stock,
+        price: formData.price,
+        status: getStockStatus(formData.stock),
+      }
+      setLastAddedItem(updatedAddedItem)
+      setShowSuccessSheet(true)
+    }
+  }
+
+  const handleEdit = (item: InventoryItem) => {
+    // Normalize category when loading for editing (convert raw-stocks to raw-stock)
+    const normalizedCategory = item.category === "raw-stocks" ? "raw-stock" : item.category
+    
+    setEditingItem(item)
+    setFormData({
+      name: item.name,
+      category: normalizedCategory,
+      stock: item.stock,
+      price: item.price,
+    })
+    setLinkedItems(item.linkedItems || [])
+    setShowAddDialog(true)
   }
 
   const handleDelete = (id: string) => {
@@ -195,6 +232,7 @@ export default function InventoryPage() {
       rice: "Rice",
       meals: "Meals",
       "raw-stock": "Raw Stocks",
+      "raw-stocks": "Raw Stocks",  // Handle both singular and plural
       utensils: "Utensils",
       container: "Container",
       others: "Others",
@@ -215,6 +253,28 @@ export default function InventoryPage() {
     }
     return { className: styles[status as keyof typeof styles], label: labels[status as keyof typeof labels] }
   }
+
+  // Calculate maximum stock that can be added based on linked raw stock items
+  const calculateMaxStock = (links: Array<{ itemId: string; ratio: number }>) => {
+    if (links.length === 0) return Infinity;
+    
+    let minPossibleUnits = Infinity;
+    
+    for (const link of links) {
+      const linkedItem = menuItems.find(item => item.id === link.itemId);
+      if (linkedItem) {
+        // Calculate how many units can be made with the available stock
+        // If linked item has 10 stock and ratio is 5, we can make 10/5 = 2 units
+        const possibleUnits = Math.floor(linkedItem.stock / link.ratio);
+        minPossibleUnits = Math.min(minPossibleUnits, possibleUnits);
+      }
+    }
+    
+    return minPossibleUnits === Infinity ? Infinity : minPossibleUnits;
+  }
+
+  const maxStockAllowed = calculateMaxStock(linkedItems);
+  const stockExceedsLimit = linkedItems.length > 0 && formData.stock > maxStockAllowed;
 
   return (
     <POSLayout>
@@ -493,9 +553,21 @@ export default function InventoryPage() {
                     placeholder="Enter stock quantity"
                     required
                     min="0"
+                    max={maxStockAllowed === Infinity ? undefined : maxStockAllowed}
                     value={formData.stock}
                     onChange={(e) => setFormData({ ...formData, stock: Number.parseInt(e.target.value) || 0 })}
+                    className={stockExceedsLimit ? "border-red-500" : ""}
                   />
+                  {stockExceedsLimit && (
+                    <p className="text-sm text-red-600 mt-1">
+                      ⚠ Cannot add {formData.stock} units. You only have enough raw materials for {maxStockAllowed} {maxStockAllowed === 1 ? "unit" : "units"}.
+                    </p>
+                  )}
+                  {linkedItems.length > 0 && !stockExceedsLimit && (
+                    <p className="text-sm text-blue-600 mt-1">
+                      ℹ Max stock based on linked items: {maxStockAllowed === Infinity ? "Unlimited" : maxStockAllowed} {maxStockAllowed === 1 ? "unit" : "units"}
+                    </p>
+                  )}
                 </div>
                 
                 <div>
@@ -514,21 +586,30 @@ export default function InventoryPage() {
                 <div>
                   <label className="text-sm font-medium mb-2 block">Linked Items (optional)</label>
                   
-                  {/* Display selected linked items */}
+                  {/* Display selected linked items with stock info */}
                   {linkedItems.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mb-3">
-                      {linkedItems.map(link => {
-                        const item = menuItems.find(mi => mi.id === link.itemId);
-                        return item ? (
-                          <Badge key={link.itemId} variant="secondary" className="flex items-center gap-1">
-                            {item.name} ({link.ratio}:1)
-                            <X 
-                              className="h-3 w-3 cursor-pointer hover:text-destructive" 
-                              onClick={() => removeLinkedItem(link.itemId)}
-                            />
-                          </Badge>
-                        ) : null;
-                      })}
+                    <div className="mb-3 p-2 bg-blue-50 rounded border border-blue-200">
+                      <p className="text-xs text-blue-700 font-semibold mb-2">Linked Raw Materials:</p>
+                      <div className="space-y-1">
+                        {linkedItems.map(link => {
+                          const item = menuItems.find(mi => mi.id === link.itemId);
+                          const availableUnits = item ? Math.floor(item.stock / link.ratio) : 0;
+                          return item ? (
+                            <div key={link.itemId} className="flex items-center justify-between text-xs">
+                              <div className="flex-1">
+                                {item.name}: {link.ratio} needed per unit
+                              </div>
+                              <div className="text-right">
+                                {item.stock} available → {availableUnits} {availableUnits === 1 ? "unit" : "units"}
+                              </div>
+                              <X 
+                                className="h-3 w-3 cursor-pointer hover:text-destructive ml-2" 
+                                onClick={() => removeLinkedItem(link.itemId)}
+                              />
+                            </div>
+                          ) : null;
+                        })}
+                      </div>
                     </div>
                   )}
 
@@ -615,7 +696,7 @@ export default function InventoryPage() {
                   >
                     Cancel
                   </Button>
-                  <Button type="submit" className="flex-1 bg-primary hover:bg-primary/90">
+                  <Button type="submit" disabled={stockExceedsLimit} className="flex-1 bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed">
                     {editingItem ? "Update" : "Add"} Product
                   </Button>
                 </div>

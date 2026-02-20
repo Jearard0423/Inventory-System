@@ -17,6 +17,7 @@ import {
   type KitchenItem,
   type CustomerOrder,
 } from "@/lib/inventory-store"
+import { checkAndSendFoodPreparationReminder, resetNotificationState } from "@/lib/email-notifications"
 
 // Helper function to convert 24-hour time to 12-hour format
 const formatTimeForDisplay = (time24: string): string => {
@@ -141,8 +142,31 @@ export default function KitchenPage() {
     window.addEventListener("customer-orders-updated", handleUpdate)
     window.addEventListener("inventory-updated", handleUpdate)
 
+    // Set up email notification checker - checks every 5 minutes for orders that need reminders
+    const notificationCheckInterval = setInterval(async () => {
+      const orders = getCustomerOrders()
+      await checkAndSendFoodPreparationReminder(orders)
+    }, 5 * 60 * 1000) // Check every 5 minutes
+
+    // Reset notification state at midnight (new day)
+    const now = new Date()
+    const tomorrow = new Date(now)
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    tomorrow.setHours(0, 0, 0, 0)
+    const msUntilMidnight = tomorrow.getTime() - now.getTime()
+    
+    const midnightResetTimeout = setTimeout(() => {
+      resetNotificationState()
+      // And reset again every 24 hours
+      setInterval(() => {
+        resetNotificationState()
+      }, 24 * 60 * 60 * 1000)
+    }, msUntilMidnight)
+
     return () => {
       clearInterval(mealTypeInterval)
+      clearInterval(notificationCheckInterval)
+      clearTimeout(midnightResetTimeout)
       window.removeEventListener("kitchen-updated", handleUpdate)
       window.removeEventListener("orders-updated", handleUpdate)
       window.removeEventListener("customer-orders-updated", handleUpdate)
@@ -333,21 +357,16 @@ export default function KitchenPage() {
       if (!order) return false
       const orderDate = new Date(order.createdAt)
       orderDate.setHours(0, 0, 0, 0)
-      return item.status === "cooked" && item.itemName === itemName && orderDate.getTime() === today.getTime() && order.status !== 'complete'
+      // Never allow undoing items from delivered or complete orders
+      return item.status === "cooked" && item.itemName === itemName && orderDate.getTime() === today.getTime() && order.status !== 'complete' && order.status !== 'delivered'
     })
 
-    // If no cooked items from incomplete orders found, fall back to any cooked items (preserve previous behavior)
+    // If no cooked items from incomplete orders found, don't fall back - prevent affecting delivered orders
     if (cookedItemsForName.length === 0) {
-      cookedItemsForName = kitchenItems.filter(item => {
-        const order = customerOrders.find(order => order.id === item.orderId)
-        if (!order) return false
-        const orderDate = new Date(order.createdAt)
-        orderDate.setHours(0, 0, 0, 0)
-        return item.status === "cooked" && item.itemName === itemName && orderDate.getTime() === today.getTime()
-      })
+      return
     }
     
-    if (cookedItemsForName.length === 0 || quantity <= 0) return
+    if (quantity <= 0) return
     
     // Get the most recently cooked items
     const sortedItems = cookedItemsForName.sort((a, b) => {
@@ -1198,6 +1217,9 @@ export default function KitchenPage() {
             <DialogTitle className="text-base sm:text-lg">
               Order Details
             </DialogTitle>
+            <DialogDescription className="sr-only">
+              View detailed information about the selected order
+            </DialogDescription>
           </DialogHeader>
           <div className="py-2 px-1">
             {selectedOrder && renderOrderDetails(selectedOrder)}

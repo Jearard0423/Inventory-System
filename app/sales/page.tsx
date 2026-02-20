@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -559,9 +559,9 @@ export default function SalesPage() {
           <DialogContent className="max-h-[90vh] flex flex-col p-0 overflow-hidden">
             <DialogHeader className="px-6 pt-6 pb-0">
               <DialogTitle>{printMode === "print" ? "Print Preview" : "Export PDF Preview"}</DialogTitle>
-              <p className="text-sm text-muted-foreground">
-                Select sections to include in your {printMode === "print" ? "print" : "PDF"} report:
-              </p>
+              <DialogDescription>
+                Select sections to include in your {printMode === "print" ? "print" : "PDF"} report
+              </DialogDescription>
             </DialogHeader>
             <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -992,6 +992,9 @@ export default function SalesPage() {
                 <DialogContent>
                   <DialogHeader>
                     <DialogTitle>Add New Expense</DialogTitle>
+                    <DialogDescription>
+                      Enter the expense details to add a new business expense
+                    </DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4">
                     <div>

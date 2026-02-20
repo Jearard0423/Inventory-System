@@ -132,9 +132,18 @@ export const initializeFirebaseSync = () => {
     const menuRef = ref(database, "menu")
     menuListener = onValue(
       menuRef,
-      (snapshot) => {
+      async (snapshot) => {
         if (snapshot.exists()) {
           const menuItems = snapshot.val()
+          
+          // Sync menu changes back to inventories/items path
+          for (const itemId in menuItems) {
+            const menuItem = menuItems[itemId]
+            if (menuItem.stock !== undefined || menuItem.status) {
+              await syncMenuToInventoryItems(itemId, menuItem)
+            }
+          }
+          
           window.dispatchEvent(
             new CustomEvent("firebase-menu-updated", { detail: menuItems })
           )
@@ -205,10 +214,30 @@ export const saveInventoryToFirebase = async (items: InventoryItem[]) => {
     const updates: Record<string, any> = {}
 
     items.forEach((item) => {
-      updates[item.id] = {
-        ...item,
+      // Normalize category: convert "raw-stocks" to "raw-stock" for consistency
+      const normalizedCategory = item.category === "raw-stocks" ? "raw-stock" : item.category
+
+      // Create a clean object without undefined values
+      const itemData: Record<string, any> = {
+        id: item.id,
+        name: item.name,
+        category: normalizedCategory,
+        stock: item.stock,
+        price: item.price,
+        status: item.status,
         lastUpdated: new Date().toISOString(),
       }
+
+      // Only add linkedItems if it exists and is not empty
+      if (item.linkedItems && item.linkedItems.length > 0) {
+        itemData.linkedItems = item.linkedItems
+      }
+
+      // Only add optional fields if they are defined
+      if (item.isUtensil !== undefined) itemData.isUtensil = item.isUtensil
+      if (item.isContainer !== undefined) itemData.isContainer = item.isContainer
+
+      updates[item.id] = itemData
     })
 
     await update(inventoryRef.parent!, updates)
@@ -292,15 +321,29 @@ export const updateMenuStockInFirebase = async (
   status: "in-stock" | "low-stock" | "out-of-stock"
 ) => {
   try {
-    const menuItemRef = ref(database, `menu/${itemId}`)
-    await update(menuItemRef, {
+    // Update both paths to keep them in sync:
+    // 1. menu/{itemId} - for backward compatibility
+    // 2. inventories/items/{itemId} - for the listener that watches this path
+    const updateData = {
       stock: newStock,
       status: status,
       lastUpdated: new Date().toISOString(),
-    })
+    }
+
+    const menuItemRef = ref(database, `menu/${itemId}`)
+    const inventoryItemRef = ref(database, `inventories/items/${itemId}`)
+
+    await Promise.all([
+      update(menuItemRef, updateData),
+      update(inventoryItemRef, updateData),
+    ])
+
+    console.log(
+      `Stock updated for item ${itemId}: ${newStock} (${status})`
+    )
   } catch (error: any) {
     if (error.code !== "PERMISSION_DENIED") {
-      console.error("Error updating menu stock in Firebase:", error)
+      console.error("Error updating stock in Firebase:", error)
     }
     // Silently fail for permission denied (app continues with localStorage)
   }
@@ -517,5 +560,30 @@ export const testFirebaseConnection = async (): Promise<boolean> => {
     }
     console.error("Firebase connection test failed:", error)
     return false
+  }
+}
+
+/**
+ * Sync menu changes back to inventories/items path
+ * Called by menu listener to keep both paths in sync when manual edits occur
+ */
+export const syncMenuToInventoryItems = async (
+  itemId: string,
+  menuItemData: any
+) => {
+  try {
+    const inventoryRef = ref(database, `inventories/items/${itemId}`)
+    // Only sync relevant fields: stock and status
+    const syncData = {
+      stock: menuItemData.stock,
+      status: menuItemData.status,
+      lastUpdated: menuItemData.lastUpdated,
+    }
+    await update(inventoryRef, syncData)
+    console.log(`Menu change synced to inventories/items/${itemId}`)
+  } catch (error: any) {
+    if (error.code !== "PERMISSION_DENIED") {
+      console.error("Error syncing menu to inventory items:", error)
+    }
   }
 }

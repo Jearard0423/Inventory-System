@@ -127,10 +127,12 @@ const saveToLocalStorage = (key: string, data: any) => {
       
       // Dispatch events for real-time updates
       if (key === INVENTORY_ITEMS_KEY) {
+        console.log('[inventory-store] Saving inventory to localStorage and syncing to Firebase...');
         window.dispatchEvent(new Event("inventory-updated"));
         // Also try to sync to Firebase asynchronously (inventory + menu)
         try {
           const { saveInventoryToFirebase, saveMenuToFirebase } = require('./firebase-inventory-sync');
+          console.log('[inventory-store] Firebase sync functions loaded, syncing data...');
           saveInventoryToFirebase(data).catch((err: any) => {
             console.warn('Firebase inventory sync failed (non-critical):', err);
           });
@@ -140,6 +142,7 @@ const saveToLocalStorage = (key: string, data: any) => {
           });
         } catch (err) {
           // Firebase sync not available, continue without it
+          console.warn('[inventory-store] Firebase sync not available:', err);
         }
       }
       if (key === CUSTOMER_ORDERS_KEY) {
@@ -725,7 +728,7 @@ export const updateInventoryItem = (itemId: string, newStock: number, threshold:
     item.status = 'in-stock';
   }
   
-  // Save to localStorage
+  // Save to localStorage - this triggers Firebase sync via saveToLocalStorage
   saveToLocalStorage(INVENTORY_ITEMS_KEY, inventoryItems);
 
   // Also persist the single item to Firestore if available
@@ -747,12 +750,19 @@ export const updateInventoryItem = (itemId: string, newStock: number, threshold:
   if (!item.isUtensil && !item.isContainer && item.category !== 'raw-stock') {
     try {
       const { updateMenuStockInFirebase } = require('./firebase-inventory-sync');
+      console.log('[inventory-store] Syncing menu stock to Firebase RTDB:', item.id, newStock);
       Promise.resolve(updateMenuStockInFirebase(itemId, newStock, item.status)).catch((err: any) => {
         console.warn('Failed to update menu stock in Firebase (non-critical):', err);
       });
     } catch (err) {
       // Firebase sync not available in this environment - ignore silently
+      console.warn('[inventory-store] Firebase sync not available:', err);
     }
+  }
+  
+  // Dispatch event for UI updates
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('inventory-updated'));
   }
   
   return true;
@@ -771,11 +781,13 @@ export const updateInventory = (items: InventoryItem[]): void => {
   // Handle linked items: bidirectional stock management
   // When a derived item stock increases, consume raw materials
   // When a derived item stock decreases, restore raw materials
+  console.log('[inventory-store] updateInventory called with', items.length, 'items');
   const currentItems = [...inventoryItems];
   items.forEach(newItem => {
     const currentItem = currentItems.find(item => item.id === newItem.id);
     if (currentItem) {
       const stockChange = newItem.stock - currentItem.stock;
+      console.log(`[inventory-store] Stock change for ${newItem.name}: ${currentItem.stock} → ${newItem.stock}`);
       
       if (newItem.linkedItems && newItem.linkedItems.length > 0) {
         newItem.linkedItems.forEach(link => {
@@ -793,22 +805,24 @@ export const updateInventory = (items: InventoryItem[]): void => {
   });
 
   inventoryItems = [...items];
+  console.log('[inventory-store] Saving inventory to localStorage and syncing to Firebase...');
   saveToLocalStorage(INVENTORY_ITEMS_KEY, inventoryItems);
-  // Also persist bulk updates to Firestore (best-effort, non-blocking)
-  try {
-    const { saveInventoryToFirestore } = require('./firestore-sync');
-    // Save each item individually to avoid overwriting fields unintentionally
-    inventoryItems.forEach((it) => {
+  
+  // Sync to Firebase RTDB for real-time updates
+  items.forEach((item) => {
+    if (!item.isUtensil && !item.isContainer && item.category !== 'raw-stock') {
       try {
-        console.debug('[inventory-store] bulk save to Firestore:', it.id, it.name)
-      } catch (e) {}
-      Promise.resolve(saveInventoryToFirestore(it)).catch((err: any) => {
-        console.warn('Failed to save inventory item to Firestore (non-critical):', err);
-      });
-    });
-  } catch (err) {
-    // Firestore sync not available or running in server environment - ignore
-  }
+        const { updateMenuStockInFirebase } = require('./firebase-inventory-sync');
+        console.log('[inventory-store] Syncing', item.name, 'stock to Firebase RTDB:', item.stock);
+        Promise.resolve(updateMenuStockInFirebase(item.id, item.stock, item.status)).catch((err: any) => {
+          console.warn('Failed to update menu stock in Firebase (non-critical):', err);
+        });
+      } catch (err) {
+        // Firebase sync not available in this environment - ignore
+        console.warn('[inventory-store] Firebase updateMenuStockInFirebase not available:', err);
+      }
+    }
+  });
 };
 
 export const reduceStock = (itemId: string, quantity: number): boolean => {
@@ -826,6 +840,18 @@ export const reduceStock = (itemId: string, quantity: number): boolean => {
   
   // Save to localStorage
   saveToLocalStorage(INVENTORY_ITEMS_KEY, inventoryItems);
+  
+  // Sync to Firebase RTDB for real-time updates
+  if (!item.isUtensil && !item.isContainer && item.category !== 'raw-stock') {
+    try {
+      const { updateMenuStockInFirebase } = require('./firebase-inventory-sync');
+      Promise.resolve(updateMenuStockInFirebase(itemId, item.stock, item.status)).catch((err: any) => {
+        console.warn('Failed to update stock in Firebase (non-critical):', err);
+      });
+    } catch (err) {
+      // Firebase sync not available - app continues with localStorage
+    }
+  }
   
   return true;
 };
@@ -854,7 +880,6 @@ export const reduceUtensilsForMeal = (mealType: string): boolean => {
   return success;
 };
 
-// Restore utensils by quantity (adds back 1 per utensil per quantity)
 export const restoreUtensilsForQuantity = (quantity: number): boolean => {
   const utensils = inventoryItems.filter(item => item.isUtensil);
   if (utensils.length === 0) return false;
