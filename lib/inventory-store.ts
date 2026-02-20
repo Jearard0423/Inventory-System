@@ -277,10 +277,16 @@ const resetInventoryToNewMenu = () => {
   }
 };
 
-// Initialize with sample inventory items if empty
+// Initialize with sample inventory items if empty AND localStorage is empty
+// This prevents hardcoded defaults from overwriting Firebase data
+// Raw stocks MUST come from Firebase, not from hardcoded defaults
 const initializeInventoryItems = () => {
+  // Skip initialization - inventory should be loaded from Firebase
+  // Only fall back to defaults if absolutely necessary (no localStorage, no Firebase)
   if (inventoryItems.length === 0) {
-    resetInventoryToNewMenu();
+    console.log('[inventory-store] Inventory is empty - waiting for Firebase data or localStorage fallback...');
+    // Don't auto-populate with defaults here
+    // Firebase listener will populate this when data arrives
   }
 };
 
@@ -751,8 +757,20 @@ export const updateInventoryItem = (itemId: string, newStock: number, threshold:
     try {
       const { updateMenuStockInFirebase } = require('./firebase-inventory-sync');
       console.log('[inventory-store] Syncing menu stock to Firebase RTDB:', item.id, newStock);
-      Promise.resolve(updateMenuStockInFirebase(itemId, newStock, item.status)).catch((err: any) => {
+      Promise.resolve(updateMenuStockInFirebase(itemId, newStock, item.status, item.linkedItems)).catch((err: any) => {
         console.warn('Failed to update menu stock in Firebase (non-critical):', err);
+      });
+    } catch (err) {
+      // Firebase sync not available in this environment - ignore silently
+      console.warn('[inventory-store] Firebase sync not available:', err);
+    }
+  } else {
+    // Sync raw-stock, containers, and utensils to inventories/items directly
+    try {
+      const { updateInventoryItemInFirebase } = require('./firebase-inventory-sync');
+      console.log('[inventory-store] Syncing inventory item to Firebase RTDB:', item.id, newStock);
+      Promise.resolve(updateInventoryItemInFirebase(item)).catch((err: any) => {
+        console.warn('Failed to update inventory item in Firebase (non-critical):', err);
       });
     } catch (err) {
       // Firebase sync not available in this environment - ignore silently
@@ -775,6 +793,28 @@ export const getInventory = (): InventoryItem[] => {
 // Get only food items (visible to customers in menu)
 export const getMenuItems = (): InventoryItem[] => {
   return inventoryItems.filter(item => !item.isUtensil && !item.isContainer && item.category !== 'raw-stock');
+};
+
+/**
+ * Force refresh inventory from Firebase
+ * Useful when local state might be stale or out of sync
+ * Can be called manually by the UI when needed
+ */
+export const forceRefreshInventoryFromFirebase = async (): Promise<InventoryItem[]> => {
+  try {
+    const { forceRefreshInventoryFromFirebase: fbRefresh } = await import('./firebase-inventory-sync');
+    console.log('[inventory-store] Triggering force refresh from Firebase...');
+    const items = await fbRefresh();
+    if (items && items.length > 0) {
+      inventoryItems = items as InventoryItem[];
+      console.log('[inventory-store] Force refresh successful, loaded', items.length, 'items');
+      window.dispatchEvent(new Event('inventory-updated'));
+    }
+    return items as InventoryItem[];
+  } catch (err) {
+    console.error('[inventory-store] Force refresh from Firebase failed:', err);
+    return [];
+  }
 };
 
 export const updateInventory = (items: InventoryItem[]): void => {
@@ -809,18 +849,26 @@ export const updateInventory = (items: InventoryItem[]): void => {
   saveToLocalStorage(INVENTORY_ITEMS_KEY, inventoryItems);
   
   // Sync to Firebase RTDB for real-time updates
+  // Sync ALL items to inventories/items (including raw-stock, containers, utensils)
   items.forEach((item) => {
-    if (!item.isUtensil && !item.isContainer && item.category !== 'raw-stock') {
-      try {
-        const { updateMenuStockInFirebase } = require('./firebase-inventory-sync');
-        console.log('[inventory-store] Syncing', item.name, 'stock to Firebase RTDB:', item.stock);
-        Promise.resolve(updateMenuStockInFirebase(item.id, item.stock, item.status)).catch((err: any) => {
+    try {
+      const { updateMenuStockInFirebase, updateInventoryItemInFirebase } = require('./firebase-inventory-sync');
+      console.log('[inventory-store] Syncing', item.name, 'stock to Firebase RTDB:', item.stock);
+      
+      // Sync menu items to menu path (for backward compatibility and linked items)
+      if (!item.isUtensil && !item.isContainer && item.category !== 'raw-stock') {
+        Promise.resolve(updateMenuStockInFirebase(item.id, item.stock, item.status, item.linkedItems)).catch((err: any) => {
           console.warn('Failed to update menu stock in Firebase (non-critical):', err);
         });
-      } catch (err) {
-        // Firebase sync not available in this environment - ignore
-        console.warn('[inventory-store] Firebase updateMenuStockInFirebase not available:', err);
+      } else {
+        // Sync all other items (raw-stock, containers, utensils) to inventories/items directly
+        Promise.resolve(updateInventoryItemInFirebase(item)).catch((err: any) => {
+          console.warn('Failed to update inventory item in Firebase (non-critical):', err);
+        });
       }
+    } catch (err) {
+      // Firebase sync not available in this environment - ignore
+      console.warn('[inventory-store] Firebase sync not available:', err);
     }
   });
 };
@@ -845,8 +893,18 @@ export const reduceStock = (itemId: string, quantity: number): boolean => {
   if (!item.isUtensil && !item.isContainer && item.category !== 'raw-stock') {
     try {
       const { updateMenuStockInFirebase } = require('./firebase-inventory-sync');
-      Promise.resolve(updateMenuStockInFirebase(itemId, item.stock, item.status)).catch((err: any) => {
+      Promise.resolve(updateMenuStockInFirebase(itemId, item.stock, item.status, item.linkedItems)).catch((err: any) => {
         console.warn('Failed to update stock in Firebase (non-critical):', err);
+      });
+    } catch (err) {
+      // Firebase sync not available - app continues with localStorage
+    }
+  } else {
+    // Sync raw-stock, containers, and utensils to inventories/items directly
+    try {
+      const { updateInventoryItemInFirebase } = require('./firebase-inventory-sync');
+      Promise.resolve(updateInventoryItemInFirebase(item)).catch((err: any) => {
+        console.warn('Failed to update inventory item in Firebase (non-critical):', err);
       });
     } catch (err) {
       // Firebase sync not available - app continues with localStorage

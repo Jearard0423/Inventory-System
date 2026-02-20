@@ -49,7 +49,9 @@ export default function InventoryPage() {
     // Load initial data from localStorage (fallback)
     const loadInitialData = () => {
       if (isMounted) {
-        setMenuItems(getInventory())
+        const data = getInventory()
+        console.log('[inventory-page] Loading initial data:', data.length, 'items')
+        setMenuItems(data)
         setIsLoading(false)
       }
     }
@@ -59,6 +61,7 @@ export default function InventoryPage() {
       if (isMounted) {
         console.log("Firebase inventory update received - loading fresh data")
         const freshData = getInventory()
+        console.log('[inventory-page] Firebase update apply:', freshData.length, 'items')
         setMenuItems(freshData)
         setHasReceivedFirebaseData(true)
         setIsLoading(false)
@@ -68,27 +71,30 @@ export default function InventoryPage() {
     // Local inventory update handler
     const handleInventoryUpdate = () => {
       if (isMounted) {
-        setMenuItems(getInventory())
+        const data = getInventory()
+        console.log('[inventory-page] Local update apply:', data.length, 'items')
+        setMenuItems(data)
       }
     }
 
-    // Load initial data after a brief delay to allow Firebase to initialize
-    const initialLoadTimer = setTimeout(() => {
-      loadInitialData()
-    }, 100)
-
-    // After 3 seconds, if no Firebase data has arrived, just proceed with what we have
-    const fallbackTimer = setTimeout(() => {
-      if (isMounted && !hasReceivedFirebaseData) {
-        console.warn("Firebase data not received after 3 seconds, using localStorage")
-        setHasReceivedFirebaseData(true)
-      }
-    }, 3000)
-
-    // Listen for Firebase updates (highest priority)
+    // Listen for Firebase updates (highest priority) - set up immediately
     window.addEventListener("firebase-inventory-updated", handleFirebaseInventoryUpdate)
     // Listen for local updates (lower priority)
     window.addEventListener("inventory-updated", handleInventoryUpdate)
+
+    // Wait longer for Firebase to initialize before using localStorage fallback
+    // Firebase forceRefresh is async and can take 500ms-1s on slow connections
+    const initialLoadTimer = setTimeout(() => {
+      loadInitialData()
+    }, 1000)
+
+    // After 4 seconds, if no Firebase data has arrived, just proceed with what we have
+    const fallbackTimer = setTimeout(() => {
+      if (isMounted && !hasReceivedFirebaseData) {
+        console.warn("[inventory-page] Firebase data not received after 4 seconds, using current data")
+        setHasReceivedFirebaseData(true)
+      }
+    }, 4000)
     
     return () => {
       isMounted = false
@@ -202,6 +208,14 @@ export default function InventoryPage() {
     setLinkedItems(linkedItems.filter(link => link.itemId !== itemId));
   };
 
+  // Normalize category for consistent comparison (handle raw-stock/raw-stocks variants)
+  const normalizeCategory = (category: string): string => {
+    if (category === "raw-stocks" || category === "raw-stock") {
+      return "raw-stock"
+    }
+    return category
+  }
+
   const availableItems = menuItems.filter(item => 
     item.id !== (editingItem?.id || "") && 
     !linkedItems.some(link => link.itemId === item.id)
@@ -209,7 +223,9 @@ export default function InventoryPage() {
 
   const filteredItems = menuItems.filter((item) => {
     const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesCategory = categoryFilter === "all-categories" || item.category === categoryFilter
+    const normalizedItemCategory = normalizeCategory(item.category)
+    const normalizedFilter = normalizeCategory(categoryFilter)
+    const matchesCategory = normalizedFilter === "all-categories" || normalizedItemCategory === normalizedFilter
     const matchesStatus = statusFilter === "all-status" || item.status === statusFilter
     return matchesSearch && matchesCategory && matchesStatus
   })

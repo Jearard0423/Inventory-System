@@ -34,6 +34,92 @@ let ordersListener: Unsubscribe | null = null
 let kitchenListener: Unsubscribe | null = null
 let menuListener: Unsubscribe | null = null
 
+// Track recently updated items to prevent circular sync loops
+// Maps itemId -> timestamp of when it was last updated locally
+const recentlyUpdatedItems = new Map<string, number>()
+const DEBOUNCE_DELAY_MS = 1500 // Ignore listener updates for 1.5 seconds after local update
+
+/**
+ * Mark an item as recently updated locally to prevent listener from overwriting it
+ */
+export const markItemAsLocallyUpdated = (itemId: string) => {
+  recentlyUpdatedItems.set(itemId, Date.now())
+  // Auto-cleanup after debounce period
+  setTimeout(() => {
+    recentlyUpdatedItems.delete(itemId)
+  }, DEBOUNCE_DELAY_MS)
+}
+
+/**
+ * Check if an item was recently updated locally and should be ignored from listener
+ */
+const isRecentlyUpdatedLocally = (itemId: string): boolean => {
+  const lastUpdate = recentlyUpdatedItems.get(itemId)
+  if (!lastUpdate) return false
+  
+  const timeSinceUpdate = Date.now() - lastUpdate
+  return timeSinceUpdate < DEBOUNCE_DELAY_MS
+}
+
+/**
+ * Normalize inventory items from Firebase
+ * Ensures category values are consistent (raw-stocks -> raw-stock, etc)
+ */
+const normalizeFirebaseItems = (items: Record<string, any>): Record<string, any> => {
+  const normalized: Record<string, any> = {}
+  
+  for (const [key, item] of Object.entries(items)) {
+    // Normalize category: convert "raw-stocks" (plural) to "raw-stock" (singular)
+    const normalizedCategory = item.category === "raw-stocks" ? "raw-stock" : item.category
+    
+    normalized[key] = {
+      ...item,
+      category: normalizedCategory,
+    }
+  }
+  
+  return normalized
+}
+
+/**
+ * Force refresh inventory from Firebase and update all listeners
+ * Useful for syncing when localStorage might be stale
+ */
+export const forceRefreshInventoryFromFirebase = async () => {
+  try {
+    const inventoryRef = ref(database, "inventories/items")
+    const snapshot = await get(inventoryRef)
+    
+    if (snapshot.exists()) {
+      let items = snapshot.val()
+      // Normalize items before processing
+      items = normalizeFirebaseItems(items)
+      
+      console.log('[firebase-inventory-sync] Force refreshed inventory from Firebase:', Object.keys(items).length, 'items')
+      
+      // Update localStorage immediately
+      localStorage.setItem(
+        "yellowbell_inventory_items",
+        JSON.stringify(Object.values(items))
+      )
+      
+      // Dispatch event to update UI
+      window.dispatchEvent(
+        new CustomEvent("firebase-inventory-updated", { detail: items })
+      )
+      
+      return Object.values(items)
+    }
+    
+    return []
+  } catch (error: any) {
+    if (error.code !== "PERMISSION_DENIED") {
+      console.error('Error force refreshing inventory from Firebase:', error)
+    }
+    return []
+  }
+}
+
 /**
  * Initialize Firebase sync on app start
  * Sets up real-time listeners for inventory, orders, kitchen items, and menu
@@ -43,17 +129,28 @@ export const initializeFirebaseSync = () => {
   if (typeof window === "undefined") return
 
   try {
+    // First, force refresh from Firebase to ensure we have fresh data
+    console.log('[firebase-inventory-sync] Initializing Firebase sync...')
+    forceRefreshInventoryFromFirebase().catch(err => {
+      console.warn('[firebase-inventory-sync] Initial Firebase refresh failed, will use real-time listener:', err)
+    })
+
     // Set up inventory items listener with error handling
     const inventoryRef = ref(database, "inventories/items")
     inventoryListener = onValue(
       inventoryRef,
       (snapshot) => {
         if (snapshot.exists()) {
-          const items = snapshot.val()
+          let items = snapshot.val()
+          // Normalize items from Firebase
+          items = normalizeFirebaseItems(items)
+          console.log('[firebase-inventory-sync] Real-time inventory update received:', Object.keys(items).length, 'items')
+          
           // Dispatch event for UI components to refresh
           window.dispatchEvent(
             new CustomEvent("firebase-inventory-updated", { detail: items })
           )
+          
           // Also update localStorage
           localStorage.setItem(
             "yellowbell_inventory_items",
@@ -212,6 +309,7 @@ export const saveInventoryToFirebase = async (items: InventoryItem[]) => {
   try {
     const inventoryRef = ref(database, "inventories/items")
     const updates: Record<string, any> = {}
+    const itemIds: string[] = []
 
     items.forEach((item) => {
       // Normalize category: convert "raw-stocks" to "raw-stock" for consistency
@@ -238,6 +336,7 @@ export const saveInventoryToFirebase = async (items: InventoryItem[]) => {
       if (item.isContainer !== undefined) itemData.isContainer = item.isContainer
 
       updates[item.id] = itemData
+      itemIds.push(item.id)
     })
 
     await update(inventoryRef.parent!, updates)
@@ -313,21 +412,28 @@ export const saveMenuToFirebase = async (menuItems: InventoryItem[]) => {
 
 /**
  * Update menu item stock in Firebase (reflecting inventory changes)
+ * Includes linkedItems to ensure ingredient relationships are preserved
  * Falls back silently if permissions denied
  */
 export const updateMenuStockInFirebase = async (
   itemId: string,
   newStock: number,
-  status: "in-stock" | "low-stock" | "out-of-stock"
+  status: "in-stock" | "low-stock" | "out-of-stock",
+  linkedItems?: Array<{ itemId: string; ratio: number }>
 ) => {
   try {
     // Update both paths to keep them in sync:
     // 1. menu/{itemId} - for backward compatibility
     // 2. inventories/items/{itemId} - for the listener that watches this path
-    const updateData = {
+    const updateData: Record<string, any> = {
       stock: newStock,
       status: status,
       lastUpdated: new Date().toISOString(),
+    }
+
+    // Include linkedItems if provided to maintain ingredient relationships
+    if (linkedItems && linkedItems.length > 0) {
+      updateData.linkedItems = linkedItems
     }
 
     const menuItemRef = ref(database, `menu/${itemId}`)
@@ -339,11 +445,38 @@ export const updateMenuStockInFirebase = async (
     ])
 
     console.log(
-      `Stock updated for item ${itemId}: ${newStock} (${status})`
+      `Stock updated for item ${itemId}: ${newStock} (${status})${linkedItems && linkedItems.length > 0 ? ` with ${linkedItems.length} linked items` : ""}`
     )
   } catch (error: any) {
     if (error.code !== "PERMISSION_DENIED") {
       console.error("Error updating stock in Firebase:", error)
+    }
+    // Silently fail for permission denied (app continues with localStorage)
+  }
+}
+
+/**
+ * Update inventory item in Firebase (for raw-stock, containers, utensils, etc.)
+ * Updates the item in inventories/items path for real-time sync
+ * Falls back silently if permissions denied
+ */
+export const updateInventoryItemInFirebase = async (item: InventoryItem) => {
+  try {
+    const inventoryItemRef = ref(database, `inventories/items/${item.id}`)
+    const updateData: Record<string, any> = {
+      stock: item.stock,
+      status: item.status,
+      lastUpdated: new Date().toISOString(),
+    }
+
+    await update(inventoryItemRef, updateData)
+
+    console.log(
+      `Inventory item updated in Firebase: ${item.id} (${item.name}), stock: ${item.stock}`
+    )
+  } catch (error: any) {
+    if (error.code !== "PERMISSION_DENIED") {
+      console.error("Error updating inventory item in Firebase:", error)
     }
     // Silently fail for permission denied (app continues with localStorage)
   }
