@@ -139,7 +139,7 @@ export default function DeliveryPage() {
       }
     }
     
-    if (filterStatus === "all") return true
+    if (filterStatus === "all") return order.status !== 'delivered'
     if (filterStatus === "delivered") return order.status === "delivered"
     if (filterStatus === "complete") return order.status === "complete"
     if (filterStatus === "incomplete") return order.status === "incomplete"
@@ -635,33 +635,19 @@ export default function DeliveryPage() {
                                 <CheckCircle className="h-3 w-3 mr-1" />
                                 Mark as Delivered
                               </Button>
-                              {order.deliveryMethod === 'lalamove' ? (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => {
-                                    setSelectedOrder(order)
-                                    setLalamoveDetailsModalOpen(true)
-                                  }}
-                                  className="w-full border-blue-500 text-blue-700 hover:bg-blue-50"
-                                >
-                                  <Truck className="h-3 w-3 mr-1" />
-                                  Mark as Delivered (Lalamove)
-                                </Button>
-                              ) : (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => {
-                                    setSelectedOrder(order)
-                                    setOrderDetailsModalOpen(true)
-                                  }}
-                                  className="w-full border-green-500 text-green-700 hover:bg-green-50"
-                                >
-                                  <CheckCircle className="h-3 w-3 mr-1" />
-                                  Mark as Handed In
-                                </Button>
-                              )}
+
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setSelectedOrder(order)
+                                  setLalamoveDetailsModalOpen(true)
+                                }}
+                                className="w-full border-blue-500 text-blue-700 hover:bg-blue-50"
+                              >
+                                <Truck className="h-3 w-3 mr-1" />
+                                Mark as Delivered (Lalamove)
+                              </Button>
                             </div>
                           )}
                         </div>
@@ -927,7 +913,11 @@ export default function DeliveryPage() {
                   <div>
                     <h4 className="font-semibold mb-2">Payment Status</h4>
                     <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-lg">
-                      <p className="font-medium text-red-600">NOT PAID</p>
+                      {selectedOrder.paymentStatus === 'paid' ? (
+                        <p className="font-medium text-green-600">PAID - {selectedOrder.paymentMethod?.toUpperCase() || 'CASH'}</p>
+                      ) : (
+                        <p className="font-medium text-red-600">NOT PAID</p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1096,7 +1086,11 @@ export default function DeliveryPage() {
                   <div>
                     <h4 className="font-semibold mb-2">Payment Status</h4>
                     <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-lg">
-                      <p className="font-medium text-red-600">NOT PAID</p>
+                      {selectedOrder.paymentStatus === 'paid' ? (
+                        <p className="font-medium text-green-600">PAID - {selectedOrder.paymentMethod?.toUpperCase() || 'CASH'}</p>
+                      ) : (
+                        <p className="font-medium text-red-600">NOT PAID</p>
+                      )}
                     </div>
                   </div>
                 </div>

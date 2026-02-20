@@ -173,7 +173,7 @@ export default function NewOrderPage() {
 
   useEffect(() => {
     const loadInventory = () => {
-      const inventory = getMenuItems().filter((item) => item.category !== "others" && item.stock > 0)
+      const inventory = getMenuItems().filter((item) => item.category !== "others" && item.stock > 0 && canOrderItem(item.id, 1))
       setMenuItems(inventory)
     }
 

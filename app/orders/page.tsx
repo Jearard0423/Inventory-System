@@ -348,11 +348,16 @@ export default function OrdersPage() {
     todayDate.setHours(0, 0, 0, 0)
 
     if (orderType === "today") {
+      // Exclude orders that have been delivered (they should live in Order History)
+      const custOrder = customerOrders.find(co => co.id === order.id)
+      if (custOrder && custOrder.status === 'delivered') return false
       return orderDate.toDateString() === todayDate.toDateString()
     } else if (orderType === "advanced") {
       return orderDate > todayDate
     } else {
-      // Default to today's orders only
+      // Default to today's orders only (exclude delivered)
+      const custOrder = customerOrders.find(co => co.id === order.id)
+      if (custOrder && custOrder.status === 'delivered') return false
       return orderDate.toDateString() === todayDate.toDateString()
     }
   }).sort((a, b) => {
@@ -396,6 +401,8 @@ export default function OrdersPage() {
     const dayOrders = orders.filter((order) => {
       const orderDate = new Date(order.date)
       orderDate.setHours(0, 0, 0, 0)
+      // Exclude orders that are completed (delivered) from today's active counts
+      if (order.status === 'completed') return false
       return orderDate.toDateString() === targetDate.toDateString()
     })
 

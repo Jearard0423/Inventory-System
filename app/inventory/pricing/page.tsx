@@ -96,6 +96,8 @@ export default function PricingCalculatorPage() {
     setOverheadPct(tpl.overhead)
     setProfitPct(tpl.profit)
     if (typeof tpl.regularSellingPrice !== 'undefined') setRegularSellingPrice(tpl.regularSellingPrice)
+    setTemplateName(name)
+    setSelectedTemplate(name)
   }
 
   const deleteTemplate = (name: string) => {
@@ -397,13 +399,20 @@ export default function PricingCalculatorPage() {
               <div className="flex items-center gap-2 pt-4">
                 <Input placeholder="Template name" value={templateName} onChange={(e) => setTemplateName(e.target.value)} className="w-64" />
                 <Button onClick={() => saveTemplate(templateName)} disabled={!templateName} size="sm">Save Template</Button>
+                <Button variant="outline" size="sm" onClick={() => {
+                  // New template clears current draft for a fresh start
+                  setIngredients([{ id: `ing-${Date.now()}`, name: "", purchaseUnit: "kg", purchaseUnitAmount: 1, costPerPurchaseUnit: 0, amountUsedPerProduct: 0, usedUnit: "g" }])
+                  setPackaging([{ id: `pkg-${Date.now()}`, name: '', pcs: 0, costPerPiece: 0 }])
+                  setTemplateName("")
+                  setSelectedTemplate("")
+                  setRegularSellingPrice("")
+                }}>New Template</Button>
                 <div className="ml-auto flex items-center gap-2">
-                  <select className="text-sm p-1" value={selectedTemplate || ""} onChange={(e) => setSelectedTemplate(e.target.value)}>
+                  <select className="text-sm p-1" value={selectedTemplate || ""} onChange={(e) => { const v = e.target.value; if (v) { loadTemplate(v) } else { setSelectedTemplate("") } }}>
                     <option value="">Select template...</option>
                     {Object.keys(templates).map(tn => <option key={tn} value={tn}>{tn}</option>)}
                   </select>
-                  <Button size="sm" onClick={() => selectedTemplate && loadTemplate(selectedTemplate)} disabled={!selectedTemplate}>Load</Button>
-                  <Button size="sm" variant="destructive" onClick={() => { if (selectedTemplate) { deleteTemplate(selectedTemplate); setSelectedTemplate("") } }} disabled={!selectedTemplate}>Delete</Button>
+                  <Button size="sm" variant="destructive" onClick={() => { if (selectedTemplate) { deleteTemplate(selectedTemplate); setSelectedTemplate(""); setTemplateName("") } }} disabled={!selectedTemplate}>Delete</Button>
                 </div>
               </div>
             </div>

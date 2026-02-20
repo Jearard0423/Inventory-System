@@ -301,7 +301,32 @@ export const getItemStock = (itemId: string): number => {
 // Check if item can be ordered in requested quantity
 export const canOrderItem = (itemId: string, quantity: number): boolean => {
   const stock = getItemStock(itemId);
-  return stock >= quantity;
+  if (stock < quantity) return false;
+
+  // Also check linked items (raw stocks) if present
+  const menuItem = inventoryItems.find(it => it.id === itemId)
+  if (!menuItem) return false
+
+  // Check linkedItems ratios (e.g., menu item consumes raw materials)
+  if (menuItem.linkedItems && menuItem.linkedItems.length > 0) {
+    for (const link of menuItem.linkedItems) {
+      const linked = inventoryItems.find(i => i.id === link.itemId)
+      if (!linked) return false
+      const required = link.ratio * quantity
+      if ((linked.stock || 0) < required) return false
+    }
+  }
+
+  // Check RAW_STOCK_DEDUCTION_MAP for items that deduct raw stock by name
+  const rawDeduction = RAW_STOCK_DEDUCTION_MAP[menuItem.name]
+  if (rawDeduction) {
+    const raw = inventoryItems.find(i => i.name === rawDeduction.rawStock)
+    if (!raw) return false
+    const requiredRaw = rawDeduction.amount * quantity
+    if ((raw.stock || 0) < requiredRaw) return false
+  }
+
+  return true;
 };
 
 // Check if all items in cart can be ordered
@@ -357,7 +382,8 @@ export const getKitchenItems = (): KitchenItem[] => {
 
 export const updateKitchenItems = (items: KitchenItem[]): void => {
   kitchenItems = [...items];
-  // In a real app, you would save to a database here
+  // Persist kitchen items so UI stays in sync across views
+  saveToLocalStorage(KITCHEN_ITEMS_KEY, kitchenItems);
 };
 
 export const getCustomerOrders = (): CustomerOrder[] => {
@@ -366,8 +392,87 @@ export const getCustomerOrders = (): CustomerOrder[] => {
 
 export const updateCustomerOrders = (orders: CustomerOrder[]): void => {
   customerOrders = [...orders];
-  // In a real app, you would save to a database here
+  // Persist customer orders to localStorage so other views see the change
+  saveToLocalStorage(CUSTOMER_ORDERS_KEY, customerOrders);
 };
+
+// Listen for Firebase real-time updates and update in-memory state accordingly.
+// We avoid calling `saveToLocalStorage` here to prevent a loop back to Firebase.
+if (typeof window !== 'undefined') {
+  try {
+    window.addEventListener('firebase-inventory-updated', (ev: Event) => {
+      if (ev instanceof CustomEvent && ev.detail) {
+        try {
+          const items = Object.values(ev.detail as any) as InventoryItem[]
+          inventoryItems = items
+          try {
+            localStorage.setItem(INVENTORY_ITEMS_KEY, JSON.stringify(inventoryItems))
+          } catch (err) {
+            console.warn('Failed to write inventory to localStorage from Firebase update', err)
+          }
+          window.dispatchEvent(new Event('inventory-updated'))
+        } catch (err) {
+          console.error('Error applying firebase-inventory-updated:', err)
+        }
+      }
+    })
+
+    window.addEventListener('firebase-orders-updated', (ev: Event) => {
+      if (ev instanceof CustomEvent && ev.detail) {
+        try {
+          const orders = Object.values(ev.detail as any) as CustomerOrder[]
+          customerOrders = orders
+          try {
+            localStorage.setItem(CUSTOMER_ORDERS_KEY, JSON.stringify(customerOrders))
+          } catch (err) {
+            console.warn('Failed to write customer orders to localStorage from Firebase update', err)
+          }
+          window.dispatchEvent(new Event('orders-updated'))
+        } catch (err) {
+          console.error('Error applying firebase-orders-updated:', err)
+        }
+      }
+    })
+
+    window.addEventListener('firebase-kitchen-updated', (ev: Event) => {
+      if (ev instanceof CustomEvent && ev.detail) {
+        try {
+          const items = Object.values(ev.detail as any) as KitchenItem[]
+          kitchenItems = items
+          try {
+            localStorage.setItem(KITCHEN_ITEMS_KEY, JSON.stringify(kitchenItems))
+          } catch (err) {
+            console.warn('Failed to write kitchen items to localStorage from Firebase update', err)
+          }
+          window.dispatchEvent(new Event('kitchen-updated'))
+        } catch (err) {
+          console.error('Error applying firebase-kitchen-updated:', err)
+        }
+      }
+    })
+
+    // Menu updates are stored under yellowbell_menu_items; some components may use this key
+    window.addEventListener('firebase-menu-updated', (ev: Event) => {
+      if (ev instanceof CustomEvent && ev.detail) {
+        try {
+          const menu = Object.values(ev.detail as any)
+          try {
+            localStorage.setItem('yellowbell_menu_items', JSON.stringify(menu))
+          } catch (err) {
+            console.warn('Failed to write menu items to localStorage from Firebase update', err)
+          }
+          // Dispatch inventory-updated so menu-consuming components reload from store/getInventory/getMenuItems
+          window.dispatchEvent(new Event('inventory-updated'))
+        } catch (err) {
+          console.error('Error applying firebase-menu-updated:', err)
+        }
+      }
+    })
+  } catch (err) {
+    // Non-fatal; if window listeners can't be attached, app will use localStorage
+    console.warn('Could not attach Firebase update listeners in inventory-store:', err)
+  }
+}
 
 export const markItemAsCooked = (itemId: string, quantity?: number, orderId?: string): boolean => {
   const item = kitchenItems.find(item => item.id === itemId);
@@ -410,7 +515,7 @@ export const markItemAsCooked = (itemId: string, quantity?: number, orderId?: st
       });
 
       if (allCooked) {
-        order.status = 'ready';
+        order.status = 'complete';
       } else {
         order.status = 'cooking';
       }
@@ -520,6 +625,18 @@ export const markOrderAsDelivered = (orderId: string): boolean => {
   // Persist changes
   saveToLocalStorage(CUSTOMER_ORDERS_KEY, customerOrders);
   saveToLocalStorage(KITCHEN_ITEMS_KEY, kitchenItems);
+
+  // Also update the regular orders list so Orders page moves it to history
+  if (typeof window !== 'undefined') {
+    try {
+      const existingOrders = JSON.parse(localStorage.getItem("yellowbell_orders") || "[]")
+      const updatedOrders = existingOrders.map((o: any) => o.id === orderId ? { ...o, status: 'completed' } : o)
+      localStorage.setItem("yellowbell_orders", JSON.stringify(updatedOrders))
+      window.dispatchEvent(new Event('orders-updated'))
+    } catch (e) {
+      // ignore
+    }
+  }
   
   // Dispatch events for UI updates
   if (typeof window !== 'undefined') {

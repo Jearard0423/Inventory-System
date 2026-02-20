@@ -279,38 +279,8 @@ export default function KitchenPage() {
     itemsToMark.forEach(itemToMark => {
       markItemAsCooked(itemToMark.id, 1, itemToMark.orderId)
     })
-
-    const orders = getCustomerOrders()
-    const updated = orders.map((order) => {
-      const orderItemsToMark = itemsToMark.filter(item => item.customerName === order.customerName)
-      if (orderItemsToMark.length === 0) return order
-      
-      const existingCooked = order.cookedItems.find((item) => item.name === itemName)
-      if (existingCooked) {
-        return {
-          ...order,
-          cookedItems: order.cookedItems.map((item) =>
-            item.name === itemName ? { ...item, quantity: item.quantity + orderItemsToMark.length } : item,
-          ),
-        }
-      } else {
-        return {
-          ...order,
-          cookedItems: [...order.cookedItems, { name: itemName, quantity: orderItemsToMark.length }],
-        }
-      }
-    })
-
-    const updatedWithStatus = updated.map((order) => {
-      const totalOrdered = order.orderedItems.reduce((sum, item) => sum + item.quantity, 0)
-      const totalCooked = order.cookedItems.reduce((sum, item) => sum + item.quantity, 0)
-      return {
-        ...order,
-        status: totalOrdered === totalCooked && totalOrdered > 0 ? ("complete" as const) : ("incomplete" as const),
-      }
-    })
-
-    updateCustomerOrders(updatedWithStatus)
+    // `markItemAsCooked` updates customer orders and kitchen items (and persists them),
+    // so avoid duplicating those updates here. Just refresh local view.
     window.dispatchEvent(new Event("delivery-updated"))
     loadData()
     
@@ -341,40 +311,8 @@ export default function KitchenPage() {
     allItemsToCook.forEach(itemToMark => {
       markItemAsCooked(itemToMark.id, 1, itemToMark.orderId)
     })
-
-    // Update customer orders
-    const orders = getCustomerOrders()
-    const updated = orders.map((order) => {
-      const orderItemsToMark = allItemsToCook.filter(item => item.customerName === order.customerName)
-      if (orderItemsToMark.length === 0) return order
-      
-      const updatedCookedItems = [...order.cookedItems]
-      
-      orderItemsToMark.forEach(itemToMark => {
-        const existingCooked = updatedCookedItems.find((item) => item.name === itemToMark.itemName)
-        if (existingCooked) {
-          existingCooked.quantity += 1
-        } else {
-          updatedCookedItems.push({ name: itemToMark.itemName, quantity: 1 })
-        }
-      })
-      
-      return {
-        ...order,
-        cookedItems: updatedCookedItems,
-      }
-    })
-
-    const updatedWithStatus = updated.map((order) => {
-      const totalOrdered = order.orderedItems.reduce((sum, item) => sum + item.quantity, 0)
-      const totalCooked = order.cookedItems.reduce((sum, item) => sum + item.quantity, 0)
-      return {
-        ...order,
-        status: totalOrdered === totalCooked && totalOrdered > 0 ? ("complete" as const) : ("incomplete" as const),
-      }
-    })
-
-    updateCustomerOrders(updatedWithStatus)
+    // `markItemAsCooked` already updated orders/kitchen state and persisted them.
+    // Refresh local view instead of mutating orders here.
     window.dispatchEvent(new Event("delivery-updated"))
     loadData()
     
@@ -388,16 +326,26 @@ export default function KitchenPage() {
   }
 
   const handleUndoCooked = (itemName: string, quantity: number = 1) => {
-    const cookedItemsForName = kitchenItems.filter(item => {
-      // Only include items from today's orders
+    // Prefer cooked items that belong to orders which are not fully completed.
+    // This avoids undoing items for previously completed customers who ordered the same meal.
+    let cookedItemsForName = kitchenItems.filter(item => {
       const order = customerOrders.find(order => order.id === item.orderId)
       if (!order) return false
-      
       const orderDate = new Date(order.createdAt)
       orderDate.setHours(0, 0, 0, 0)
-      
-      return item.status === "cooked" && item.itemName === itemName && orderDate.getTime() === today.getTime()
+      return item.status === "cooked" && item.itemName === itemName && orderDate.getTime() === today.getTime() && order.status !== 'complete'
     })
+
+    // If no cooked items from incomplete orders found, fall back to any cooked items (preserve previous behavior)
+    if (cookedItemsForName.length === 0) {
+      cookedItemsForName = kitchenItems.filter(item => {
+        const order = customerOrders.find(order => order.id === item.orderId)
+        if (!order) return false
+        const orderDate = new Date(order.createdAt)
+        orderDate.setHours(0, 0, 0, 0)
+        return item.status === "cooked" && item.itemName === itemName && orderDate.getTime() === today.getTime()
+      })
+    }
     
     if (cookedItemsForName.length === 0 || quantity <= 0) return
     
@@ -415,7 +363,9 @@ export default function KitchenPage() {
     const updated = items.map((item) => {
       const itemToUndo = itemsToUndo.find(undoItem => undoItem.id === item.id)
       if (itemToUndo) {
-        return { ...item, status: "to-cook" as const, cookedAt: undefined }
+        const newTotalCooked = Math.max(0, (item.totalCooked || 0) - (itemToUndo.quantity || 1))
+        const newPending = (item.totalOrdered || 0) - newTotalCooked
+        return { ...item, status: "to-cook" as const, cookedAt: undefined, totalCooked: newTotalCooked, pending: newPending }
       }
       return item
     })
@@ -424,9 +374,10 @@ export default function KitchenPage() {
     // Update customer orders
     const orders = getCustomerOrders()
     const updatedOrders = orders.map((order) => {
-      const orderItemsToUndo = itemsToUndo.filter(item => item.customerName === order.customerName)
+      // Only affect the specific order(s) that correspond to the kitchen items being undone
+      const orderItemsToUndo = itemsToUndo.filter(item => item.orderId === order.id)
       if (orderItemsToUndo.length === 0) return order
-      
+
       return {
         ...order,
         cookedItems: order.cookedItems
@@ -545,6 +496,14 @@ export default function KitchenPage() {
   }
 
   const renderOrderDetails = (order: CustomerOrder) => {
+    // If the order is already delivered, don't show details in Kitchen view
+    if (order.status === 'delivered') {
+      return (
+        <div className="p-4 bg-muted/40 rounded-lg">
+          <p className="font-medium">This order has been delivered and moved to Order History.</p>
+        </div>
+      )
+    }
     const missingItems = getMissingItems(order)
     const isComplete = order.status === "complete"
     
