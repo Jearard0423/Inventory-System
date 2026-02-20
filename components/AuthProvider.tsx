@@ -46,8 +46,11 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
 
   const value = { user, loading, signIn, signUp, signOut }
 
-  // while loading, render nothing to avoid flicker
-  if (loading) return <>{children}</>
+  // while loading, do not render app children — prevents unauthenticated
+  // pages from mounting during a hard refresh which caused the dashboard
+  // to appear non-functional. Render null (or a loader) until auth state
+  // is resolved.
+  if (loading) return null
 
   // if not authenticated, show login UI
   if (!user) return <LoginClient onSignIn={signIn} />

@@ -27,8 +27,8 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`font-sans antialiased`} suppressHydrationWarning>
-        <FirebaseSyncInitializer />
         <AuthProvider>
+          <FirebaseSyncInitializer />
           <AppLayout>
             {children}
           </AppLayout>
