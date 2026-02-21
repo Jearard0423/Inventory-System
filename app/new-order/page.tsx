@@ -15,7 +15,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Plus, Search, Trash2, X, Package, Calendar, Clock, User, MapPin, CreditCard, ChevronDown, PlusCircle, Trash, Loader2, Check, ChevronLeft, ChevronRight, Calendar as CalendarIcon, Plus as PlusIcon, AlertTriangle, AlertCircle, ChevronsUpDown } from "lucide-react"
 import { useState, useEffect } from "react"
 import { cn } from "@/lib/utils"
-import { getInventory, getMenuItems, reduceStock, reduceUtensilsForMeal, reduceContainerForItem, saveOrder, checkAndWarnStockForItem, checkTotalCartStockRequirements, type InventoryItem, addMenuItem, deleteMenuItem, canOrderItem, canOrderCart, getItemStock } from "@/lib/inventory-store"
+import { getInventory, getMenuItems, reduceStock, reduceUtensilsForMeal, reduceContainerForItem, saveOrder, checkAndWarnStockForItem, checkTotalCartStockRequirements, type InventoryItem, addMenuItem, deleteMenuItem, canOrderItem, canOrderCart, getItemStock, getOrderLimitMessage } from "@/lib/inventory-store"
 import { getCustomerAnalytics, type CustomerData } from "@/lib/customers"
 import { generateOrderNumber } from "@/lib/orders"
 import { useRouter } from "next/navigation"
@@ -173,7 +173,9 @@ export default function NewOrderPage() {
 
   useEffect(() => {
     const loadInventory = () => {
-      const inventory = getMenuItems().filter((item) => item.category !== "others" && item.stock > 0 && canOrderItem(item.id, 1))
+      // show every menu item that has some stock at the moment.
+      // availability is enforced when the user actually adds to cart (see addToOrder)
+      const inventory = getMenuItems().filter((item) => item.category !== "others" && item.stock > 0)
       setMenuItems(inventory)
     }
 
@@ -230,9 +232,10 @@ export default function NewOrderPage() {
     const existing = orderItems.find((i) => i.id === item.id)
     const newQuantity = existing ? existing.quantity + 1 : 1
     
-    // Validate against actual stock
-    if (!canOrderItem(item.id, newQuantity)) {
-      setErrors(prev => ({ ...prev, orderItems: `Only ${item.stock} units of ${item.name} available!` }))
+    // Validate against actual stock – the helper will return a human‑readable reason if it fails
+    const limitMsg = canOrderItem(item.id, newQuantity) ? null : getOrderLimitMessage(item.id, newQuantity);
+    if (limitMsg) {
+      setErrors(prev => ({ ...prev, orderItems: limitMsg }))
       return
     }
     
@@ -270,10 +273,9 @@ export default function NewOrderPage() {
     const inventoryItem = menuItems.find(inv => inv.id === id)
     
     if (item && inventoryItem) {
-      // Use canOrderItem to check actual stock
-      if (!canOrderItem(id, quantity)) {
-        const currentStock = getItemStock(id)
-        setErrors(prev => ({ ...prev, orderItems: `Only ${currentStock} units of ${inventoryItem.name} available!` }))
+      const limitMsg = canOrderItem(id, quantity) ? null : getOrderLimitMessage(id, quantity);
+      if (limitMsg) {
+        setErrors(prev => ({ ...prev, orderItems: limitMsg }))
         return
       }
     }
@@ -1798,14 +1800,23 @@ export default function NewOrderPage() {
                       <button
                         key={item.id}
                         onClick={() => addToOrder(item)}
-                        disabled={item.stock === 0}
+                        disabled={
+                          item.stock === 0 || !canOrderItem(item.id, (orderItems.find(i => i.id === item.id)?.quantity || 0) + 1)
+                        }
                         className={cn(
                           "p-4 bg-card border rounded-lg hover:border-primary hover:bg-primary/5 transition-colors text-left",
                           (() => {
                             const existing = orderItems.find((i) => i.id === item.id)
                             const quantityInOrder = existing ? existing.quantity : 0
                             const remainingStock = item.stock - quantityInOrder
-                            return remainingStock === 0 && "opacity-50 cursor-not-allowed border-red-400 bg-red-100"
+                            const unavailable = !canOrderItem(item.id, quantityInOrder + 1)
+                            if (remainingStock === 0) {
+                              return "opacity-50 cursor-not-allowed border-red-400 bg-red-100"
+                            }
+                            if (unavailable) {
+                              return "opacity-50 cursor-not-allowed border-yellow-400 bg-yellow-100"
+                            }
+                            return ""
                           })()
                         )}
                       >
@@ -1818,16 +1829,24 @@ export default function NewOrderPage() {
                                 const quantityInOrder = existing ? existing.quantity : 0
                                 const remainingStock = item.stock - quantityInOrder
                                 const isOutOfStock = remainingStock === 0
+                                const willBeUnavailable = !canOrderItem(item.id, quantityInOrder + 1)
                                 const isLowStock = remainingStock > 0 && remainingStock <= 5
                                 return (
-                                  <p className={cn("text-sm flex items-center gap-1", 
-                                    isOutOfStock ? "text-red-600 font-medium" : 
-                                    isLowStock ? "text-orange-600 font-medium" : 
-                                    "text-green-600"
-                                  )}>
-                                    {isOutOfStock ? <AlertTriangle className="h-4 w-4 text-red-600" /> : isLowStock ? <AlertCircle className="h-4 w-4 text-orange-400" /> : <Package className="h-4 w-4" />}
-                                    Stock: {remainingStock}
-                                  </p>
+                                  <div>
+                                    <p className={cn("text-sm flex items-center gap-1", 
+                                      isOutOfStock ? "text-red-600 font-medium" : 
+                                      isLowStock ? "text-orange-600 font-medium" : 
+                                      "text-green-600"
+                                    )}>
+                                      {isOutOfStock ? <AlertTriangle className="h-4 w-4 text-red-600" /> : isLowStock ? <AlertCircle className="h-4 w-4 text-orange-400" /> : <Package className="h-4 w-4" />}
+                                      Stock: {remainingStock}
+                                    </p>
+                                    {willBeUnavailable && !isOutOfStock && (
+                                      <p className="text-xs text-red-600 mt-0.5">
+                                        (insufficient raw materials)
+                                      </p>
+                                    )}
+                                  </div>
                                 )
                               })()}
                             </div>

@@ -309,33 +309,44 @@ export const getItemStock = (itemId: string): number => {
 
 // Check if item can be ordered in requested quantity
 export const canOrderItem = (itemId: string, quantity: number): boolean => {
-  const stock = getItemStock(itemId);
-  if (stock < quantity) return false;
+  // reuse the detail helper and ignore the message
+  return getOrderLimitMessage(itemId, quantity) === null;
+};
 
-  // Also check linked items (raw stocks) if present
-  const menuItem = inventoryItems.find(it => it.id === itemId)
-  if (!menuItem) return false
+// Determine why an item cannot be ordered (returns null if it's fine)
+export const getOrderLimitMessage = (itemId: string, quantity: number): string | null => {
+  const menuItem = inventoryItems.find(it => it.id === itemId);
+  if (!menuItem) return `Item not found`;
 
-  // Check linkedItems ratios (e.g., menu item consumes raw materials)
+  // check own stock first
+  if (menuItem.stock < quantity) {
+    return `Only ${menuItem.stock} unit${menuItem.stock === 1 ? '' : 's'} of ${menuItem.name} in stock`;
+  }
+
+  // linked items ratios
   if (menuItem.linkedItems && menuItem.linkedItems.length > 0) {
     for (const link of menuItem.linkedItems) {
-      const linked = inventoryItems.find(i => i.id === link.itemId)
-      if (!linked) return false
-      const required = link.ratio * quantity
-      if ((linked.stock || 0) < required) return false
+      const linked = inventoryItems.find(i => i.id === link.itemId);
+      if (!linked) return `Required raw item missing`;
+      const required = link.ratio * quantity;
+      if ((linked.stock || 0) < required) {
+        return `Only ${linked.stock} unit${linked.stock === 1 ? '' : 's'} of ${linked.name} available (need ${required})`;
+      }
     }
   }
 
-  // Check RAW_STOCK_DEDUCTION_MAP for items that deduct raw stock by name
-  const rawDeduction = RAW_STOCK_DEDUCTION_MAP[menuItem.name]
+  // raw deduction map
+  const rawDeduction = RAW_STOCK_DEDUCTION_MAP[menuItem.name];
   if (rawDeduction) {
-    const raw = inventoryItems.find(i => i.name === rawDeduction.rawStock)
-    if (!raw) return false
-    const requiredRaw = rawDeduction.amount * quantity
-    if ((raw.stock || 0) < requiredRaw) return false
+    const raw = inventoryItems.find(i => i.name === rawDeduction.rawStock);
+    if (!raw) return `Required raw stock ${rawDeduction.rawStock} missing`;
+    const requiredRaw = rawDeduction.amount * quantity;
+    if ((raw.stock || 0) < requiredRaw) {
+      return `Only ${raw.stock} unit${raw.stock === 1 ? '' : 's'} of ${raw.name} available (need ${requiredRaw})`;
+    }
   }
 
-  return true;
+  return null;
 };
 
 // Check if all items in cart can be ordered

@@ -113,7 +113,21 @@ export default function InventoryPage() {
 
     // Prevent saving if stock exceeds the limit based on linked items
     if (stockExceedsLimit) {
-      alert(`Cannot save! You can only add up to ${maxStockAllowed} units based on available raw materials.`)
+      // build a detailed explanation so users understand where the limit comes from
+      const breakdown = linkedItems
+        .map(link => {
+          const raw = menuItems.find(i => i.id === link.itemId)
+          if (!raw) return null
+          const allowed = Math.floor(raw.stock / link.ratio)
+          return `${raw.name} has ${raw.stock} unit${raw.stock === 1 ? '' : 's'} available (ratio ${link.ratio}:1) → max ${allowed}`
+        })
+        .filter(Boolean)
+        .join('; ')
+      alert(
+        `Cannot save! The quantity you entered (${formData.stock}) exceeds what's possible based on raw inventory.` +
+        (breakdown ? `\n
+Limit details: ${breakdown}` : '')
+      )
       return
     }
 
@@ -291,6 +305,17 @@ export default function InventoryPage() {
 
   const maxStockAllowed = calculateMaxStock(linkedItems);
   const stockExceedsLimit = linkedItems.length > 0 && formData.stock > maxStockAllowed;
+
+  // helper to produce a human readable list of linked raw item status
+  const linkedStatusDetails = linkedItems
+    .map(link => {
+      const raw = menuItems.find(i => i.id === link.itemId)
+      if (!raw) return null
+      const possible = Math.floor(raw.stock / link.ratio)
+      return `${raw.name}: ${raw.stock} available → ${possible} unit${possible === 1 ? '' : 's'}`
+    })
+    .filter(Boolean)
+    .join(', ')
 
   return (
     <POSLayout>
@@ -577,11 +602,13 @@ export default function InventoryPage() {
                   {stockExceedsLimit && (
                     <p className="text-sm text-red-600 mt-1">
                       ⚠ Cannot add {formData.stock} units. You only have enough raw materials for {maxStockAllowed} {maxStockAllowed === 1 ? "unit" : "units"}.
+                      {linkedStatusDetails && <><br />Details: {linkedStatusDetails}</>}
                     </p>
                   )}
                   {linkedItems.length > 0 && !stockExceedsLimit && (
                     <p className="text-sm text-blue-600 mt-1">
-                      ℹ Max stock based on linked items: {maxStockAllowed === Infinity ? "Unlimited" : maxStockAllowed} {maxStockAllowed === 1 ? "unit" : "units"}
+                      ℹ Max stock based on linked items: {maxStockAllowed === Infinity ? "Unlimited" : maxStockAllowed} {maxStockAllowed === 1 ? "unit" : "units"}.
+                      {linkedStatusDetails && <><br />({linkedStatusDetails})</>}
                     </p>
                   )}
                 </div>
@@ -660,13 +687,14 @@ export default function InventoryPage() {
                                     setSelectedItemForLink(item.id);
                                     setOpenCombobox(false);
                                   }}
+                                  disabled={item.stock <= 0}
                                 >
                                   <Check
                                     className={`mr-2 h-4 w-4 ${
                                       selectedItemForLink === item.id ? "opacity-100" : "opacity-0"
                                     }`}
                                   />
-                                  {item.name}
+                                  {item.name} {item.stock !== undefined && <span className="text-xs text-muted-foreground">({item.stock} in stock)</span>}
                                 </CommandItem>
                               ))}
                             </CommandGroup>
@@ -695,7 +723,8 @@ export default function InventoryPage() {
                   </div>
 
                   <p className="text-xs text-muted-foreground mt-1">
-                    When this item's stock is reduced, linked items will be reduced by the specified ratio.
+                    When this item's stock is reduced, linked items will be reduced by the specified ratio.  
+                    Stock is automatically capped by the available quantity of the linked raw materials – any limit will be shown above the input.
                   </p>
                 </div>
                 <div className="flex gap-3 pt-4">

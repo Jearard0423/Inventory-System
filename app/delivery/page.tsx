@@ -228,7 +228,7 @@ export default function DeliveryPage() {
       setLalamoveModalOpen(false)
       setSelectedOrder(null)
       loadData()
-      window.open("https://www.lalamove.com/", "_blank")
+      // no external navigation; delivery is simply marked in the system
     }
   }
 

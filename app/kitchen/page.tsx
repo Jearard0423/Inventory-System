@@ -412,6 +412,9 @@ export default function KitchenPage() {
     })
 
     const updatedWithStatus = updatedOrders.map((order) => {
+      // keep delivered orders untouched so they don't reappear
+      if (order.status === 'delivered') return order
+
       const totalOrdered = order.orderedItems.reduce((sum, item) => sum + item.quantity, 0)
       const totalCooked = order.cookedItems.reduce((sum, item) => sum + item.quantity, 0)
       return {
