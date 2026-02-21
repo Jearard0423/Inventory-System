@@ -26,8 +26,11 @@ export const getOrders = (): Order[] => {
   const stored = localStorage.getItem("yellowbell_orders")
   const orders = stored ? JSON.parse(stored) : []
   
-  // Add order numbers to existing orders that don't have them
+  // Normalize statuses and add order numbers for old entries
   return orders.map((order: Order) => {
+    // treat anything not explicitly 'pending' as completed
+    const normalizedStatus = order.status === 'pending' ? 'pending' : 'completed'
+
     if (!order.orderNumber) {
       // Generate a simple order number for existing orders
       const orderDate = new Date(order.date)
@@ -37,10 +40,14 @@ export const getOrders = (): Order[] => {
       const sequenceNumber = Math.floor(Math.random() * 900 + 100).toString()
       return {
         ...order,
+        status: normalizedStatus,
         orderNumber: `#${dateStr}-${sequenceNumber}`
       }
     }
-    return order
+    return {
+      ...order,
+      status: normalizedStatus,
+    }
   })
 }
 
@@ -69,7 +76,8 @@ export const getTodaysOrderCount = (): number => {
   if (typeof window === "undefined") return 0
   const today = new Date().toDateString()
   const orders = getOrders()
-  return orders.filter(order => new Date(order.date).toDateString() === today).length
+  // only count pending orders; completed/delivered should be excluded
+  return orders.filter(order => new Date(order.date).toDateString() === today && order.status === 'pending').length
 }
 
 export const deleteOrder = (orderId: string): void => {

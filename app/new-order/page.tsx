@@ -16,12 +16,14 @@ import { Plus, Search, Trash2, X, Package, Calendar, Clock, User, MapPin, Credit
 import { useState, useEffect } from "react"
 import { cn } from "@/lib/utils"
 import { getInventory, getMenuItems, reduceStock, reduceUtensilsForMeal, reduceContainerForItem, saveOrder, checkAndWarnStockForItem, checkTotalCartStockRequirements, type InventoryItem, addMenuItem, deleteMenuItem, canOrderItem, canOrderCart, getItemStock, getOrderLimitMessage } from "@/lib/inventory-store"
+import { sendOrderPlacedNotification } from "@/lib/email-notifications"
+import { useAuth } from "@/components/AuthProvider"
 import { getCustomerAnalytics, type CustomerData } from "@/lib/customers"
 import { generateOrderNumber } from "@/lib/orders"
 import { useRouter } from "next/navigation"
 import { useIsMobile } from "@/hooks/use-mobile"
 
-const categories = ["All", "Chicken", "Liempo", "Sisig", "Rice", "Meals"]
+const categories = ["All", "Chicken", "Liempo", "Sisig", "Rice", "Meals", "Utensils"]
 const mealTypes = ["Breakfast", "Lunch", "Dinner", "Other"]
 const menuCategories = ["chicken", "liempo", "sisig", "rice", "meals"]
 
@@ -129,6 +131,7 @@ export default function NewOrderPage() {
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth())
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const auth = useAuth()
   const [showAddMenuModal, setShowAddMenuModal] = useState(false)
   const [showDeleteMenuModal, setShowDeleteMenuModal] = useState(false)
   const [showDeleteSelectionModal, setShowDeleteSelectionModal] = useState(false)
@@ -173,9 +176,16 @@ export default function NewOrderPage() {
 
   useEffect(() => {
     const loadInventory = () => {
-      // show every menu item that has some stock at the moment.
-      // availability is enforced when the user actually adds to cart (see addToOrder)
-      const inventory = getMenuItems().filter((item) => item.category !== "others" && item.stock > 0)
+      // show every item that may be added to an order:
+      //   - all normal menu items (food)
+      //   - utensils (fork/spoon)
+      // exclude containers and raw stock since those are not ordered directly
+      const all = getInventory()
+      const inventory = all.filter((item) => {
+        if (item.isContainer || item.category === 'raw-stock') return false
+        // keep utensils even though getMenuItems would drop them
+        return item.stock > 0
+      })
       setMenuItems(inventory)
     }
 
@@ -200,6 +210,7 @@ export default function NewOrderPage() {
       Sisig: "sisig",
       Rice: "rice",
       Meals: "meals",
+      Utensils: "utensil",
     }
     
     // Check if it's a default category
@@ -830,6 +841,21 @@ export default function NewOrderPage() {
     setAmountGiven("")
     setGcashPhone("")
     setGcashReference("")
+
+    // send instant notification to logged-in user if the order is for today
+    const recipient = auth?.user?.email
+    if (recipient) {
+      // orderData.date is cookingDate
+      try {
+        sendOrderPlacedNotification({
+          date: savedOrder.date,
+          customerName: savedOrder.customerName,
+          items: savedOrder.items.map((i: { name: string; quantity: number }) => ({ name: i.name, quantity: i.quantity }))
+        }, recipient)
+      } catch (e) {
+        console.warn('failed to send new-order notification', e)
+      }
+    }
     setDeliveryPhone("")
     setDeliveryAddress("")
     setSpecialRequests("")

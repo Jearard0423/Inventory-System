@@ -18,6 +18,7 @@ import {
   type CustomerOrder,
 } from "@/lib/inventory-store"
 import { checkAndSendFoodPreparationReminder, resetNotificationState } from "@/lib/email-notifications"
+import { useAuth } from "@/components/AuthProvider"
 
 // Helper function to convert 24-hour time to 12-hour format
 const formatTimeForDisplay = (time24: string): string => {
@@ -35,6 +36,7 @@ const formatTimeForDisplay = (time24: string): string => {
 }
 
 export default function KitchenPage() {
+  const auth = useAuth()
   const [kitchenItems, setKitchenItems] = useState<KitchenItem[]>([])
   const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([])
   const [todayOrders, setTodayOrders] = useState<CustomerOrder[]>([])
@@ -145,7 +147,8 @@ export default function KitchenPage() {
     // Set up email notification checker - checks every 5 minutes for orders that need reminders
     const notificationCheckInterval = setInterval(async () => {
       const orders = getCustomerOrders()
-      await checkAndSendFoodPreparationReminder(orders)
+      const recipient = auth?.user?.email
+      await checkAndSendFoodPreparationReminder(orders, recipient || undefined)
     }, 5 * 60 * 1000) // Check every 5 minutes
 
     // Reset notification state at midnight (new day)
@@ -357,8 +360,8 @@ export default function KitchenPage() {
       if (!order) return false
       const orderDate = new Date(order.createdAt)
       orderDate.setHours(0, 0, 0, 0)
-      // Never allow undoing items from delivered or complete orders
-      return item.status === "cooked" && item.itemName === itemName && orderDate.getTime() === today.getTime() && order.status !== 'complete' && order.status !== 'delivered'
+      // Only block undo for delivered orders; allow undo from completed ones so user can "un-complete" if needed
+      return item.status === "cooked" && item.itemName === itemName && orderDate.getTime() === today.getTime() && order.status !== 'delivered'
     })
 
     // If no cooked items from incomplete orders found, don't fall back - prevent affecting delivered orders

@@ -7,7 +7,7 @@ import { CustomerOrder } from './inventory-store'
  * This function sends reminders every 30 min or 1 hour for orders that came today
  */
 
-const REMINDER_INTERVAL = 30 * 60 * 1000 // 30 minutes in milliseconds (can be changed to 60 * 60 * 1000 for 1 hour)
+let REMINDER_INTERVAL = 30 * 60 * 1000 // 30 minutes in milliseconds (can be changed to 60 * 60 * 1000 for 1 hour)
 
 interface EmailNotificationState {
   lastReminderTime: number
@@ -101,7 +101,7 @@ const sendEmailNotification = async (
  * - There are orders for today
  * - We haven't sent a reminder in the last 30 minutes (or configured interval)
  */
-export const checkAndSendFoodPreparationReminder = async (orders: CustomerOrder[]): Promise<void> => {
+export const checkAndSendFoodPreparationReminder = async (orders: CustomerOrder[], recipientEmail?: string): Promise<void> => {
   try {
     // Get current time
     const now = new Date()
@@ -117,11 +117,18 @@ export const checkAndSendFoodPreparationReminder = async (orders: CustomerOrder[
              order.status !== 'delivered'
     })
 
-    notificationState.hasOrdersToday = todayOrders.length > 0
+    // Also gather any future/advanced orders (for awareness)
+    const advancedOrders = orders.filter(order => {
+      const orderDate = new Date(order.createdAt)
+      orderDate.setHours(0, 0, 0, 0)
+      return orderDate.getTime() > today.getTime() &&
+             order.status !== 'complete' &&
+             order.status !== 'delivered'
+    })
 
-    // Only send reminder if:
-    // 1. There are orders to prepare today
-    // 2. Enough time has passed since last reminder
+    notificationState.hasOrdersToday = todayOrders.length > 0 || advancedOrders.length > 0
+
+    // Only send reminder if there are orders (today or advanced) and interval passed
     if (!notificationState.hasOrdersToday) {
       return
     }
@@ -136,15 +143,20 @@ export const checkAndSendFoodPreparationReminder = async (orders: CustomerOrder[
 
     // Send reminder email
     const reminderNumber = notificationState.remindersCount + 1
-    const subject = `🍖 Yellowbell Kitchen Reminder - Order Preparation (Reminder #${reminderNumber})`
+    const subject = `YellowBell Roast Co. Kitchen Reminder - Order Preparation (Reminder #${reminderNumber})`
     
     const htmlBody = `
       <div style="font-family: Arial, sans-serif; padding: 20px; background-color: #f5f5f5;">
         <div style="background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-          <h1 style="color: #d97706; margin-bottom: 10px;">🍖 Yellowbell Kitchen</h1>
-          <h2 style="color: #374151; margin-top: 0;">Food Preparation Reminder</h2>
-          <p style="color: #666; font-size: 16px;">
-            <strong>Reminder #${reminderNumber}</strong> - ${now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}
+          <div style="text-align:center; margin-bottom: 10px;">
+            <h1 style="margin:0; color:#d97706; font-size:24px;">YellowBell Roast Co.</h1>
+            <img src="https://your-domain.com/logo.png" alt="Yellowbell Logo" style="height:50px; margin-top:5px;" />
+          </div>
+          <p style="color: #666; font-size: 16px; margin-top:15px;">
+            <strong>Reminder #${reminderNumber}</strong> &ndash; ${now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}
+          </p>
+          <p style="color:#444; font-size:14px;">
+            Orders below are scheduled for today. Please prepare them in time for delivery. A new reminder will be sent every ${Math.round(REMINDER_INTERVAL / 60000)} minutes.
           </p>
           
           <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;">
@@ -153,14 +165,14 @@ export const checkAndSendFoodPreparationReminder = async (orders: CustomerOrder[
           
           <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;">
           
-          <p style="color: #666; font-size: 14px; margin-top: 20px;">
+          <p style="color: #666; font-size: 14px; margin-top: 10px;">
             <strong>Next reminder:</strong> in ${Math.round(REMINDER_INTERVAL / 60000)} minutes<br>
-            <strong>Orders today:</strong> ${todayOrders.length} pending
+            <strong>Pending orders:</strong> ${todayOrders.length}
           </p>
           
           <div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px; margin-top: 15px; border-radius: 4px;">
             <p style="margin: 0; color: #92400e; font-size: 14px;">
-              Please ensure all pending orders are prepared and ready for delivery.
+              Please ensure all pending orders are prepared and ready before delivery time.
             </p>
           </div>
           
@@ -173,10 +185,10 @@ export const checkAndSendFoodPreparationReminder = async (orders: CustomerOrder[
     `
 
     const plainTextBody = `
-Yellowbell Kitchen - Food Preparation Reminder #${reminderNumber}
+YellowBell Roast Co. Kitchen Reminder #${reminderNumber}
 ${now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}
 
-TODAY'S ORDERS TO BE PREPARED:
+Orders to prepare today:
 ${todayOrders.map(order => {
   const pendingItems = order.orderedItems
     .map(item => {
@@ -193,16 +205,18 @@ ${todayOrders.map(order => {
 Next reminder: in ${Math.round(REMINDER_INTERVAL / 60000)} minutes
 Orders pending: ${todayOrders.length}
 
-Please ensure all pending orders are prepared and ready for delivery.
+Please ensure all pending orders are prepared and ready before delivery time.
     `
 
+    // determine who to send to (fallback to default admin)
+    const to = recipientEmail || 'admin@yellowbell.com'
     // Send the email notification
-    const sent = await sendEmailNotification(subject, htmlBody, plainTextBody)
+    const sent = await sendEmailNotification(subject, htmlBody, plainTextBody, to)
     
     if (sent) {
       notificationState.lastReminderTime = now.getTime()
       notificationState.remindersCount += 1
-      console.log(`[email-notifications] Food preparation reminder #${reminderNumber} sent`)
+      console.log(`[email-notifications] Food preparation reminder #${reminderNumber} sent to ${to}`)
     }
 
   } catch (error) {
@@ -235,7 +249,51 @@ export const getNotificationState = (): EmailNotificationState => {
  * Can be set to 60 minutes (3600000ms) for hourly reminders
  */
 export const setReminderInterval = (intervalMs: number): void => {
+  REMINDER_INTERVAL = intervalMs
   console.log(`[email-notifications] Reminder interval set to ${intervalMs / 60000} minutes`)
-  // Note: This would require making REMINDER_INTERVAL mutable
-  // For now, the interval is hardcoded to 30 minutes
+}
+
+/**
+ * Immediately notify when a new order for today is placed.
+ * `order` may be a CustomerOrder or plain Order object – only the
+ * date, customerName and items fields are used.
+ * If no valid recipientEmail is provided nothing will be sent.
+ */
+export const sendOrderPlacedNotification = async (
+  order: { date: string; customerName: string; items: Array<{ name: string; quantity: number }> },
+  recipientEmail?: string
+): Promise<void> => {
+  if (!recipientEmail) return
+  try {
+    // only notify for orders with a date equal to today
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const orderDate = new Date(order.date)
+    orderDate.setHours(0, 0, 0, 0)
+    if (orderDate.getTime() !== today.getTime()) return
+
+    const subject = `🆕 New Order Received for Today`;
+    const htmlBody = `
+      <div style="font-family: Arial, sans-serif; padding: 20px;">
+        <h2>YellowBell Roast Co. - New Order</h2>
+        <p>A new order was placed today by <strong>${order.customerName}</strong>:</p>
+        <ul>
+          ${order.items
+            .map(i => `<li>${i.quantity}x ${i.name}</li>`)
+            .join('')}
+        </ul>
+        <p>Please ensure this order is prepared within the next ${Math.round(REMINDER_INTERVAL / 60000)} minutes.</p>
+      </div>
+    `;
+    const plainTextBody = `New order placed by ${order.customerName}:
+${order.items
+      .map(i => `- ${i.quantity}x ${i.name}`)
+      .join('\n')}
+
+Please prepare this order within the next ${Math.round(REMINDER_INTERVAL / 60000)} minutes.`;
+
+    await sendEmailNotification(subject, htmlBody, plainTextBody, recipientEmail);
+  } catch (err) {
+    console.error('[email-notifications] Error sending new-order notification:', err)
+  }
 }

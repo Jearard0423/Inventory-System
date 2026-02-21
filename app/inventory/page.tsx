@@ -263,7 +263,7 @@ Limit details: ${breakdown}` : '')
       meals: "Meals",
       "raw-stock": "Raw Stocks",
       "raw-stocks": "Raw Stocks",  // Handle both singular and plural
-      utensils: "Utensils",
+      utensil: "Utensils",
       container: "Container",
       others: "Others",
     }
@@ -363,7 +363,7 @@ Limit details: ${breakdown}` : '')
                   <SelectItem value="rice">Rice</SelectItem>
                   <SelectItem value="meals">Meals</SelectItem>
                   <SelectItem value="raw-stock">Raw Stocks</SelectItem>
-                  <SelectItem value="utensils">Utensils</SelectItem>
+                  <SelectItem value="utensil">Utensils</SelectItem>
                   <SelectItem value="container">Container</SelectItem>
                   <SelectItem value="others">Others</SelectItem>
                 </SelectContent>
@@ -580,7 +580,7 @@ Limit details: ${breakdown}` : '')
                       <SelectItem value="rice">Rice</SelectItem>
                       <SelectItem value="meals">Meals</SelectItem>
                       <SelectItem value="raw-stock">Raw Stocks</SelectItem>
-                      <SelectItem value="utensils">Utensils</SelectItem>
+                      <SelectItem value="utensil">Utensils</SelectItem>
                       <SelectItem value="container">Container</SelectItem>
                       <SelectItem value="others">Others</SelectItem>
                     </SelectContent>

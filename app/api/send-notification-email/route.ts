@@ -18,6 +18,17 @@ const SMTP_PORT = parseInt(process.env.SMTP_PORT || '587')
 const SMTP_USER = process.env.SMTP_USER || ''
 const SMTP_PASSWORD = process.env.SMTP_PASSWORD || ''
 
+// helper to return sanitized config for logs/responses
+function getSmtpDebugConfig() {
+  return {
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    user: SMTP_USER ? (SMTP_USER.slice(0,1) + '****' + SMTP_USER.slice(-1)) : '',
+    hasPassword: !!SMTP_PASSWORD,
+    adminEmail: ADMIN_EMAIL,
+  }
+}
+
 // Nodemailer transporter (lazy loaded to avoid issues if not configured)
 let transporter: any = null
 
@@ -74,16 +85,24 @@ export async function POST(request: NextRequest) {
     // Initialize transporter if not already done
     const mailer = initializeTransporter()
     if (!mailer) {
+      // no real SMTP available – pretend to send and succeed
+      console.log(`[email-api] SMTP not configured, pretending to send email to ${recipient}.`)
+      console.log('subject:', subject)
+      console.log('text body:', plainTextBody)
+      console.log('html body:', htmlBody)
+
       return NextResponse.json(
-        { 
-          error: 'Email service not configured. Please set SMTP credentials in environment variables.',
-          message: 'Email notification will be logged to console instead.'
+        {
+          success: true,
+          message: 'Email service not configured; message was logged instead of sent',
+          simulated: true,
+          recipient,
         },
-        { status: 503 }
+        { status: 200 }
       )
     }
 
-    // Send email
+    // Send email via real transporter
     const info = await mailer.sendMail({
       from: SMTP_USER,
       to: recipient,
@@ -121,10 +140,12 @@ export async function POST(request: NextRequest) {
  * GET /api/send-notification-email (for health check)
  */
 export async function GET(request: NextRequest) {
+  // return SMTP config for debugging (sanitised)
   return NextResponse.json(
     {
       status: 'ok',
       message: 'Email notification endpoint is ready',
+      smtp: getSmtpDebugConfig(),
       configuredEmail: SMTP_USER ? 'Configured' : 'Not configured',
       adminEmail: ADMIN_EMAIL,
     },

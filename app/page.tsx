@@ -7,7 +7,7 @@ import { CustomerData } from "@/lib/customers"
 import { Plus, Calendar, Users, Package, TrendingUp, AlertTriangle, ChevronLeft, ChevronRight } from "lucide-react"
 import Link from "next/link"
 import { useEffect, useState, useMemo } from "react"
-import { getLowStockItems, type InventoryItem } from "@/lib/inventory-store"
+import { getLowStockItems, type InventoryItem, getCustomerOrders } from "@/lib/inventory-store"
 import { getOrders, type Order } from "@/lib/orders"
 import { getCustomerAnalytics } from "@/lib/customers"
 import { useRouter } from "next/navigation"
@@ -54,7 +54,16 @@ export default function DashboardPage() {
 
   const getOrderCountForDate = (date: Date) => {
     const dateStr = formatDate(date)
-    return orders.filter((order) => order.date === dateStr).length
+    // only count active/pending orders so calendar matches dashboard list
+    // when a customer order has been delivered we also ignore it even if yellowbell_orders is stale
+    const customerOrders = getCustomerOrders()
+    return orders.filter((order) => {
+      if (order.date !== dateStr) return false
+      if (order.status !== 'pending') return false
+      const cust = customerOrders.find(o => o.id === order.id)
+      if (cust && cust.status === 'delivered') return false
+      return true
+    }).length
   }
 
   const changeMonth = (offset: number) => {
@@ -81,6 +90,10 @@ export default function DashboardPage() {
   const todayOrders = orders.filter((order) => {
     const orderDate = new Date(order.date)
     orderDate.setHours(0, 0, 0, 0)
+    // ignore anything that isn't pending or has already been marked delivered
+    if (order.status !== 'pending') return false
+    const cust = getCustomerOrders().find(o => o.id === order.id)
+    if (cust && cust.status === 'delivered') return false
     return orderDate.toDateString() === today.toDateString()
   })
 
@@ -89,12 +102,18 @@ export default function DashboardPage() {
   const tomorrowOrders = orders.filter((order) => {
     const orderDate = new Date(order.date)
     orderDate.setHours(0, 0, 0, 0)
+    if (order.status !== 'pending') return false
+    const cust = getCustomerOrders().find(o => o.id === order.id)
+    if (cust && cust.status === 'delivered') return false
     return orderDate.toDateString() === tomorrow.toDateString()
   })
 
   const advancedOrders = orders.filter((order) => {
     const orderDate = new Date(order.date)
     orderDate.setHours(0, 0, 0, 0)
+    if (order.status !== 'pending') return false
+    const cust = getCustomerOrders().find(o => o.id === order.id)
+    if (cust && cust.status === 'delivered') return false
     return orderDate > today
   })
 

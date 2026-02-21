@@ -366,7 +366,8 @@ export const getAggregatedKitchenItems = (): Record<string, { total: number; coo
     const itemDate = new Date(order.createdAt);
     itemDate.setHours(0, 0, 0, 0);
     
-    return itemDate.getTime() === today.getTime() && order.status !== 'delivered';
+    // ignore items belonging to completed/delivered orders
+    return itemDate.getTime() === today.getTime() && order.status === 'pending';
   });
   
   const grouped: Record<string, { total: number; cooked: number; pending: number; items: KitchenItem[] }> = {};
