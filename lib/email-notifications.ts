@@ -78,27 +78,39 @@ const emailWrapper = (content: string) => `
 </html>
 `
 
-const renderOrderRow = (order: CustomerOrder): string => {
-  const pendingItems = order.orderedItems
-    .map(item => {
-      const cooked = order.cookedItems?.find(c => c.name === item.name)
-      const remaining = item.quantity - (cooked?.quantity || 0)
-      return remaining > 0 ? `<li style="margin:2px 0;color:#374151;">${remaining}\u00d7 ${item.name}</li>` : null
-    })
-    .filter(Boolean)
-    .join('')
+/**
+ * Format order details for email
+ */
+const formatOrderDetailsForEmail = (orders: CustomerOrder[]): string => {
+  let details = `<table width="100%" cellpadding="0" cellspacing="0">`
 
-  if (!pendingItems) return ''
+  const incompleteOrders = orders.filter(o => o.status !== 'complete' && o.status !== 'delivered')
 
-  return `
-    <tr>
-      <td style="padding:12px 0;border-bottom:1px solid #f3f4f6;vertical-align:top;">
-        <strong style="color:#1f2937;font-size:15px;">${order.customerName}</strong>
-        <span style="color:#6b7280;font-size:12px;margin-left:8px;">Order #${order.orderNumber || order.id}</span>
-        <ul style="margin:6px 0 0 16px;padding:0;font-size:14px;">${pendingItems}</ul>
-      </td>
-    </tr>
-  `
+  incompleteOrders.forEach(order => {
+    const pendingItems = order.orderedItems
+      .map(item => {
+        const cooked = order.cookedItems?.find(c => c.name === item.name)
+        const cookedQty = cooked?.quantity || 0
+        const remaining = item.quantity - cookedQty
+        return remaining > 0 ? `<li style="margin:2px 0;color:#374151">${remaining}\u00d7 ${item.name}</li>` : null
+      })
+      .filter(Boolean)
+      .join('')
+
+    if (pendingItems) {
+      details += `
+        <tr>
+          <td style="padding:12px 0;border-bottom:1px solid #f3f4f6;vertical-align:top;">
+            <strong style="color:#1f2937;font-size:15px">${order.customerName}</strong>
+            <span style="color:#6b7280;font-size:12px;margin-left:8px">Order #${order.orderNumber || order.id}</span>
+            <ul style="margin:6px 0 0 16px;padding:0;font-size:14px">${pendingItems}</ul>
+          </td>
+        </tr>`
+    }
+  })
+
+  details += `</table>`
+  return details
 }
 
 const sendEmailNotification = async (
@@ -125,239 +137,6 @@ const sendEmailNotification = async (
     return false
   } catch (error) {
     console.error('[email-notifications] Error:', error)
-    return false
-  }
-}
-
-export const checkAndSendFoodPreparationReminder = async (
-  orders: CustomerOrder[],
-  recipientEmail?: string
-): Promise<void> => {
-  try {
-    const now = new Date()
-    const today = new Date(); today.setHours(0, 0, 0, 0)
-
-    const todayOrders = orders.filter(order => {
-      const d = new Date(order.createdAt); d.setHours(0, 0, 0, 0)
-      return d.getTime() === today.getTime() && order.status !== 'complete' && order.status !== 'delivered'
-    })
-
-    notificationState.hasOrdersToday = todayOrders.length > 0
-    if (!notificationState.hasOrdersToday) return
-
-    const timeSinceLast = notificationState.lastReminderTime ? now.getTime() - notificationState.lastReminderTime : Infinity
-    if (timeSinceLast < REMINDER_INTERVAL) return
-
-    const reminderNumber = notificationState.remindersCount + 1
-    const intervalLabel = `${Math.round(REMINDER_INTERVAL / 60000)} minutes`
-    const orderRows = todayOrders.map(renderOrderRow).join('')
-
-    const subject = `\u{1F514} Yellow Roast Co. \u2013 Kitchen Reminder #${reminderNumber} (${nowLabel()})`
-
-    const bodyContent = `
-      <h2 style="margin:0 0 4px;color:#d97706;font-size:20px;">\u{1F373} Kitchen Preparation Reminder</h2>
-      <p style="margin:0 0 20px;color:#6b7280;font-size:14px;">Reminder <strong>#${reminderNumber}</strong> &bull; ${todayLabel()}</p>
-
-      <div style="background:#fef3c7;border-left:4px solid #f59e0b;padding:14px 18px;border-radius:6px;margin-bottom:24px;">
-        <p style="margin:0;color:#92400e;font-size:14px;">
-          \u23f0 There ${todayOrders.length === 1 ? 'is' : 'are'} <strong>${todayOrders.length} pending order${todayOrders.length !== 1 ? 's' : ''}</strong> that need to be prepared today.
-          Next reminder in <strong>${intervalLabel}</strong>.
-        </p>
-      </div>
-
-      <h3 style="margin:0 0 12px;color:#374151;font-size:15px;border-bottom:2px solid #fde68a;padding-bottom:8px;">
-        \u{1F4CB} Today's Pending Orders &mdash; ${todayLabel()}
-      </h3>
-
-      <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
-        ${orderRows || '<tr><td style="color:#9ca3af;font-size:14px;padding:12px 0;">All orders are complete! \u{1F389}</td></tr>'}
-      </table>
-
-      <p style="margin:0;color:#6b7280;font-size:13px;">Please ensure all pending orders are prepared and ready before their delivery time.</p>
-    `
-
-    const plainText = `Yellow Roast Co. - Kitchen Reminder #${reminderNumber}\n${todayLabel()} at ${nowLabel()}\n\nPending orders:\n${todayOrders.map(o => {
-      const items = o.orderedItems.map(i => {
-        const cooked = o.cookedItems?.find(c => c.name === i.name)
-        const rem = i.quantity - (cooked?.quantity || 0)
-        return rem > 0 ? `  - ${rem}x ${i.name}` : null
-      }).filter(Boolean).join('\n')
-      return `* ${o.customerName} (Order #${o.orderNumber || o.id})\n${items}`
-    }).join('\n\n')}\n\nNext reminder in: ${intervalLabel}`
-
-    const to = recipientEmail || 'admin@yellowroastco.com'
-    const sent = await sendEmailNotification(subject, emailWrapper(bodyContent), plainText, to)
-
-    if (sent) {
-      notificationState.lastReminderTime = now.getTime()
-      notificationState.remindersCount += 1
-    }
-  } catch (error) {
-    console.error('[email-notifications] Error in reminder:', error)
-  }
-}
-
-export const sendOrderPlacedNotification = async (
-  order: { date: string; customerName: string; items: Array<{ name: string; quantity: number }>; orderNumber?: string },
-  recipientEmail?: string
-): Promise<void> => {
-  if (!recipientEmail) return
-
-  try {
-    const today = new Date(); today.setHours(0, 0, 0, 0)
-    const orderDate = new Date(order.date); orderDate.setHours(0, 0, 0, 0)
-    if (orderDate.getTime() !== today.getTime()) return
-
-    const subject = `\u{1F195} New Order \u2013 ${order.customerName} | Yellow Roast Co.`
-
-    const itemRows = order.items.map(i => `
-      <tr>
-        <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;font-size:14px;color:#374151;">${i.name}</td>
-        <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;font-size:14px;color:#374151;text-align:right;"><strong>${i.quantity}\u00d7</strong></td>
-      </tr>`).join('')
-
-    const bodyContent = `
-      <h2 style="margin:0 0 4px;color:#d97706;font-size:20px;">\u{1F195} New Order Received!</h2>
-      <p style="margin:0 0 20px;color:#6b7280;font-size:14px;">Placed on <strong>${todayLabel()}</strong> at <strong>${nowLabel()}</strong></p>
-
-      <div style="background:#f0fdf4;border-left:4px solid #22c55e;padding:14px 18px;border-radius:6px;margin-bottom:24px;">
-        <p style="margin:0;color:#166534;font-size:15px;">
-          \u{1F464} Customer: <strong>${order.customerName}</strong>
-          ${order.orderNumber ? `&bull; Order <strong>#${order.orderNumber}</strong>` : ''}
-        </p>
-      </div>
-
-      <h3 style="margin:0 0 12px;color:#374151;font-size:15px;border-bottom:2px solid #fde68a;padding-bottom:8px;">\u{1F37D}\ufe0f Items Ordered</h3>
-
-      <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;margin-bottom:24px;">
-        <thead>
-          <tr style="background:#fef3c7;">
-            <th style="padding:10px 12px;text-align:left;color:#92400e;font-size:13px;font-weight:600;">Item</th>
-            <th style="padding:10px 12px;text-align:right;color:#92400e;font-size:13px;font-weight:600;">Qty</th>
-          </tr>
-        </thead>
-        <tbody>${itemRows}</tbody>
-      </table>
-
-      <div style="background:#fef9f0;border:1px solid #fde68a;padding:14px 18px;border-radius:6px;">
-        <p style="margin:0;color:#78350f;font-size:13px;">
-          \u23f1\ufe0f Please prepare this order within the next <strong>${Math.round(REMINDER_INTERVAL / 60000)} minutes</strong>.
-          A follow-up reminder will be sent automatically.
-        </p>
-      </div>
-    `
-
-    const plainText = `New Order - Yellow Roast Co.\n${todayLabel()} at ${nowLabel()}\n\nCustomer: ${order.customerName}${order.orderNumber ? ` | Order #${order.orderNumber}` : ''}\n\nItems:\n${order.items.map(i => `  - ${i.quantity}x ${i.name}`).join('\n')}\n\nPlease prepare within ${Math.round(REMINDER_INTERVAL / 60000)} minutes.`
-
-    await sendEmailNotification(subject, emailWrapper(bodyContent), plainText, recipientEmail)
-  } catch (err) {
-    console.error('[email-notifications] Error in sendOrderPlacedNotification:', err)
-  }
-}
-
-export const resetNotificationState = (): void => {
-  notificationState = { lastReminderTime: 0, remindersCount: 0, hasOrdersToday: false }
-}
-
-export const getNotificationState = (): EmailNotificationState => ({ ...notificationState })
-
-export const setReminderInterval = (intervalMs: number): void => {
-  REMINDER_INTERVAL = intervalMs
-  console.log(`[email-notifications] Interval set to ${intervalMs / 60000} min`)
-}
-"use client"
-
-import { CustomerOrder } from './inventory-store'
-
-/**
- * Send email notification for food preparation reminders
- * This function sends reminders every 30 min or 1 hour for orders that came today
- */
-
-let REMINDER_INTERVAL = 30 * 60 * 1000 // 30 minutes in milliseconds (can be changed to 60 * 60 * 1000 for 1 hour)
-
-interface EmailNotificationState {
-  lastReminderTime: number
-  remindersCount: number
-  hasOrdersToday: boolean
-}
-
-let notificationState: EmailNotificationState = {
-  lastReminderTime: 0,
-  remindersCount: 0,
-  hasOrdersToday: false,
-}
-
-/**
- * Format order details for email
- */
-const formatOrderDetailsForEmail = (orders: CustomerOrder[]): string => {
-  let details = '<h2>Today\'s Orders to be Prepared:</h2><ul>'
-  
-  const incompleteOrders = orders.filter(o => o.status !== 'complete' && o.status !== 'delivered')
-  
-  incompleteOrders.forEach(order => {
-    const pendingItems = order.orderedItems
-      .map(item => {
-        const cooked = order.cookedItems?.find(c => c.name === item.name)
-        const cookedQty = cooked?.quantity || 0
-        const remaining = item.quantity - cookedQty
-        return remaining > 0 ? `${remaining}x ${item.name}` : null
-      })
-      .filter(Boolean)
-      .join(', ')
-    
-    if (pendingItems) {
-      details += `<li><strong>${order.customerName}</strong> - Order #${order.orderNumber || order.id}: ${pendingItems}</li>`
-    }
-  })
-  
-  details += '</ul>'
-  return details
-}
-
-/**
- * Send email notification via Firebase Cloud Function or external service
- */
-const sendEmailNotification = async (
-  subject: string,
-  htmlBody: string,
-  plainTextBody: string,
-  recipientEmail: string = 'admin@yellowbell.com' // Default admin email
-): Promise<boolean> => {
-  try {
-    // Check if we're running client-side and if we have a Cloud Function endpoint
-    if (typeof window === 'undefined') {
-      console.warn('[email-notifications] Running server-side, skipping email')
-      return false
-    }
-
-    // Option 1: Send via Cloud Function (recommended)
-    const response = await fetch('/api/send-notification-email', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        subject,
-        htmlBody,
-        plainTextBody,
-        recipientEmail,
-        timestamp: new Date().toISOString(),
-      }),
-    })
-
-    if (response.ok) {
-      console.log(`[email-notifications] Email sent successfully: ${subject}`)
-      return true
-    } else {
-      const error = await response.json()
-      console.warn(`[email-notifications] Failed to send email: ${error.message}`)
-      return false
-    }
-  } catch (error) {
-    console.error('[email-notifications] Error sending email notification:', error)
-    // Silently fail - app continues to work without email
     return false
   }
 }

@@ -20,28 +20,61 @@ const SMTP_PORT = parseInt(process.env.SMTP_PORT || '587')
 const SMTP_USER = process.env.SMTP_USER || ''
 const SMTP_PASSWORD = process.env.SMTP_PASSWORD || ''
 
+// OAuth2 credentials (optional) for Gmail OAuth SMTP
+const SMTP_OAUTH_CLIENT_ID = process.env.SMTP_OAUTH_CLIENT_ID || ''
+const SMTP_OAUTH_CLIENT_SECRET = process.env.SMTP_OAUTH_CLIENT_SECRET || ''
+const SMTP_OAUTH_REFRESH_TOKEN = process.env.SMTP_OAUTH_REFRESH_TOKEN || ''
+
 let transporter: any = null
 
-const initializeTransporter = () => {
+const initializeTransporter = async () => {
   if (transporter) return transporter
-  if (!SMTP_USER || !SMTP_PASSWORD) {
-    console.warn('[email-api] SMTP credentials not set in .env.local – emails will be logged only')
-    return null
-  }
 
   try {
     const nodemailer = require('nodemailer')
-    transporter = nodemailer.createTransport({
-      host: SMTP_HOST,
-      port: SMTP_PORT,
-      secure: SMTP_PORT === 465,
-      auth: {
-        user: SMTP_USER,
-        pass: SMTP_PASSWORD,
-      },
-    })
-    console.log('[email-api] Transporter ready')
-    return transporter
+
+    // Prefer plain SMTP auth if provided (SMTP_USER + SMTP_PASSWORD)
+    if (SMTP_USER && SMTP_PASSWORD) {
+      transporter = nodemailer.createTransport({
+        host: SMTP_HOST,
+        port: SMTP_PORT,
+        secure: SMTP_PORT === 465,
+        auth: {
+          user: SMTP_USER,
+          pass: SMTP_PASSWORD,
+        },
+      })
+      console.log('[email-api] Transporter ready (password auth)')
+      return transporter
+    }
+
+    // Fallback to OAuth2 if OAuth credentials are available
+    if (SMTP_USER && SMTP_OAUTH_CLIENT_ID && SMTP_OAUTH_CLIENT_SECRET && SMTP_OAUTH_REFRESH_TOKEN) {
+      // Use google-auth-library to exchange refresh token for access token
+      const { OAuth2Client } = require('google-auth-library')
+      const oauth2Client = new OAuth2Client(SMTP_OAUTH_CLIENT_ID, SMTP_OAUTH_CLIENT_SECRET)
+      oauth2Client.setCredentials({ refresh_token: SMTP_OAUTH_REFRESH_TOKEN })
+
+      const accessTokenObj = await oauth2Client.getAccessToken()
+      const accessToken = accessTokenObj ? (accessTokenObj.token || accessTokenObj) : null
+
+      transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+          type: 'OAuth2',
+          user: SMTP_USER,
+          clientId: SMTP_OAUTH_CLIENT_ID,
+          clientSecret: SMTP_OAUTH_CLIENT_SECRET,
+          refreshToken: SMTP_OAUTH_REFRESH_TOKEN,
+          accessToken,
+        },
+      })
+      console.log('[email-api] Transporter ready (OAuth2)')
+      return transporter
+    }
+
+    console.warn('[email-api] SMTP credentials not set in .env.local – emails will be logged only')
+    return null
   } catch (error) {
     console.error('[email-api] Failed to init transporter:', error)
     return null
@@ -68,7 +101,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const mailer = initializeTransporter()
+    const mailer = await initializeTransporter()
 
     if (!mailer) {
       // SMTP not configured – log and pretend success so app keeps working
@@ -116,7 +149,10 @@ export async function GET() {
   return NextResponse.json({
     status: 'ok',
     message: 'Email endpoint ready – recipient is dynamic (signed-in admin email)',
-    smtpConfigured: !!(SMTP_USER && SMTP_PASSWORD),
+    smtpConfigured: !!(
+      (SMTP_USER && SMTP_PASSWORD) ||
+      (SMTP_USER && SMTP_OAUTH_CLIENT_ID && SMTP_OAUTH_CLIENT_SECRET && SMTP_OAUTH_REFRESH_TOKEN)
+    ),
     smtpUser: SMTP_USER ? SMTP_USER.slice(0, 3) + '****' + SMTP_USER.slice(-10) : 'not set',
   })
 }
