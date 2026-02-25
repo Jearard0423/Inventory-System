@@ -48,7 +48,7 @@ const emailWrapper = (content: string) => `
           <!-- Header -->
           <tr>
             <td style="background:linear-gradient(135deg,#dc2626 0%,#ef4444 100%);padding:28px 32px;text-align:center;">
-              <img src="https://i.imgur.com/YOUR-YRC-LOGO.png" alt="Yellow Roast Co. Logo" style="width: 60px; height: 60px; margin-bottom: 12px; border-radius: 8px;" />
+              <img src="/workspaces/Inventory-System/public/yrc-logo.png" alt="Yellow Roast Co. Logo" style="width: 60px; height: 60px; margin-bottom: 12px; border-radius: 8px;" />
               <h1 style="margin:0;color:#ffffff;font-size:26px;font-weight:700;letter-spacing:0.5px;">Yellow Roast Co.</h1>
               <p style="margin:4px 0 0;color:#fef3c7;font-size:13px;">Premium Roasted Chicken & More</p>
             </td>
