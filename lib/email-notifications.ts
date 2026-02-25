@@ -47,9 +47,10 @@ const emailWrapper = (content: string) => `
 
           <!-- Header -->
           <tr>
-            <td style="background:linear-gradient(135deg,#d97706 0%,#f59e0b 100%);padding:28px 32px;text-align:center;">
-              <h1 style="margin:0;color:#ffffff;font-size:26px;font-weight:700;letter-spacing:0.5px;">🐓 Yellow Roast Co.</h1>
-              <p style="margin:4px 0 0;color:#fef3c7;font-size:13px;">Order Management System</p>
+            <td style="background:linear-gradient(135deg,#dc2626 0%,#ef4444 100%);padding:28px 32px;text-align:center;">
+              <img src="https://i.imgur.com/YOUR-YRC-LOGO.png" alt="Yellow Roast Co. Logo" style="width: 60px; height: 60px; margin-bottom: 12px; border-radius: 8px;" />
+              <h1 style="margin:0;color:#ffffff;font-size:26px;font-weight:700;letter-spacing:0.5px;">Yellow Roast Co.</h1>
+              <p style="margin:4px 0 0;color:#fef3c7;font-size:13px;">Premium Roasted Chicken & More</p>
             </td>
           </tr>
 
@@ -62,8 +63,8 @@ const emailWrapper = (content: string) => `
 
           <!-- Footer -->
           <tr>
-            <td style="background:#fef3c7;padding:18px 32px;text-align:center;border-top:1px solid #fde68a;">
-              <p style="margin:0;color:#92400e;font-size:12px;">
+            <td style="background:#fecaca;padding:18px 32px;text-align:center;border-top:1px solid #fca5a5;">
+              <p style="margin:0;color:#991b1b;font-size:12px;">
                 This is an automated notification from <strong>Yellow Roast Co.</strong> Inventory System.<br/>
                 Sent on ${todayLabel()} at ${nowLabel()}
               </p>
@@ -319,27 +320,149 @@ export const sendOrderPlacedNotification = async (
     if (orderDate.getTime() !== today.getTime()) return
 
     const subject = `🆕 New Order Received for Today`;
-    const htmlBody = `
-      <div style="font-family: Arial, sans-serif; padding: 20px;">
-        <h2>YellowBell Roast Co. - New Order</h2>
-        <p>A new order was placed today by <strong>${order.customerName}</strong>:</p>
-        <ul>
-          ${order.items
-            .map(i => `<li>${i.quantity}x ${i.name}</li>`)
-            .join('')}
-        </ul>
-        <p>Please ensure this order is prepared within the next ${Math.round(REMINDER_INTERVAL / 60000)} minutes.</p>
+    const content = `
+      <div style="text-align: center; margin-bottom: 24px;">
+        <div style="font-size: 48px; margin-bottom: 8px;">🐔</div>
+        <h2 style="color: #dc2626; margin: 0; font-size: 24px;">New Order Received</h2>
+        <p style="color: #6b7280; margin: 4px 0 0; font-size: 14px;">${todayLabel()} at ${nowLabel()}</p>
+      </div>
+
+      <div style="background: #fef3c7; padding: 20px; border-radius: 8px; margin-bottom: 24px;">
+        <h3 style="color: #991b1b; margin: 0 0 12px; font-size: 18px;">👤 Customer: ${order.customerName}</h3>
+        <div style="background: white; padding: 16px; border-radius: 6px; border-left: 4px solid #d97706;">
+          <h4 style="color: #374151; margin: 0 0 12px; font-size: 16px;">📋 Order Details:</h4>
+          <ul style="margin: 0; padding-left: 20px;">
+            ${order.items
+              .map(i => `<li style="color: #374151; margin-bottom: 4px;">${i.quantity}× ${i.name}</li>`)
+              .join('')}
+          </ul>
+        </div>
+      </div>
+
+      <div style="background: #ecfdf5; border: 1px solid #d1fae5; padding: 16px; border-radius: 8px;">
+        <p style="color: #065f46; margin: 0; font-size: 14px;">
+          <strong>⏰ Action Required:</strong> Please prepare this order within the next ${Math.round(REMINDER_INTERVAL / 60000)} minutes.
+        </p>
       </div>
     `;
-    const plainTextBody = `New order placed by ${order.customerName}:
+    const htmlBody = emailWrapper(content);
+    const plainTextBody = `Yellow Roast Co. - New Order
+
+Customer: ${order.customerName}
+Order Date: ${todayLabel()} at ${nowLabel()}
+
+Order Details:
 ${order.items
-      .map(i => `- ${i.quantity}x ${i.name}`)
-      .join('\n')}
+  .map(i => `- ${i.quantity}x ${i.name}`)
+  .join('\n')}
 
 Please prepare this order within the next ${Math.round(REMINDER_INTERVAL / 60000)} minutes.`;
 
     await sendEmailNotification(subject, htmlBody, plainTextBody, recipientEmail);
   } catch (err) {
     console.error('[email-notifications] Error sending new-order notification:', err)
+  }
+}
+
+/**
+ * Send daily reminder about upcoming orders for tomorrow
+ */
+export const sendUpcomingOrdersReminder = async (
+  tomorrowOrders: Array<{
+    customerName: string;
+    items: Array<{ name: string; quantity: number }>;
+    date: string;
+  }>,
+  recipientEmail?: string
+): Promise<void> => {
+  if (!recipientEmail || tomorrowOrders.length === 0) return
+
+  try {
+    const tomorrow = new Date()
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    const tomorrowLabel = tomorrow.toLocaleDateString('en-PH', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    })
+
+    const subject = `📅 Upcoming Orders for ${tomorrowLabel}`
+
+    const content = `
+      <div style="text-align: center; margin-bottom: 24px;">
+        <div style="font-size: 48px; margin-bottom: 8px;">📅</div>
+        <h2 style="color: #dc2626; margin: 0; font-size: 24px;">Upcoming Orders Reminder</h2>
+        <p style="color: #6b7280; margin: 4px 0 0; font-size: 14px;">${tomorrowLabel}</p>
+      </div>
+
+      <div style="background: #fef3c7; padding: 20px; border-radius: 8px; margin-bottom: 24px;">
+        <h3 style="color: #991b1b; margin: 0 0 16px; font-size: 18px;">📋 Orders for Tomorrow (${tomorrowOrders.length} customer${tomorrowOrders.length > 1 ? 's' : ''})</h3>
+
+        ${tomorrowOrders.map((order, index) => `
+          <div style="background: white; padding: 16px; border-radius: 6px; margin-bottom: 12px; border-left: 4px solid #d97706;">
+            <h4 style="color: #374151; margin: 0 0 8px; font-size: 16px;">${index + 1}. 👤 ${order.customerName}</h4>
+            <ul style="margin: 0; padding-left: 20px;">
+              ${order.items
+                .map(i => `<li style="color: #374151; margin-bottom: 2px;">${i.quantity}× ${i.name}</li>`)
+                .join('')}
+            </ul>
+          </div>
+        `).join('')}
+      </div>
+
+      <div style="background: #ecfdf5; border: 1px solid #d1fae5; padding: 16px; border-radius: 8px;">
+        <p style="color: #065f46; margin: 0; font-size: 14px;">
+          <strong>⏰ Preparation Reminder:</strong> These orders are scheduled for tomorrow. Please ensure all ingredients and preparations are ready.
+        </p>
+      </div>
+    `
+
+    const htmlBody = emailWrapper(content)
+    const plainTextBody = `Yellow Roast Co. - Upcoming Orders for ${tomorrowLabel}
+
+You have ${tomorrowOrders.length} order${tomorrowOrders.length > 1 ? 's' : ''} scheduled for tomorrow:
+
+${tomorrowOrders.map((order, index) => `
+${index + 1}. ${order.customerName}
+${order.items.map(i => `   - ${i.quantity}x ${i.name}`).join('\n')}
+`).join('\n')}
+
+Please ensure all ingredients and preparations are ready for tomorrow's orders.`
+
+    await sendEmailNotification(subject, htmlBody, plainTextBody, recipientEmail)
+    console.log(`[email-notifications] Sent upcoming orders reminder for ${tomorrowLabel} to ${recipientEmail}`)
+  } catch (err) {
+    console.error('[email-notifications] Error sending upcoming orders reminder:', err)
+  }
+}
+
+/**
+ * Check for orders scheduled for tomorrow and send reminder if any exist
+ */
+export const checkAndSendUpcomingOrdersReminder = async (
+  getOrdersForDate: (date: string) => Array<{
+    customerName: string;
+    items: Array<{ name: string; quantity: number }>;
+    date: string;
+  }>,
+  recipientEmail?: string
+): Promise<void> => {
+  if (!recipientEmail) return
+
+  try {
+    // Get tomorrow's date
+    const tomorrow = new Date()
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    const tomorrowStr = tomorrow.toISOString().split('T')[0] // YYYY-MM-DD format
+
+    // Get all orders for tomorrow
+    const tomorrowOrders = getOrdersForDate(tomorrowStr)
+
+    if (tomorrowOrders.length > 0) {
+      await sendUpcomingOrdersReminder(tomorrowOrders, recipientEmail)
+    }
+  } catch (error) {
+    console.error('[email-notifications] Error checking upcoming orders:', error)
   }
 }
