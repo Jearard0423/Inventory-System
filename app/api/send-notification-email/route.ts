@@ -93,32 +93,42 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    const info = await mailer.sendMail({
-      from: `"Yellow Roast Co." <${SMTP_USER}>`,
-      to: recipientEmail,
-      subject,
-      text: plainTextBody,
-      html: htmlBody,
-    })
+    try {
+      const info = await mailer.sendMail({
+        from: `"Yellow Roast Co." <${SMTP_USER}>`,
+        to: recipientEmail,
+        subject,
+        text: plainTextBody,
+        html: htmlBody,
+      })
 
-    console.log(`[email-api] Email sent to ${recipientEmail} – messageId: ${info.messageId}`)
+      console.log(`[email-api] Email sent to ${recipientEmail} – messageId: ${info.messageId}`)
 
-    return NextResponse.json({
-      success: true,
-      message: 'Email sent successfully via SMTP',
-      recipient: recipientEmail,
-      messageId: info.messageId,
-    })
+      return NextResponse.json({
+        success: true,
+        message: 'Email sent successfully via SMTP',
+        recipient: recipientEmail,
+        messageId: info.messageId,
+      })
+    } catch (error) {
+      // Log the error but don't fail the HTTP request so callers won't see a network error
+      console.error('[email-api] Error sending email:', error)
+      return NextResponse.json({
+        success: false,
+        error: 'Failed to send email',
+        message: error instanceof Error ? error.message : 'Unknown error',
+        recipient: recipientEmail,
+      })
+    }
 
   } catch (error) {
     console.error('[email-api] Error:', error)
-    return NextResponse.json(
-      {
-        error: 'Failed to send email',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      },
-      { status: 500 }
-    )
+    // this outer catch is unlikely to be hit but we mirror the same structure
+    return NextResponse.json({
+      success: false,
+      error: 'Failed to send email',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    })
   }
 }
 

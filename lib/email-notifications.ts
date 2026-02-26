@@ -22,6 +22,21 @@ const todayLabel = () =>
 const nowLabel = () =>
   new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: true })
 
+// default interval for kitchen reminders (milliseconds)
+let REMINDER_INTERVAL = 30 * 60 * 1000 // 30 minutes, can be adjusted via setReminderInterval()
+
+// state used by food preparation reminders
+interface EmailNotificationState {
+  lastReminderTime: number
+  remindersCount: number
+  hasOrdersToday: boolean
+}
+let notificationState: EmailNotificationState = {
+  lastReminderTime: 0,
+  remindersCount: 0,
+  hasOrdersToday: false,
+}
+
 /** Yellow Roast Co. branded email wrapper with logo and color scheme */
 const emailWrapper = (content: string) => `
 <!DOCTYPE html>
@@ -158,12 +173,13 @@ const sendEmailNotification = async (
       body: JSON.stringify({ subject, htmlBody, plainTextBody, recipientEmail, timestamp: new Date().toISOString() }),
     })
 
-    if (response.ok) {
+    const data = await response.json().catch(() => ({}))
+    if (response.ok && (data.success === undefined || data.success)) {
       console.log(`[email-notifications] Sent: ${subject}`)
       return true
     }
-    const err = await response.json().catch(() => ({}))
-    console.warn(`[email-notifications] Failed: ${err.message || response.statusText}`)
+    // API returned a failure flag or non-OK status
+    console.warn(`[email-notifications] Failed: ${data.message || response.statusText || 'unknown'}`)
     return false
   } catch (error) {
     console.error('[email-notifications] Error:', error)
@@ -336,17 +352,34 @@ export const setReminderInterval = (intervalMs: number): void => {
  * If no valid recipientEmail is provided nothing will be sent.
  */
 export const sendOrderPlacedNotification = async (
-  order: { date: string; customerName: string; items: Array<{ name: string; quantity: number }> },
+  order: { id?: string; date: string; customerName: string; items: Array<{ name: string; quantity: number }> },
   recipientEmail?: string
-): Promise<void> => {
-  if (!recipientEmail) return
+): Promise<boolean> => {
+  if (!recipientEmail) return false
+
+  // if we have an id, verify the order still exists (prevents emailing a just-cancelled order)
+  if (order.id) {
+    try {
+      // avoid circular import problems by requiring lazily
+      const { getCustomerOrders } = require('./inventory-store')
+      const existing = getCustomerOrders().find((o: any) => o.id === order.id)
+      if (!existing) {
+        console.log('[email-notifications] Order no longer exists, skipping new-order email')
+        return false
+      }
+    } catch (err) {
+      // if anything goes wrong, fall back to sending so we don't silently swallow
+      console.warn('[email-notifications] Could not verify order existence:', err)
+    }
+  }
+
   try {
     // only notify for orders with a date equal to today
     const today = new Date()
     today.setHours(0, 0, 0, 0)
     const orderDate = new Date(order.date)
     orderDate.setHours(0, 0, 0, 0)
-    if (orderDate.getTime() !== today.getTime()) return
+    if (orderDate.getTime() !== today.getTime()) return false
 
     const subject = `🆕 New Order Received for Today`;
     const content = `
@@ -370,7 +403,7 @@ export const sendOrderPlacedNotification = async (
 
       <div style="background: #ecfdf5; border: 1px solid #d1fae5; padding: 16px; border-radius: 8px;">
         <p style="color: #065f46; margin: 0; font-size: 14px;">
-          <strong>⏰ Action Required:</strong> Please prepare this order within the next ${Math.round(REMINDER_INTERVAL / 60000)} minutes.
+          <strong>⏰ Action Required:</strong> Please prepare this order as soon as possible.
         </p>
       </div>
     `;
@@ -387,9 +420,14 @@ ${order.items
 
 Please prepare this order within the next ${Math.round(REMINDER_INTERVAL / 60000)} minutes.`;
 
-    await sendEmailNotification(subject, htmlBody, plainTextBody, recipientEmail);
+    const sent = await sendEmailNotification(subject, htmlBody, plainTextBody, recipientEmail);
+    if (!sent) {
+      console.warn('[email-notifications] New-order email failed to send');
+    }
+    return sent;
   } catch (err) {
     console.error('[email-notifications] Error sending new-order notification:', err)
+    return false;
   }
 }
 
@@ -505,11 +543,13 @@ export const checkAndSendUpcomingOrdersReminder = async (
 interface AdvancedNotificationState {
   sentOneDayReminders: Set<string> // orderId -> has 1-day reminder been sent
   sentOneHourReminders: Set<string> // orderId -> has 1-hour reminder been sent
+  sentThirtyMinuteReminders: Set<string> // orderId -> has 30-min reminder been sent
 }
 
 let advancedNotificationState: AdvancedNotificationState = {
   sentOneDayReminders: new Set(),
-  sentOneHourReminders: new Set()
+  sentOneHourReminders: new Set(),
+  sentThirtyMinuteReminders: new Set(),
 }
 
 /**
@@ -523,11 +563,23 @@ export const checkAndSendAdvancedOrderNotifications = async (
   if (!recipientEmail || !orders.length) return
 
   try {
+    // remove any reminders for orders that have been deleted/cancelled
+    const orderIds = new Set(orders.map(o => o.id))
+    advancedNotificationState.sentOneDayReminders.forEach(id => {
+      if (!orderIds.has(id)) advancedNotificationState.sentOneDayReminders.delete(id)
+    })
+    advancedNotificationState.sentOneHourReminders.forEach(id => {
+      if (!orderIds.has(id)) advancedNotificationState.sentOneHourReminders.delete(id)
+    })
+    advancedNotificationState.sentThirtyMinuteReminders.forEach(id => {
+      if (!orderIds.has(id)) advancedNotificationState.sentThirtyMinuteReminders.delete(id)
+    })
+
     const now = new Date()
 
     for (const order of orders) {
-      // Skip if order is already complete or delivered
-      if (order.status === 'complete' || order.status === 'delivered') continue
+      // Skip if order is already complete, delivered, or served
+      if (order.status === 'served' || order.status === 'delivered') continue
 
       const orderDate = new Date(order.createdAt)
       const deliveryDate = new Date(order.createdAt)
@@ -558,16 +610,16 @@ export const checkAndSendAdvancedOrderNotifications = async (
         advancedNotificationState.sentOneDayReminders.add(order.id)
       }
 
-      // 1-HOUR BEFORE REMINDER (between 0.9 and 1.1 hours before)
+      // 1-HOUR BEFORE REMINDER (<=1h and >0)
       if (hoursUntilDelivery <= 1 && hoursUntilDelivery > 0 && !advancedNotificationState.sentOneHourReminders.has(order.id)) {
         await sendOneHourBeforeNotification(order, recipientEmail)
         advancedNotificationState.sentOneHourReminders.add(order.id)
       }
 
-      // Clean up reminders for completed orders
-      if (order.status === 'complete' || order.status === 'delivered') {
-        advancedNotificationState.sentOneDayReminders.delete(order.id)
-        advancedNotificationState.sentOneHourReminders.delete(order.id)
+      // 30-MINUTE BEFORE REMINDER (<=0.5h and >0)
+      if (hoursUntilDelivery <= 0.5 && hoursUntilDelivery > 0 && !advancedNotificationState.sentThirtyMinuteReminders.has(order.id)) {
+        await sendThirtyMinuteNotification(order, recipientEmail)
+        advancedNotificationState.sentThirtyMinuteReminders.add(order.id)
       }
     }
   } catch (error) {
@@ -733,12 +785,87 @@ FINAL PREPARATION: Pack order now for immediate delivery!`
 }
 
 /**
+ * Send 30-minute-before delivery notification
+ */
+const sendThirtyMinuteNotification = async (
+  order: CustomerOrder,
+  recipientEmail: string
+): Promise<void> => {
+  try {
+    const deliveryDate = new Date(order.createdAt)
+    if (order.cookTime) {
+      const [hours, minutes] = order.cookTime.split(':').map(Number)
+      deliveryDate.setHours(hours, minutes, 0, 0)
+    }
+
+    const deliveryDateLabel = deliveryDate.toLocaleDateString('en-PH', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    })
+
+    const deliveryTimeLabel = order.cookTime
+      ? new Date(`2024-01-01T${order.cookTime}`).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
+      : 'TBD'
+
+    const subject = `⏱️ Order Delivery in 30 Minutes: ${order.customerName}`
+
+    const content = `
+      <div style="text-align: center; margin-bottom: 24px;">
+        <div style="font-size: 48px; margin-bottom: 8px;">⏱️</div>
+        <h2 style="color: #dc2626; margin: 0; font-size: 24px;">ORDER DELIVERY IN 30 MINUTES</h2>
+        <p style="color: #6b7280; margin: 4px 0 0; font-size: 14px;">Scheduled for ${deliveryTimeLabel} on ${deliveryDateLabel}</p>
+      </div>
+
+      <div style="background: #fee2e2; border: 2px solid #dc2626; padding: 20px; border-radius: 8px; margin-bottom: 24px;">
+        <h3 style="color: #991b1b; margin: 0 0 12px; font-size: 18px;">⏰ ${order.customerName}</h3>
+        <p style="margin: 0 0 8px; color: #7f1d1d; font-size: 16px;"><strong>Delivery at: ${deliveryTimeLabel} TODAY</strong></p>
+        <div style="background: white; padding: 12px; border-radius: 4px; margin-top: 12px;">
+          <p style="margin: 0 0 8px; color: #6b7280; font-size: 13px;"><strong>Items to deliver:</strong></p>
+          <ul style="margin: 0; padding-left: 20px;">
+            ${order.orderedItems
+              .map(item => `<li style="color: #374151; margin-bottom: 2px;">${item.quantity}× ${item.name}</li>`)
+              .join('')}
+          </ul>
+        </div>
+      </div>
+
+      <div style="background: #fef3c7; border: 1px solid #fcd34d; padding: 16px; border-radius: 8px; text-align: center;">
+        <p style="color: #92400e; margin: 0; font-size: 14px;">
+          <strong>⚡ FINAL PREPARATION:</strong> Pack order now for immediate delivery!
+        </p>
+      </div>
+    `
+
+    const htmlBody = emailWrapper(content)
+    const plainTextBody = `Yellow Roast Co. - 30 Minute Reminder
+
+⚡ URGENT: Order delivery in 30 MINUTES
+
+Customer: ${order.customerName}
+Delivery Time: ${deliveryTimeLabel}
+
+Items to deliver:
+${order.orderedItems.map(item => `- ${item.quantity}x ${item.name}`).join('\n')}
+
+FINAL PREPARATION: Pack order now for immediate delivery!`
+
+    await sendEmailNotification(subject, htmlBody, plainTextBody, recipientEmail)
+    console.log(`[email-notifications] Sent 30-minute reminder for order ${order.id} (${order.customerName})`)
+  } catch (err) {
+    console.error('[email-notifications] Error sending 30-minute notification:', err)
+  }
+}
+
+/**
  * Reset advanced notification state (call at midnight for new day)
  */
 export const resetAdvancedNotificationState = (): void => {
   advancedNotificationState = {
     sentOneDayReminders: new Set(),
-    sentOneHourReminders: new Set()
+    sentOneHourReminders: new Set(),
+    sentThirtyMinuteReminders: new Set(),
   }
   console.log('[email-notifications] Advanced notification state reset for new day')
 }

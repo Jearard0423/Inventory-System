@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { getOrders, deleteOrder } from "@/lib/orders"
+import { useToast } from '@/hooks/use-toast'
 import { Pagination } from "@/components/pagination"
 import { getCustomerOrders } from "@/lib/inventory-store"
 
@@ -522,12 +523,19 @@ export default function OrdersPage() {
     setErrors({})
   }
 
+  const { toast } = useToast()
+
   const handleDeleteOrder = () => {
     if (!orderToDelete) return
     
     deleteOrder(orderToDelete.id)
     setShowDeleteModal(false)
     setOrderToDelete(null)
+    toast({
+      title: 'Order cancelled',
+      description: 'The order has been removed and a notification has been logged.',
+      variant: 'destructive',
+    })
   }
 
   const openDeleteModal = (e: React.MouseEvent, order: Order) => {

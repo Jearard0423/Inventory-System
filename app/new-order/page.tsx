@@ -17,6 +17,7 @@ import { useState, useEffect } from "react"
 import { cn } from "@/lib/utils"
 import { getInventory, getMenuItems, reduceStock, reduceUtensilsForMeal, reduceContainerForItem, saveOrder, checkAndWarnStockForItem, checkTotalCartStockRequirements, type InventoryItem, addMenuItem, deleteMenuItem, canOrderItem, canOrderCart, getItemStock, getOrderLimitMessage } from "@/lib/inventory-store"
 import { sendOrderPlacedNotification } from "@/lib/email-notifications"
+import { useToast } from '@/hooks/use-toast'
 import { useAuth } from "@/components/AuthProvider"
 import { getCustomerAnalytics, type CustomerData } from "@/lib/customers"
 import { generateOrderNumber } from "@/lib/orders"
@@ -89,6 +90,7 @@ const getMealTypeForSelectedDate = (cookingDate: string): string => {
 export default function NewOrderPage() {
   const router = useRouter()
   const isMobile = useIsMobile()
+  const { toast } = useToast()
   const [showConfirmation, setShowConfirmation] = useState(false)
   const [showReceipt, setShowReceipt] = useState(false)
   const [receiptData, setReceiptData] = useState<any>(null)
@@ -750,7 +752,7 @@ export default function NewOrderPage() {
 
   
   
-  const confirmPlaceOrder = () => {
+  const confirmPlaceOrder = async () => {
     const now = new Date()
     
     // Generate the order number using the same function as saveOrder
@@ -847,13 +849,28 @@ export default function NewOrderPage() {
     if (recipient) {
       // orderData.date is cookingDate
       try {
-        sendOrderPlacedNotification({
+        const success = await sendOrderPlacedNotification({
+          id: savedOrder.id,
           date: savedOrder.date,
           customerName: savedOrder.customerName,
           items: savedOrder.items.map((i: { name: string; quantity: number }) => ({ name: i.name, quantity: i.quantity }))
         }, recipient)
+
+        if (!success) {
+          // show feedback so the admin knows the email did not go out
+          toast({
+            title: 'Notification failed',
+            description: 'Could not send email about the new order. Check your SMTP configuration.',
+            variant: 'destructive',
+          })
+        }
       } catch (e) {
         console.warn('failed to send new-order notification', e)
+        toast({
+          title: 'Notification error',
+          description: 'An unexpected error occurred while sending email.',
+          variant: 'destructive',
+        })
       }
     }
     setDeliveryPhone("")
