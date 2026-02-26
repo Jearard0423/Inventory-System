@@ -148,6 +148,7 @@ export default function KitchenPage() {
     const notificationCheckInterval = setInterval(async () => {
       const orders = getCustomerOrders()
       const recipient = auth?.user?.email
+      console.log(`[kitchen-page] 🔄 Notification check: ${orders.length} orders, recipient: ${recipient ? '✓' : '✗'}`)
       await checkAndSendFoodPreparationReminder(orders, recipient || undefined)
       // Also check for advanced time-based notifications
       await checkAndSendAdvancedOrderNotifications(orders, recipient || undefined)

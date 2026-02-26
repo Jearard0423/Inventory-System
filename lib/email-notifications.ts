@@ -22,6 +22,21 @@ const todayLabel = () =>
 const nowLabel = () =>
   new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: true })
 
+/**
+ * Parse a date string as LOCAL time, not UTC
+ * Handles both "YYYY-MM-DD" format and ISO timestamps
+ */
+const parseLocalDate = (dateString: string): Date => {
+  // If it's ISO format with T (has time component), parse normally
+  if (dateString.includes('T')) {
+    return new Date(dateString)
+  }
+  
+  // Otherwise assume YYYY-MM-DD format and parse as local time
+  const [year, month, day] = dateString.split('-').map(Number)
+  return new Date(year, month - 1, day)
+}
+
 // default interval for kitchen reminders (milliseconds)
 let REMINDER_INTERVAL = 30 * 60 * 1000 // 30 minutes, can be adjusted via setReminderInterval()
 
@@ -165,7 +180,16 @@ const sendEmailNotification = async (
   recipientEmail: string
 ): Promise<boolean> => {
   try {
-    if (typeof window === 'undefined') return false
+    if (typeof window === 'undefined') {
+      console.warn('[email-notifications] ❌ Cannot send email - running on server')
+      return false
+    }
+
+    console.log('[email-notifications] 📨 Sending email:', { 
+      to: recipientEmail, 
+      subject,
+      bodyLength: htmlBody.length
+    })
 
     const response = await fetch('/api/send-notification-email', {
       method: 'POST',
@@ -173,16 +197,21 @@ const sendEmailNotification = async (
       body: JSON.stringify({ subject, htmlBody, plainTextBody, recipientEmail, timestamp: new Date().toISOString() }),
     })
 
+    console.log('[email-notifications] API Response Status:', response.status)
+
     const data = await response.json().catch(() => ({}))
+    
+    console.log('[email-notifications] API Response Data:', data)
+    
     if (response.ok && (data.success === undefined || data.success)) {
-      console.log(`[email-notifications] Sent: ${subject}`)
+      console.log(`✅ [email-notifications] Sent: ${subject}`)
       return true
     }
     // API returned a failure flag or non-OK status
-    console.warn(`[email-notifications] Failed: ${data.message || response.statusText || 'unknown'}`)
+    console.warn(`❌ [email-notifications] Failed: ${data.message || response.statusText || 'unknown'}`, data)
     return false
   } catch (error) {
-    console.error('[email-notifications] Error:', error)
+    console.error('❌ [email-notifications] Error:', error)
     return false
   }
 }
@@ -195,6 +224,11 @@ const sendEmailNotification = async (
  */
 export const checkAndSendFoodPreparationReminder = async (orders: CustomerOrder[], recipientEmail?: string): Promise<void> => {
   try {
+    console.log('[email-notifications] checkAndSendFoodPreparationReminder called:', {
+      ordersCount: orders.length,
+      hasRecipient: !!recipientEmail
+    })
+    
     // Get current time
     const now = new Date()
     const today = new Date()
@@ -202,7 +236,7 @@ export const checkAndSendFoodPreparationReminder = async (orders: CustomerOrder[
 
     // Filter today's orders that are not yet complete or delivered
     const todayOrders = orders.filter(order => {
-      const orderDate = new Date(order.createdAt)
+      const orderDate = parseLocalDate(order.createdAt)
       orderDate.setHours(0, 0, 0, 0)
       return orderDate.getTime() === today.getTime() && 
              order.status !== 'complete' && 
@@ -211,7 +245,7 @@ export const checkAndSendFoodPreparationReminder = async (orders: CustomerOrder[
 
     // Also gather any future/advanced orders (for awareness)
     const advancedOrders = orders.filter(order => {
-      const orderDate = new Date(order.createdAt)
+      const orderDate = parseLocalDate(order.createdAt)
       orderDate.setHours(0, 0, 0, 0)
       return orderDate.getTime() > today.getTime() &&
              order.status !== 'complete' &&
@@ -220,8 +254,15 @@ export const checkAndSendFoodPreparationReminder = async (orders: CustomerOrder[
 
     notificationState.hasOrdersToday = todayOrders.length > 0 || advancedOrders.length > 0
 
+    console.log('[email-notifications] Food prep reminder check:', {
+      todayOrders: todayOrders.length,
+      advancedOrders: advancedOrders.length,
+      hasOrders: notificationState.hasOrdersToday
+    })
+
     // Only send reminder if there are orders (today or advanced) and interval passed
     if (!notificationState.hasOrdersToday) {
+      console.log('[email-notifications] ⏭️ No orders to remind about')
       return
     }
 
@@ -355,7 +396,12 @@ export const sendOrderPlacedNotification = async (
   order: { id?: string; date: string; customerName: string; items: Array<{ name: string; quantity: number }> },
   recipientEmail?: string
 ): Promise<boolean> => {
-  if (!recipientEmail) return false
+  console.log('[email-notifications] sendOrderPlacedNotification called:', { recipientEmail, orderId: order.id, orderDate: order.date })
+  
+  if (!recipientEmail) {
+    console.warn('[email-notifications] ❌ No recipient email provided - email NOT sent')
+    return false
+  }
 
   // if we have an id, verify the order still exists (prevents emailing a just-cancelled order)
   if (order.id) {
@@ -364,7 +410,7 @@ export const sendOrderPlacedNotification = async (
       const { getCustomerOrders } = require('./inventory-store')
       const existing = getCustomerOrders().find((o: any) => o.id === order.id)
       if (!existing) {
-        console.log('[email-notifications] Order no longer exists, skipping new-order email')
+        console.log('[email-notifications] ❌ Order no longer exists, skipping new-order email')
         return false
       }
     } catch (err) {
@@ -377,9 +423,21 @@ export const sendOrderPlacedNotification = async (
     // only notify for orders with a date equal to today
     const today = new Date()
     today.setHours(0, 0, 0, 0)
-    const orderDate = new Date(order.date)
+    
+    // Parse the date string as LOCAL time (handles YYYY-MM-DD format correctly)
+    const orderDate = parseLocalDate(order.date)
     orderDate.setHours(0, 0, 0, 0)
-    if (orderDate.getTime() !== today.getTime()) return false
+    
+    console.log('[email-notifications] Checking order date:', { 
+      orderDate: orderDate.toDateString(), 
+      today: today.toDateString(),
+      match: orderDate.getTime() === today.getTime()
+    })
+    
+    if (orderDate.getTime() !== today.getTime()) {
+      console.log('[email-notifications] ❌ Order is not for today - email NOT sent (future/past order)')
+      return false
+    }
 
     const subject = `🆕 New Order Received for Today`;
     const content = `
@@ -560,7 +618,12 @@ export const checkAndSendAdvancedOrderNotifications = async (
   orders: CustomerOrder[],
   recipientEmail?: string
 ): Promise<void> => {
-  if (!recipientEmail || !orders.length) return
+  console.log('[email-notifications] checkAndSendAdvancedOrderNotifications called with', orders.length, 'orders', 'recipient:', recipientEmail ? '✓' : '✗')
+  
+  if (!recipientEmail || !orders.length) {
+    console.log('[email-notifications] ⏭️ Skipping advanced notifications - recipientEmail:', !!recipientEmail, 'orders:', orders.length)
+    return
+  }
 
   try {
     // remove any reminders for orders that have been deleted/cancelled
@@ -581,8 +644,8 @@ export const checkAndSendAdvancedOrderNotifications = async (
       // Skip if order is already complete, delivered, or served
       if (order.status === 'served' || order.status === 'delivered') continue
 
-      const orderDate = new Date(order.createdAt)
-      const deliveryDate = new Date(order.createdAt)
+      const orderDate = parseLocalDate(order.createdAt)
+      const deliveryDate = parseLocalDate(order.createdAt)
 
       // Parse cookTime if available (format: HH:MM in 24-hour format)
       let deliveryHour = 0
