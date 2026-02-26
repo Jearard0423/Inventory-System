@@ -600,40 +600,20 @@ export const sendOrderPlacedNotification = async (
       return false
     }
 
-    // check for other orders with similar delivery time that haven't been notified yet
+    // summary table containing every order scheduled for today
     if (order.id) {
       try {
         const { getCustomerOrders } = require('./inventory-store')
         const allOrders = getCustomerOrders()
-        const alreadyNotified = new Set(getNotifiedOrders())
 
         const toNotify = allOrders.filter(o => {
-          if (!o.id || alreadyNotified.has(o.id)) return false
-          if (o.date !== order.date) return false
-
-          // when both orders specify a cookTime, group if within 30 minutes
-          if (o.cookTime && order.cookTime) {
-            const toMinutes = (t: string) => {
-              const [h, m] = t.split(':').map(Number)
-              return h * 60 + m
-            }
-            const diff = Math.abs(toMinutes(o.cookTime) - toMinutes(order.cookTime))
-            if (diff <= 30) return true
-          }
-
-          // fallback: if they were placed within the same minute
-          if (o.createdAt && order.createdAt) {
-            const t1 = new Date(o.createdAt).getTime()
-            const t2 = new Date(order.createdAt).getTime()
-            if (Math.abs(t1 - t2) < 60 * 1000) return true
-          }
-
-          return false
+          if (!o.id) return false
+          const od = new Date(o.date)
+          return od.toDateString() === today.toDateString()
         })
 
-        if (toNotify.length > 1) {
-          // build a tabled grouped email
-          const subject = `🆕 ${toNotify.length} New Orders`;
+        if (toNotify.length > 0) {
+          const subject = `🆕 ${toNotify.length} Order${toNotify.length > 1 ? 's' : ''} Today`;
 
           const rows = toNotify
             .map(o => {
@@ -652,7 +632,7 @@ export const sendOrderPlacedNotification = async (
           const content = `
             <div style="text-align:center;margin-bottom:24px;">
               <div style="font-size:48px;margin-bottom:8px;">🐔</div>
-              <h2 style="color:#dc2626;margin:0;font-size:24px;">${toNotify.length} New Orders</h2>
+              <h2 style="color:#dc2626;margin:0;font-size:24px;">${toNotify.length} Order${toNotify.length > 1 ? 's' : ''} Today</h2>
               <p style="color:#6b7280;margin:4px 0 0;font-size:14px;">${todayLabel()} at ${nowLabel()}</p>
             </div>
             <table width="100%" cellpadding="4" cellspacing="0" style="border-collapse:collapse;">
@@ -671,7 +651,7 @@ export const sendOrderPlacedNotification = async (
           `
 
           const htmlBody = emailWrapper(content)
-          const plainTextBody = `Yellow Roast Co. - ${toNotify.length} New Orders\n\n${toNotify
+          const plainTextBody = `Yellow Roast Co. - ${toNotify.length} Order${toNotify.length > 1 ? 's' : ''} Today\n\n${toNotify
             .map(o =>
               `${o.customerName} | ${o.items
                 .map((i: any) => `${i.quantity}x ${i.name}`)
@@ -680,13 +660,10 @@ export const sendOrderPlacedNotification = async (
             .join('\n')}`
 
           const sent = await sendEmailNotification(subject, htmlBody, plainTextBody, recipientEmail)
-          if (sent) {
-            addNotifiedOrders(toNotify.map(o => o.id))
-          }
           return sent
         }
       } catch (e) {
-        console.warn('[email-notifications] grouping-error', e)
+        console.warn('[email-notifications] summary-error', e)
       }
     }
 
