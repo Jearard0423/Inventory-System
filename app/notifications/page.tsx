@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Bell, CheckCheck, Clock, Trash2, Package, ShoppingCart, Truck, AlertCircle } from "lucide-react"
 import { useState, useEffect } from "react"
 import { cn } from "@/lib/utils"
+import { useRouter } from "next/navigation"
 import { Pagination } from "@/components/pagination"
 import {
   getNotifications,
@@ -22,6 +23,7 @@ export default function NotificationsPage() {
   const [activeTab, setActiveTab] = useState("All")
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [currentPage, setCurrentPage] = useState(1)
+  const router = useRouter()
   const itemsPerPage = 10
 
   useEffect(() => {
@@ -147,7 +149,13 @@ export default function NotificationsPage() {
                         "flex items-start gap-4 p-4 rounded-lg border transition-colors group",
                         !notif.read ? "bg-primary/5 border-primary/20 cursor-pointer hover:bg-primary/10" : "bg-background hover:bg-muted/50",
                       )}
-                      onClick={() => !notif.read && handleMarkAsRead(notif.id)}
+                      onClick={() => {
+                        if (!notif.read) handleMarkAsRead(notif.id)
+                        if (notif.data?.id) {
+                          // navigate to order detail page if order data exists
+                          router.push(`/orders?orderId=${notif.data.id}`)
+                        }
+                      }}
                     >
                       <div className={cn("mt-1", getPriorityColor(notif.priority, notif.read))}>
                         {getIcon(notif.type)}
@@ -160,6 +168,19 @@ export default function NotificationsPage() {
                           )}
                         </div>
                         <p className="text-sm text-muted-foreground mb-2">{notif.message}</p>
+                        {notif.data?.id && (
+                          <Button
+                            variant="link"
+                            size="sm"
+                            className="text-primary underline"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              router.push(`/orders?orderId=${notif.data.id}`)
+                            }}
+                          >
+                            View details
+                          </Button>
+                        )}
                         <div className="flex items-center gap-4 text-xs text-muted-foreground">
                           <span className="flex items-center gap-1">
                             <Clock className="h-3 w-3" />

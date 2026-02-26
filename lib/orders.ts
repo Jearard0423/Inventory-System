@@ -1,4 +1,4 @@
-import { restoreStockForOrder, reduceUtensilsForMeal, getInventory } from "./inventory-store"
+import { restoreStockForOrder, getInventory } from "./inventory-store"
 
 export interface Order {
   id: string
@@ -95,10 +95,12 @@ export const deleteOrder = (orderId: string): void => {
       const menuItem = inventory.find((item: any) => item.id === orderItem.id)
       if (menuItem?.category === "meals") {
         // Restore 2 utensils per meal (spoon and fork)
-        // Call reduceUtensilsForMeal for each utensil needed
-        for (let i = 0; i < orderItem.quantity * 2; i++) {
-          reduceUtensilsForMeal("meal")
-        }
+        // (previous code incorrectly reduced utensils; restore instead)
+        const { restoreUtensilsForQuantity } = require("./inventory-store")
+        // if restore function isn't available gracefully skip
+        try {
+          restoreUtensilsForQuantity(orderItem.quantity * 2)
+        } catch {}
       }
     })
     

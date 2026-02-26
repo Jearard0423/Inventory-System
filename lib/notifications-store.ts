@@ -6,6 +6,8 @@ export interface Notification {
   timestamp: string
   read: boolean
   priority: "low" | "medium" | "high"
+  // arbitrary payload, e.g. order object when showing details
+  data?: any
 }
 
 export const getNotifications = (): Notification[] => {

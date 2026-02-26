@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { getOrders, deleteOrder } from "@/lib/orders"
+import { saveNotification } from "@/lib/notifications-store"
 import { useToast } from '@/hooks/use-toast'
 import { Pagination } from "@/components/pagination"
 import { getCustomerOrders } from "@/lib/inventory-store"
@@ -528,6 +529,15 @@ export default function OrdersPage() {
   const handleDeleteOrder = () => {
     if (!orderToDelete) return
     
+    // log cancellation notification
+    saveNotification({
+      type: 'order',
+      title: 'Order Cancelled',
+      message: `${orderToDelete.orderNumber || orderToDelete.customerName} has been cancelled`,
+      priority: 'medium',
+      data: orderToDelete
+    })
+
     deleteOrder(orderToDelete.id)
     setShowDeleteModal(false)
     setOrderToDelete(null)

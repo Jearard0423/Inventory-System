@@ -49,6 +49,8 @@ const initializeTransporter = async () => {
         user: SMTP_USER,
         pass: SMTP_PASSWORD,
       },
+      connectionTimeout: 10000,
+      socketTimeout: 10000,
     })
 
     console.log('[email-api] SMTP transporter created successfully')
@@ -59,24 +61,43 @@ const initializeTransporter = async () => {
   }
 }
 
+// Add CORS headers to all responses
+const addCorsHeaders = (response: NextResponse) => {
+  response.headers.set('Access-Control-Allow-Origin', '*')
+  response.headers.set('Access-Control-Allow-Methods', 'POST, OPTIONS')
+  response.headers.set('Access-Control-Allow-Headers', 'Content-Type')
+  response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate')
+  return response
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { subject, htmlBody, plainTextBody, recipientEmail } = body
+    const { subject, htmlBody, plainTextBody, recipientEmail, timestamp, clientTimezone } = body
+
+    console.log('[email-api] Received request:', {
+      timestamp,
+      clientTimezone,
+      recipientEmail: recipientEmail?.slice(0, 5) + '****'
+    })
 
     if (!subject || !htmlBody || !plainTextBody) {
-      return NextResponse.json(
+      console.error('[email-api] Missing required fields')
+      const response = NextResponse.json(
         { error: 'Missing required fields: subject, htmlBody, plainTextBody' },
         { status: 400 }
       )
+      return addCorsHeaders(response)
     }
 
     // recipientEmail is the signed-in admin's email from Firebase Auth
     if (!recipientEmail) {
-      return NextResponse.json(
+      console.error('[email-api] Missing recipient email')
+      const response = NextResponse.json(
         { error: 'recipientEmail is required – must be the signed-in admin email' },
         { status: 400 }
       )
+      return addCorsHeaders(response)
     }
 
     const mailer = await initializeTransporter()
@@ -85,12 +106,14 @@ export async function POST(request: NextRequest) {
       // SMTP not configured – log and pretend success so app keeps working
       console.log('[email-api] (simulated) To:', recipientEmail)
       console.log('[email-api] (simulated) Subject:', subject)
-      return NextResponse.json({
+      console.log('[email-api] (simulated) Sent at:', timestamp || new Date().toISOString())
+      const response = NextResponse.json({
         success: true,
         simulated: true,
         message: 'SMTP credentials not configured – email was logged to console instead',
         recipient: recipientEmail,
       })
+      return addCorsHeaders(response)
     }
 
     try {
@@ -102,42 +125,55 @@ export async function POST(request: NextRequest) {
         html: htmlBody,
       })
 
-      console.log(`[email-api] Email sent to ${recipientEmail} – messageId: ${info.messageId}`)
+      console.log(`[email-api] ✅ Email sent to ${recipientEmail} – messageId: ${info.messageId}`)
 
-      return NextResponse.json({
+      const response = NextResponse.json({
         success: true,
         message: 'Email sent successfully via SMTP',
         recipient: recipientEmail,
         messageId: info.messageId,
+        sentAt: new Date().toISOString()
       })
+      return addCorsHeaders(response)
     } catch (error) {
       // Log the error but don't fail the HTTP request so callers won't see a network error
-      console.error('[email-api] Error sending email:', error)
-      return NextResponse.json({
+      console.error('[email-api] ❌ Error sending email:', error instanceof Error ? error.message : error)
+      const response = NextResponse.json({
         success: false,
         error: 'Failed to send email',
         message: error instanceof Error ? error.message : 'Unknown error',
         recipient: recipientEmail,
-      })
+      }, { status: 500 })
+      return addCorsHeaders(response)
     }
 
   } catch (error) {
-    console.error('[email-api] Error:', error)
+    console.error('[email-api] ❌ Error parsing request:', error)
     // this outer catch is unlikely to be hit but we mirror the same structure
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: false,
-      error: 'Failed to send email',
+      error: 'Failed to process request',
       message: error instanceof Error ? error.message : 'Unknown error',
-    })
+    }, { status: 500 })
+    return addCorsHeaders(response)
   }
 }
 
 /** GET /api/send-notification-email – health check */
 export async function GET() {
-  return NextResponse.json({
+  const response = NextResponse.json({
     status: 'ok',
     message: 'Email endpoint ready – recipient is dynamic (signed-in admin email)',
     smtpConfigured: !!(SMTP_USER && SMTP_PASSWORD),
     smtpUser: SMTP_USER ? SMTP_USER.slice(0, 3) + '****' + SMTP_USER.slice(-10) : 'not set',
+    timestamp: new Date().toISOString(),
+    timezone: 'UTC'
   })
+  return addCorsHeaders(response)
+}
+
+/** OPTIONS /api/send-notification-email – CORS preflight */
+export async function OPTIONS() {
+  const response = new NextResponse(null, { status: 200 })
+  return addCorsHeaders(response)
 }

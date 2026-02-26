@@ -396,7 +396,7 @@ export default function PricingCalculatorPage() {
               </div>
 
               {/* Templates controls moved out of per-row rendering */}
-              <div className="flex items-center gap-2 pt-4">
+              <div className="flex flex-wrap items-center gap-2 pt-4">
                 <Input placeholder="Template name" value={templateName} onChange={(e) => setTemplateName(e.target.value)} className="w-64" />
                 <Button onClick={() => saveTemplate(templateName)} disabled={!templateName} size="sm">Save Template</Button>
                 <Button variant="outline" size="sm" onClick={() => {
@@ -408,7 +408,12 @@ export default function PricingCalculatorPage() {
                   setRegularSellingPrice("")
                 }}>New Template</Button>
                 <div className="ml-auto flex items-center gap-2">
-                  <select className="text-sm p-1" value={selectedTemplate || ""} onChange={(e) => { const v = e.target.value; if (v) { loadTemplate(v) } else { setSelectedTemplate("") } }}>
+                  <select
+                    className="text-sm p-1 max-h-40 overflow-y-auto"
+                    size={Math.min(Object.keys(templates).length + 1, 10)}
+                    value={selectedTemplate || ""}
+                    onChange={(e) => { const v = e.target.value; if (v) { loadTemplate(v) } else { setSelectedTemplate("") } }}
+                  >
                     <option value="">Select template...</option>
                     {Object.keys(templates).map(tn => <option key={tn} value={tn}>{tn}</option>)}
                   </select>

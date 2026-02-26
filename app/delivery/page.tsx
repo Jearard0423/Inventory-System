@@ -257,11 +257,11 @@ export default function DeliveryPage() {
   }
 
   const getTotalCookedItems = (order: CustomerOrder) => {
-    return order.cookedItems.reduce((sum, item) => sum + item.quantity, 0)
+    return order.cookedItems?.reduce((sum, item) => sum + item.quantity, 0) ?? 0
   }
 
   const getTotalOrderedItems = (order: CustomerOrder) => {
-    return order.orderedItems.reduce((sum, item) => sum + item.quantity, 0)
+    return order.orderedItems?.reduce((sum, item) => sum + item.quantity, 0) ?? 0
   }
 
   // Calculate meal type counts for delivery page
