@@ -1,12 +1,18 @@
 "use client"
 
 import React, { useState } from "react"
+import { Eye, EyeOff } from "lucide-react"
 
-export default function LoginClient({ onSignIn }: { onSignIn: (e: string, p: string) => Promise<void> }) {
+export default function LoginClient({ onSignIn, onSignUp }: { onSignIn: (e: string, p: string) => Promise<void>, onSignUp?: (e: string, p: string) => Promise<void> }) {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [isSignUp, setIsSignUp] = useState(false)
+  const [verificationSent, setVerificationSent] = useState(false)
 
   async function handleSignIn() {
     setError(null)
@@ -15,6 +21,51 @@ export default function LoginClient({ onSignIn }: { onSignIn: (e: string, p: str
       await onSignIn(email, password)
     } catch (err: any) {
       setError(err?.message || "Sign in failed")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleSignUp() {
+    setError(null)
+    
+    // Validation
+    if (!email.trim()) {
+      setError("Email is required")
+      return
+    }
+    
+    if (!password || password.length < 6) {
+      setError("Password must be at least 6 characters")
+      return
+    }
+    
+    if (password !== confirmPassword) {
+      setError("Passwords do not match")
+      return
+    }
+
+    // Check if email is from yellow roast domain (verification)
+    if (!email.includes('@yellowroastco') && email !== 'yellowroastco2024@gmail.com') {
+      setError("Only Yellow Roast Co. staff members can create accounts. Please use your company email.")
+      return
+    }
+
+    setLoading(true)
+    try {
+      if (onSignUp) {
+        await onSignUp(email, password)
+        setVerificationSent(true)
+        setEmail("")
+        setPassword("")
+        setConfirmPassword("")
+        setTimeout(() => {
+          setVerificationSent(false)
+          setIsSignUp(false)
+        }, 3000)
+      }
+    } catch (err: any) {
+      setError(err?.message || "Sign up failed")
     } finally {
       setLoading(false)
     }
@@ -68,7 +119,7 @@ export default function LoginClient({ onSignIn }: { onSignIn: (e: string, p: str
           color: '#111827',
           textAlign: 'center'
         }}>
-          Sign In
+          {isSignUp ? 'Create Account' : 'Sign In'}
         </h2>
         <p style={{
           margin: 0,
@@ -77,8 +128,25 @@ export default function LoginClient({ onSignIn }: { onSignIn: (e: string, p: str
           color: '#6b7280',
           textAlign: 'center'
         }}>
-          Access the Dashboard
+          {isSignUp ? 'Join Yellow Roast Co.' : 'Access the Dashboard'}
         </p>
+
+        {/* Success Message */}
+        {verificationSent && (
+          <div style={{
+            background: '#dcfce7',
+            color: '#166534',
+            padding: 12,
+            borderRadius: 6,
+            marginBottom: 16,
+            fontSize: '0.875rem',
+            border: '1px solid #bbf7d0',
+            width: '100%',
+            textAlign: 'center'
+          }}>
+            Account created! Please check your email to verify.
+          </div>
+        )}
 
         {/* Error Message */}
         {error && (
@@ -89,7 +157,8 @@ export default function LoginClient({ onSignIn }: { onSignIn: (e: string, p: str
             borderRadius: 6,
             marginBottom: 16,
             fontSize: '0.875rem',
-            border: '1px solid #fecaca'
+            border: '1px solid #fecaca',
+            width: '100%'
           }}>
             {error}
           </div>
@@ -117,31 +186,127 @@ export default function LoginClient({ onSignIn }: { onSignIn: (e: string, p: str
           onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
         />
 
-        {/* Password Input */}
-        <input
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="Password"
-          type="password"
-          disabled={loading}
-          style={{
-            width: '100%',
-            padding: '0.75rem',
-            border: '1px solid #e5e7eb',
-            borderRadius: 6,
-            marginBottom: 24,
-            fontSize: '0.95rem',
-            boxSizing: 'border-box',
-            fontFamily: 'inherit',
-            transition: 'border-color 150ms ease'
-          }}
-          onFocus={(e) => e.target.style.borderColor = '#eab308'}
-          onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
-        />
+        {/* Password Input with Visibility Toggle */}
+        <div style={{
+          width: '100%',
+          position: 'relative',
+          marginBottom: 12,
+          display: 'flex',
+          alignItems: 'center'
+        }}>
+          <input
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Password"
+            type={showPassword ? "text" : "password"}
+            disabled={loading}
+            style={{
+              width: '100%',
+              padding: '0.75rem 2.5rem 0.75rem 0.75rem',
+              border: '1px solid #e5e7eb',
+              borderRadius: 6,
+              fontSize: '0.95rem',
+              boxSizing: 'border-box',
+              fontFamily: 'inherit',
+              transition: 'border-color 150ms ease',
+              paddingRight: '2.5rem'
+            }}
+            onFocus={(e) => e.target.style.borderColor = '#eab308'}
+            onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
+            onKeyPress={(e) => e.key === 'Enter' && !loading && (isSignUp ? handleSignUp() : handleSignIn())}
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword(!showPassword)}
+            disabled={loading}
+            style={{
+              position: 'absolute',
+              right: '0.75rem',
+              background: 'none',
+              border: 'none',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              padding: '0.5rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#6b7280'
+            }}
+            onMouseEnter={(e) => !loading && (e.currentTarget.style.color = '#eab308')}
+            onMouseLeave={(e) => !loading && (e.currentTarget.style.color = '#6b7280')}
+          >
+            {showPassword ? (
+              <EyeOff size={20} />
+            ) : (
+              <Eye size={20} />
+            )}
+          </button>
+        </div>
 
-        {/* Sign In Button */}
+        {/* Confirm Password Input (Sign Up only) */}
+        {isSignUp && (
+          <div style={{
+            width: '100%',
+            position: 'relative',
+            marginBottom: 24,
+            display: 'flex',
+            alignItems: 'center'
+          }}>
+            <input
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Confirm Password"
+              type={showConfirmPassword ? "text" : "password"}
+              disabled={loading}
+              style={{
+                width: '100%',
+                padding: '0.75rem 2.5rem 0.75rem 0.75rem',
+                border: '1px solid #e5e7eb',
+                borderRadius: 6,
+                fontSize: '0.95rem',
+                boxSizing: 'border-box',
+                fontFamily: 'inherit',
+                transition: 'border-color 150ms ease',
+                paddingRight: '2.5rem'
+              }}
+              onFocus={(e) => e.target.style.borderColor = '#eab308'}
+              onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
+              onKeyPress={(e) => e.key === 'Enter' && !loading && handleSignUp()}
+            />
+            <button
+              type="button"
+              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+              disabled={loading}
+              style={{
+                position: 'absolute',
+                right: '0.75rem',
+                background: 'none',
+                border: 'none',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                padding: '0.5rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#6b7280'
+              }}
+              onMouseEnter={(e) => !loading && (e.currentTarget.style.color = '#eab308')}
+              onMouseLeave={(e) => !loading && (e.currentTarget.style.color = '#6b7280')}
+            >
+              {showConfirmPassword ? (
+                <EyeOff size={20} />
+              ) : (
+                <Eye size={20} />
+              )}
+            </button>
+          </div>
+        )}
+
+        {!isSignUp && (
+          <div style={{ marginBottom: 24 }} />
+        )}
+
+        {/* Sign In / Sign Up Button */}
         <button
-          onClick={handleSignIn}
+          onClick={isSignUp ? handleSignUp : handleSignIn}
           disabled={loading}
           style={{
             width: '100%',
@@ -159,8 +324,41 @@ export default function LoginClient({ onSignIn }: { onSignIn: (e: string, p: str
           onMouseEnter={(e) => !loading && (e.currentTarget.style.background = '#fde047')}
           onMouseLeave={(e) => !loading && (e.currentTarget.style.background = '#eab308')}
         >
-          {loading ? 'Signing in...' : 'Sign In'}
+          {loading ? (isSignUp ? 'Creating Account...' : 'Signing in...') : (isSignUp ? 'Create Account' : 'Sign In')}
         </button>
+
+        {/* Toggle Sign In / Sign Up */}
+        <p style={{
+          textAlign: 'center',
+          marginTop: 16,
+          fontSize: '0.85rem',
+          color: '#6b7280'
+        }}>
+          {isSignUp ? 'Already have an account? ' : "Don't have an account? "}
+          <button
+            onClick={() => {
+              setIsSignUp(!isSignUp)
+              setError(null)
+              setEmail("")
+              setPassword("")
+              setConfirmPassword("")
+            }}
+            disabled={loading}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#eab308',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              textDecoration: 'underline',
+              fontSize: 'inherit',
+              fontFamily: 'inherit'
+            }}
+            onMouseEnter={(e) => !loading && (e.currentTarget.style.color = '#d97706')}
+            onMouseLeave={(e) => !loading && (e.currentTarget.style.color = '#eab308')}
+          >
+            {isSignUp ? 'Sign In' : 'Sign Up'}
+          </button>
+        </p>
 
         {/* Footer */}
         <p style={{

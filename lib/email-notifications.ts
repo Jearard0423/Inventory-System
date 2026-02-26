@@ -2,35 +2,27 @@
 
 import { CustomerOrder } from './inventory-store'
 
-/**
- * Email Notification Service – Yellow Roast Co.
- * Sends preparation reminders to the admin 30 min or 1 hr after an order is placed.
- * Also sends an instant notification when a new order is placed.
- */
-
-let REMINDER_INTERVAL = 30 * 60 * 1000 // 30 minutes (change to 60 * 60 * 1000 for 1 hour)
-
-interface EmailNotificationState {
-  lastReminderTime: number
-  remindersCount: number
-  hasOrdersToday: boolean
-}
-
-let notificationState: EmailNotificationState = {
-  lastReminderTime: 0,
-  remindersCount: 0,
-  hasOrdersToday: false,
-}
+// Base64-encoded Yellow Roast Co. logo (public/yrc-logo.png)
+// Split into 8 segments to avoid TypeScript parser limits
+const yrcLogoSeg1 = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAA4KCwwLCQ4MCwwQDw4RFSMXFRMTFSsfIRojMy02NTItMTA4P1FFODxNPTAxRmBHTVRWW1xbN0RjamNYalFZW1f/2wBDAQ8QEBUSFSkXFylXOjE6V1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1f/wAARCALUAzwDAREAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD0egAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgBaAEoAWgAoAKACgAoAKACgAoASgAoAWgAoAKACgAoAKAEoAWgAoASgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKAPN/i5/wAwj/tt/wCyV87nv/Lv5/ofO57/AMu/n+h6RX0R9EFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFAC0AFABQAUAFABQAUAFABQAlABQAtABQAUAJQAtABQAUAJQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAeb/Fz/AJhH/bb/ANkr53Pf+Xfz/Q+dz3/l38/0PSK+iPogoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKAFoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKAEoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKAPN/i5/zCP+23/slfO57/y7+f6Hzue/8u/n+h6RX0R9EFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFAC0AFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAJQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAF'
+const yrcLogoSeg2 = 'ABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQB5v8AFz/mEf8Abb/2Svnc9/5d/P8AQ+dz3/l38/0PSK+iPogoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKAFoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoASgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKAPN/i5/zCP8Att/7JXzue/8ALv5/ofO57/y7+f6HpFfRH0QUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFAC0AFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFACUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFAHm/xc/5hH/bb/2Svnc9/wCXfz/Q+dz3/l38/wBD0ivoj6IKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKAFoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgBKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgDzf4uf8wj/tt/7JXzue/wDLv5/ofO57/wAu/n+h6RX0R9EFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFAC0AFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAJQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQB5v8XP+YR/22/8AZK+dz3/l38/0Pnc9/wCXfz/Q9Ir6I+iCgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAWgAoAKACgBKAFoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgBKAFoASgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKAPN/i5/wAwj/tt/wCyV87nv/Lv5/ofO57/AMu/n+h6RX0R9EFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAtABQAUAJQAtABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAJQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFAHm/xc/5hH/bb/2Svnc9/wCXfz/Q+dz3/l38/wBD0ivoj6IKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKAFoASgAoAKAFoAKACgA'
+const yrcLogoSeg3 = 'oAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKAEoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKAPN/i5/zCP+23/slfO57/y7+f6Hzue/8u/n+h6RX0R9EFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUALQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFACEgDJoAoWmr2t3O8MbfOhwQalSTNp0JwipMuTlhC5T72OKbMo2vqcQPEmoWs7JKQ204INc3tGmex9UpTjdHRaVr0F+ArHZJ6Gto1FI4K+FlS13RX1vW59Ou0VEBjIz9amdRxZph8PGrC73NLS9Th1GHdGcOPvL6VpGSkc1ajKk7Mv1RkFABQAUAFABQAUAJQAUALQAUAJQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFAHm/xc/5hH/bb/2Svnc9/wCXfz/Q+dz3/l38/wBD0ivoj6IKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgBaAEoAWgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAp6rMYdPmcdQpqZuyNKMeaaR5vFcywT+dGxDg5zXGpNO578oKUbM6zSvFMcoWO7+Rum7tW8Kvc82tgXHWBjeI1gOomS3cOrjJxWVW19DrwnN7O0jORijBlJBHIIrNOx0NXRf1LVTf28COnzxjBbPWrlPmRhRoeyk2tmQ6VfyWF4kqn5c4YeoohLlZdaiqsbHTXniqC3ljWOPzFIySD0rd1UebTwMpJt6G1Y3sV7AssLAg/pWqaaOSpTdOVmWaZAUAFABQAUAFABQAlABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQB5v8XP8AmEf9tv8A2Svnc9/5d/P9D53Pf+Xfz/Q9Ir6I+iCgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgBaACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgDP1xC+lzqOu01E9jbDu1RHnGOTmuI+gACgB1ABmgBM0AFADTQBu+E9RNvefZ2P7uX9DW1KVnY4sbRUocy3R3ddR4wUAFABQAUAFABQAUAJQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQB5v8XP+YR/22/8AZK+dz3/l38/0Pnc9/wCXfz/Q9Ir6I+iCgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgBaACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgBsiCRGRhwRg0bgnbU851qxewvXQg7Ccqa4px5We/hqqqQuUM1BuGaBhmgA5PQUCDB7gilcLhTAmsiwu4in3twxiqjuTU1i7np0WfLXPXFdqPnHuPpiCgAoAKACgAoAKACgAFACUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFAHm/wAW/wDmEf8Abb/2Svnc9/5d/P8AQ+dz3/l38/0PSK+iPogoAK'
+const yrcLogoSeg4 = 'ACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgBaACgBKAFoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoApanpkGpQ+XMvPZu4qZRUtzWlWlSd4nH6j4auLQM6MrxDnJOK55UWj1KWNjPR7mGTzjvWR3Grp+jtMBJPlU7D1rmq11HRHPVrqOiNqKxt4lAWJfxrkdWTOR1JPqOezgkGGiX8qSnJCU5LqZd7onBe3P/ATXTTr9GdFPEdJGfak2V2kk0RO09COtdkJLdG03zxaTO60/WrO9UBZAjn+FuK641FI8arhp0+mhpVoc4UAFABQAUAFABQAUAFABQAlABQAtABQAlABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAeb/Fz/AJhH/bb/ANkr53Pf+Xfz/Q+dz3/l38/0PSK+iPogoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgBaACgAoAKACgAoAKAIZru3gBMsyL9TSbSKjCUtkUZNf01Dg3C/hUe0ibLC1X0EXxDprdLgUe0iN4SquhZi1Oyl+5cIfxpqcWZyoVI7otqwYZUgj2qjJqwtMAoAKACgAoAKACgBGYKCSeBQBwnibWWupzbwtiJDg47muapUvoj2cJh/ZrmluM0XSwQLidf8AdBrzq9boi61b7KNzGOlce+5yC0AFAhwpoCrdXFmqkTlG9u9bQjN7GkYyexgXklv5gNoHU57V201NbnZTUvtG74d1LUPMWGWB5YW/jI+7XZTlLqcOLo07c0XZnWVseaFABQAUAFABQAUAFABQAlABQAtACUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAeb/ABb/AOYR/wBtv/ZK+dz3/l38/wBD53Pf+Xfz/Q9Ir6I+iCgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKAFoAKACgAoAKACgAoAKAMvUtds9PBDuGkH8INRKaidFLDTq7bHL6j4nurnKwHyk9utc8qrZ6VHBQjvqZSx3V22f3khNZSqJbs6W4QLC6LduP9Xj6msnWiQ8RBCtod2BwgP40vbxF9YgyCWxu4OsbgDuKtVYvqWqkZbMW21S9s3zHMwx2atoztsE6MJrVHSaX4tjk2x3q7T/fHSto1e559bANawOmhmjnQPGwZT3FbJ3POlFxdmSUxBQAUAFACUAYPirUvsdl5UZxJJwKyqysrHXg6PtJ3eyOS0m0N3dDeMqvJrgrT5UetWnyxOqChQAowBXmt3PPYuKBBigAxTAR13Iyg4JFC0YLRnLSL5NwUuATg/nXqQkmro9Fe9G8TsNFs9LlgWWBFdu+7qK7KajbQ8nEVKsXaTNlUVBhVAHsK1ORtsdQAUAFABQAUAFABQAUAFABQAUAFABQAlABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAeb/Fz/AJhH/bb/ANkr53Pf+Xfz/Q+dz3/l38/0PSK+iPogoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgBaAEoAKAFoAKACgBCQBknigDlPEXiTyS1tZN83Rn9KxqVLaI9HC4Pm96Zy8EE99N8uXYnljXJOoo7npSlGmjobHRoYAGlHmP8ApXHOu3scc68pbGkqqgwqgD2rBybMHruLmlcAoASi4FW5063uVO+MAnuKuNWUdjWFWUTCv'
+const yrcLogoSeg5 = '9FltiXj+eP+VddOupHXTrqWnUdo+sz6dKBktF/EprrhUcSa+HjVXmd9ZXkV7AssLZB/SutNNHiVKbpvlZYpkBQAUAITgZNAHnHiK9N5qchB+VDtFcdSV2e9hafs6aNfRLbyLQMfvPya8yvO8jCvPmkaFYGAtAC0AQ3EoiKA/wATYqoxuOKuS1Iijqdgl5GSBiQdDW1Kq4M2pVHBmHZX1xpd1wSpU4ZfWvSpz6o6qlONaOp6Dp94l9aJPH0Ycj0Ndqd1c8KpTdOTiyzTICgAoAKACgAoAKACgAoAKACgAoAKAEoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgDzf4uf8wj/tt/7JXzue/8u/n+h87nv/Lv5/oekV9EfRBQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFAC0AFABQBzninWfskJtoG/euOSOwrKpO2iO3B4f2j5pbHHWdpJez7FBOTljXFUnyq5605qCOss7SO1iCRj6n1rz5zcmefObk7snrMgKYC0AJQAUgFoAMZ4oQGHrOlAKbiBcf3lFdlGtfRnXQrX92RB4e1hrC6VHJ8lzhh6V3052ZWKw6qxv1R6Cjh1DKcgjIrrPCas7MdQAUAUNZufsunSyZwdvFRN2ia0Ic9RI87tYzc3ajrubmuCcrJs9+b5YnYooVQo6AYrzG7s8x6i0hC0ALQIztcytqsi9UYGt6GsrG1DWVi1azLPAkgOcis5x5XYmUeV2JagkwPEcCrJHKOC3Bruwsrpo7MNK6aNfwTMzQTxE8KcivSpM4swirpnU1seeFABQAUAFABQAUAFABQAUAFACUALQAlABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAeb/ABc/5hH/AG2/9kr53Pf+Xfz/AEPnc9/5d/P9D0ivoj6IKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAWgAoAgvblbW1kmY/dXNJuyuVTg5yUTzW5mkvbppGyWduK4Zyvqz6CEVTjZHTaZZLaWyjHztyxrz6s+ZnDUm5st1gZkFxeQW4/eSAH0q405S2LjTlLZGdJ4ggU4RGat1hpdTdYZ9SMeIkz/AKk0/qz7j+q+Zattat5jhsp9aiVCSM5YeS2NBJEkXcjBgfSsGrbmLTW46kIKAAgEEEZBp3sByetWf2S6JQYR+R7V6FGpzI9GhU54nU+D9RNzZtbyNl4umfSu+lK6seZj6XJLmXU6OtjhCgDm/GcpTT0jH8bVjWeh35fG82znvD0O67L44UV52Ifu2PQxMrRsdJXAcAtMApALQIiuYRPC8bdGGKqMuV3KhLldznLe9m0uZoXBZAehrtlCNVXO6UFVV0ag1u2K5OQfSsPq8rmHsJGRqN8b6ZcD5RworspU+RWOinT9mjrPCtg1pZNJIMPKc49q7aUbI8rGVeeVl0N6tTkCgAoAKACgAoAKACgAoAKAEoAWgAoAKAEoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKAPN/i5/zCP+23/slfO57/y7+f6Hzue/8u/n+h6RX0R9EFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUALQAUAcv4zvfKt47ZTy5yawrS0sehgKd25GLoFqJZzIwyqfzrgrysrHbXnZWOhkkWNC7sFUetcSTlscaTbsjB1DWnfKW/yr03etdVPDpas7aWH'
+const yrcLogoSeg6 = 'S1kZ8Flc3zZUEjuzVrKcYGsqkaaNa30CJOZnLn0Fc8sS+hzSxTeyLiaZaJ0hB+tZutJ9TF1pvqP/ALPtSMeQv4Uvay7i9rPuLFYxQsDEWT2zxSlNy3G6jluWazMxKACgDP1228+yZgPmTmt6ErSNsPPlkZfhi6NrqcfOFf5TXp0pWZvi4c9NnoorsPCCgDkfGkmZYIs9Bmuau9T1MvWjZX8OxgRSP6nFebiHrY1xL1SNeuU5hKACgBKQBQBUvtPivUw4w/ZhWlOo4M0p1XA5i+spbOTbIMr2YV6FOamro76c1NXRu+E4LCeT96N068gN0NdVJRZx46VSK02O1AwMAYFdB5AtABQAUAFABQAUAFABQAUAFACUAFAC0AFACUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFAHm/xc/5hH/bb/wBkr53Pf+Xfz/Q+dz3/AJd/P9D0ivoj6IKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAWgAoA888V3Bm1VxnhOBXJVd5HuYKHLTRf0gpa6aJZDjdzXm1W5TsiK15zsjM1HUnvHIB2xjoPWuinTUEb0qSgvMXStON2++TiNf1pVavJohVqvJotzpERI0CooVR6VwttnC227sWkISgAoAWkAUAFABQA2VN8bqehFVF2Y07M5OJfs94MdUf+tepB7M9GXvRPS4H3QRsT1UGu9bHz0lZtFW81a0swfNlXPoKlzSNadCdTZHF69qaahdiSIHaowM1zVJ8zPXwtF0o2ZBZ6rLaRlEVSCe9c06aluXOipu5cXxC38cQ/Csvq66MyeG8yxDr1u+N6lKh4aS2IeGkti/DcxTDMbhqxlFx3MZRcdyWpJCgYUCIbq2S6haOQZz0PpVQm4u6KhNwd0cs8c2m3gwxVkPBHevSp1L6o9FONWJ3+i6kmo2SyA/OvDD3rvhLmR4Vek6UrGjVGIUAFABQAUAFABQAUAJQAtACUAFAC0AFABQAlABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFAHm/xc/5hH/bb/2Svnc9/wCXfz/Q+dz3/l38/wBD0ivoj6IKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAWgBr8KT7UAeY6s2/Upye7muGe7Po6KtTQ66vGljjiXiNBjHrWUKdncIQs22RW0TTyrGvVjVSfKrlTlyq510ESwQrGo4ArzZy5meZJ8zuySpJCgBKACgBaACgAoAKAFFNAcnfkJfy/72a9Kl8KPRp6wRfuvEdzLbxwQ/u1VQpI6mt3UbVkYQwkYycpakNrpF9qDBgjYP8T9KShKRc8RTpaNmtB4O6Ge4/BRWiodzklmH8qLaeEbJfvO5/Gq9hEyePqdBsnhCyYfLJIPxo9ihrMJrdGdd+DpkGbaYP7GpdF9Dop5hF/ErGLNBd6dNiRXjI6VhKHRo7YyhVV1qaem60HxHccHoGrjq4e2sTnq0LaxNoEEAjkGuU5QoAWgRn61ZC4tjIo/eR8/UVvRnys2oVOWVuhS8MagbO9WNjiKXg59a9OjOzNMbS54XW6O+6jius8UKACgAoAKACgAoAKACgAoASgBRQAUAFABQAUAJQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFAHm/wAXP+YR/wBtv/ZK+dz3/l38/wBD53Pf+Xfz/Q9Ir6I+iCgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACg'
+const yrcLogoSeg7 = 'AoAKAFoAKAEoAWgBr/cb6UAjzDUFP26f/AHzXDLc+jpP3ERGJggcqdp4zSsVza2NPw/EGuHkP8IrnxErKxhiHpY6EVwnEFADJJo4/vuBVKLew1FvYgGo2xYKJMk+lU6UkX7KRaByKzMwzQAuaBBmgAoAZPOtvC0jnAAq4R5nYcYuTsjkn8y8um2LlpG4Ar00rJJHpK0I69Dr9F8ORWyLNdgPIecHoK6YUktWeViMZKbtDY1Zr2OEbIlBI9K562NjDSOrOeNJy1ZSkvpn/AIto9q4JYurLqbKlFERmlPWQ1k6k31L5Y9hRcSjpIaca1RbSFyRfQmiv5F4fkV008dOPxamcqKexakjttQhKSIHBHfqK9KnVhWWhknOk7o47XtAewbzYMtCT19KzqU+XVHrYbFKqrPcdomonIt5m/wB0159el9pBXpfaRuVynIFIAOCCD0NUtBHI6hGbW9dV4AbcK9GlK6TPTpvnhqegaNdfa9Nhkzk7cGvQi7o8KvDkm0X6oyCgAoAKACgAoAKACgBKACgBaACgAoAKACgBKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoA83+Ln/MI/7bf+yV87nv8Ay7+f6Hzue/8ALv5/oekV9EfRBQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUALQAlABQAUALQAjcgj2oA8/ksHu9dmt0HVySfQVyct5WPbVZU6Kky74qt47SK0t4lwqjJ9zVVVayMcFJzcpMi8PLiGRsdTXm4l6muI3RpXFxHboWkbArnjByehhGDk7IwbzWpZSVh+RfXvXZCgludkMOluUVaSeQLkszVs7RRs7RR0Wn6fHaoGYBpD1PpXDUqOTOGpVc/Qu5rEysGaBBmgBQaYC5oEYGvXZkmECn5V6120I2Vztw8LLmNnwlpapD9smX5m+7nsK9ClDqcWOr3fIjVvroljGh471w4zEtvkiYUqfVlCvOOgKBBTAKAFoAdHI0bBlOKqnUlTldCklJWZrL5d7asjgEMMEV71KoqsLnG705XR5/qtm+m37oOADlT7VzVIWdj3KNRVYJm/p90Lm1R889DXmVI8rsclSHJKxYzUEBmgRzniRMXKP/AHlrtwz0O7CvSx0HgqUvpzoT91q9Kk9Dz8wjadzpa1OEKACgAoAKACgAoAKAEoAKAFoAKACgAoAKACgBKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgDzf4uf8AMI/7bf8AslfO57/y7+f6Hzue/wDLv5/oekV9EfRBQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUALQAUAFACUALQAlAFa3sILeeWdF/eSnLE1KikXKo5JJ9DmfG3E1uf9msa256OXbMp6PcJBYyO5wAa82tFykkjetFymkjLvLqW9mzyR0VRXRTpqKsjphBU0QywvC22RSrdcGtHoNSUtUauiW4AM7DnoK5K8+hz15dDYDVynNYXdSFYXdQAZoAXNArCPJtRm9BTSuwSu7HKAtd3wB5LvXpwjayPRdoQ9D0XAtLBUXjaoArprT9nTbPAX7ydzKyScnvXgN3O2wUAFABQIWmAUwCkBbsJfLl2no1d2Cq8s+XuY1Y3VzN8aWoa2juQPmU4NehWWlzbL52k4mN4fuCJHhJ4PIrzcRHS524iN1c3M1yHIGaBGF4kOXi+ldmG6nZhepr+Bv8Aj3n+telSOTMfiR1dbHmhQAUAFABQAUAFABQAlABQAUALQAZoAM0AJQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFA'
+const yrcLogoSeg8 = 'BQAUAFABQAUAFABQAUAFABQB5v8XP+YR/22/8AZK+dz3/l38/0Pnc9/wCXfz/Q9Ir6I+iCgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKAFoASgAoAKACgBaAOS8cr8lu/viuesenlz1aOT81tmzJ256Vhy63PUsr3Ou8K6IEQXtyuSfuKa6KcOrPKxuJv7kTB11y+qXBP8AexWM37zO3DK1NGnYDbbRgeledVd5MyqayZaBrMyFzSsAbqLBYUGgVhc0AV76TZayHPatKavJF01eSMfw9H5urQAjoc16cFqdGKdqTO41VtsaL6ms8wlaCR5GHWrZmZryTqFzQIWgBaYBmgQZpgGaABW2sp9DTi+WSYNXRb1uMXOjy98Lmvel70LnPh5clVHC6dJ5V5GenOK4KivFnt1FeLOoDVwHni5oEYOvOHuAv90V3YdWR2YdWR0ng2AxaYzkY3tXoUloedj5XqWOhrU4goAKACgAoAKACgAoAKAEoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgDzf4uf8AMI/7bf8AslfO57/y7+f6Hzue/wDLv5/oekV9EfRBQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFAC0AFABQAUAFABQBz3jGAy6YHAyUOayrLQ7cBK1SxzHh3TDqN6u4fu4zlqxhHmZ6WLreyh5no0aBECqMADAFdZ4Dd9TzfWEI1K4B/v1xT3Z9Bh3+7RrW2BbxntivOmveMJ7srXWprEdsQ3N61pCjfcuFJvcoNdTzMBvOT2FbKEYo2UIxNi0jMMQVmLMeSTXJN3ZyzfMybdUE2F3UCsU9UfFm/vWtFe8a0V7xX8Jru1ZPZSa9KnuPHO1I6rWWw0YrnzDoefhlozODV5tjosLuoCw4GgVg3UwsG6gLBuoCwhamFgLUgNaIefpzKe6EV7lB81JHFL3alzzxx5dyf8AZauaSPfWsTpom3Ip9RXnyWpwNaivIEQsTwBRFXYkrs5yV2u7vjku2BXpU42SR3JckT0XTbYWtjDCB0UZrtirI8GrPnm2WqozCgAoAKACgAoAKACgAoAKACgAoAKACgAoASgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKAPN/i5/zCP+23/slfO57/AMu/n+h87nv/AC7+f6HpFfRH0QUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUALQAUAFABQAUAFABQAlAFbUbb7XZyw93XAqZK6sXSnySUiroWlLpdmIzgyE5ZvWlCPKjXE13Wlc1Ks5zgPFEPk6rIccP8wrkqK0j28HK9NFI3zm2WJTjH61z+zXNc29mua5NHpcrWL3jjZGOme9a8jtch11z8i3I9OQNc5PRRmsKrtEuo7I191chz2DdRYVhd1KwrFLVm/wBF/GtqHxGtFe8S+DUzqLNjolejR3MswfuJG9rbfv0HtXLjviRy4Ve6zOBrgOmwoaiwrDt1FgsG+iwWDfQFhN9MLCb6LCsLuosFjZ0dt9uV9DivXwbvCxxYhWkcRrEPk6jOvTDZrOorSZ7GHlzU0a1m263jPtXBNanPUVpMz9YvP+WCH61vRp9Wb0af2mW/COmefObqQfu4+me5rvpRu7mGOrcq5V1O4roPICgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgBKAFoAKAEoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKAPN/i5/zCP+23/slfO'
+const yrcLogoBase64 = yrcLogoSeg1 + yrcLogoSeg2 + yrcLogoSeg3 + yrcLogoSeg4 + yrcLogoSeg5 + yrcLogoSeg6 + yrcLogoSeg7 + yrcLogoSeg8
 
 const todayLabel = () =>
   new Date().toLocaleDateString('en-PH', {
-    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    weekday: 'long', year: 'numeric', month: 'numeric', day: 'numeric',
   })
 
 const nowLabel = () =>
   new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: true })
 
-/** Yellow Roast Co. branded email wrapper */
+/** Yellow Roast Co. branded email wrapper with logo and color scheme */
 const emailWrapper = (content: string) => `
 <!DOCTYPE html>
 <html lang="en">
@@ -38,6 +30,42 @@ const emailWrapper = (content: string) => `
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Yellow Roast Co.</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #fef9f0;
+      font-family: 'Segoe UI', Arial, sans-serif;
+    }
+    .logo-container {
+      background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%);
+      padding: 28px 32px;
+      text-align: center;
+    }
+    .logo {
+      width: 60px;
+      height: 60px;
+      margin-bottom: 12px;
+      border-radius: 8px;
+      display: inline-block;
+    }
+    .brand-name {
+      margin: 0;
+      color: #fef3c7;
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      background: linear-gradient(135deg, #fef3c7 0%, #fcd34d 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .brand-tagline {
+      margin: 4px 0 0;
+      color: #fef3c7;
+      font-size: 13px;
+    }
+  </style>
 </head>
 <body style="margin:0;padding:0;background-color:#fef9f0;font-family:'Segoe UI',Arial,sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#fef9f0;padding:30px 10px;">
@@ -45,11 +73,12 @@ const emailWrapper = (content: string) => `
       <td align="center">
         <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.08);">
 
-          <!-- Header -->
+          <!-- Header with Logo -->
           <tr>
-            <td style="background:linear-gradient(135deg,#dc2626 0%,#ef4444 100%);padding:28px 32px;text-align:center;">
-              <img src="/workspaces/Inventory-System/public/yrc-logo.png" alt="Yellow Roast Co. Logo" style="width: 60px; height: 60px; margin-bottom: 12px; border-radius: 8px;" />
-              <h1 style="margin:0;color:#ffffff;font-size:26px;font-weight:700;letter-spacing:0.5px;">Yellow Roast Co.</h1>
+            <td class="logo-container" style="background:linear-gradient(135deg,#dc2626 0%,#ef4444 100%);padding:28px 32px;text-align:center;">
+              <!-- YRC Logo as inline image -->
+              <img src="${yrcLogoBase64}" alt="Yellow Roast Co. Logo" class="logo" style="display:block; margin:0 auto 12px; width:60px; height:60px; border-radius:8px;" />
+              <h1 style="margin:0;color:#fef3c7;font-size:26px;font-weight:700;letter-spacing:0.5px;background:linear-gradient(135deg,#fef3c7 0%,#fcd34d 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">Yellow Roast Co.</h1>
               <p style="margin:4px 0 0;color:#fef3c7;font-size:13px;">Premium Roasted Chicken & More</p>
             </td>
           </tr>
@@ -465,4 +494,251 @@ export const checkAndSendUpcomingOrdersReminder = async (
   } catch (error) {
     console.error('[email-notifications] Error checking upcoming orders:', error)
   }
+}
+
+/**
+ * Advanced notification system for future orders with time-based alerts
+ * Sends:
+ * 1. "1 day before" email when delivery date is tomorrow
+ * 2. "1 hour before" email when delivery time is approaching
+ */
+interface AdvancedNotificationState {
+  sentOneDayReminders: Set<string> // orderId -> has 1-day reminder been sent
+  sentOneHourReminders: Set<string> // orderId -> has 1-hour reminder been sent
+}
+
+let advancedNotificationState: AdvancedNotificationState = {
+  sentOneDayReminders: new Set(),
+  sentOneHourReminders: new Set()
+}
+
+/**
+ * Check and send time-based notifications for future orders
+ * Call this periodically (e.g., every 30 minutes or hourly)
+ */
+export const checkAndSendAdvancedOrderNotifications = async (
+  orders: CustomerOrder[],
+  recipientEmail?: string
+): Promise<void> => {
+  if (!recipientEmail || !orders.length) return
+
+  try {
+    const now = new Date()
+
+    for (const order of orders) {
+      // Skip if order is already complete or delivered
+      if (order.status === 'complete' || order.status === 'delivered') continue
+
+      const orderDate = new Date(order.createdAt)
+      const deliveryDate = new Date(order.createdAt)
+
+      // Parse cookTime if available (format: HH:MM in 24-hour format)
+      let deliveryHour = 0
+      let deliveryMinute = 0
+
+      if (order.cookTime) {
+        const timeParts = order.cookTime.split(':')
+        if (timeParts.length === 2) {
+          deliveryHour = parseInt(timeParts[0])
+          deliveryMinute = parseInt(timeParts[1])
+        }
+      }
+
+      // Set the delivery time on the delivery date
+      deliveryDate.setHours(deliveryHour, deliveryMinute, 0, 0)
+
+      // Calculate time until delivery
+      const timeUntilDelivery = deliveryDate.getTime() - now.getTime()
+      const hoursUntilDelivery = timeUntilDelivery / (1000 * 60 * 60)
+      const daysUntilDelivery = timeUntilDelivery / (1000 * 60 * 60 * 24)
+
+      // 1-DAY BEFORE REMINDER (between 24 and 25 hours before)
+      if (daysUntilDelivery <= 1 && daysUntilDelivery > 0 && !advancedNotificationState.sentOneDayReminders.has(order.id)) {
+        await sendOneDayBeforeNotification(order, recipientEmail)
+        advancedNotificationState.sentOneDayReminders.add(order.id)
+      }
+
+      // 1-HOUR BEFORE REMINDER (between 0.9 and 1.1 hours before)
+      if (hoursUntilDelivery <= 1 && hoursUntilDelivery > 0 && !advancedNotificationState.sentOneHourReminders.has(order.id)) {
+        await sendOneHourBeforeNotification(order, recipientEmail)
+        advancedNotificationState.sentOneHourReminders.add(order.id)
+      }
+
+      // Clean up reminders for completed orders
+      if (order.status === 'complete' || order.status === 'delivered') {
+        advancedNotificationState.sentOneDayReminders.delete(order.id)
+        advancedNotificationState.sentOneHourReminders.delete(order.id)
+      }
+    }
+  } catch (error) {
+    console.error('[email-notifications] Error checking advanced notifications:', error)
+  }
+}
+
+/**
+ * Send "1 day before delivery" notification
+ */
+const sendOneDayBeforeNotification = async (
+  order: CustomerOrder,
+  recipientEmail: string
+): Promise<void> => {
+  try {
+    const deliveryDate = new Date(order.createdAt)
+    if (order.cookTime) {
+      const [hours, minutes] = order.cookTime.split(':').map(Number)
+      deliveryDate.setHours(hours, minutes, 0, 0)
+    }
+
+    const deliveryDateLabel = deliveryDate.toLocaleDateString('en-PH', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    })
+
+    const deliveryTimeLabel = order.cookTime
+      ? new Date(`2024-01-01T${order.cookTime}`).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
+      : 'TBD'
+
+    const subject = `⏰ Order Reminder: ${order.customerName}'s Delivery Tomorrow (${deliveryTimeLabel})`
+
+    const content = `
+      <div style="text-align: center; margin-bottom: 24px;">
+        <div style="font-size: 48px; margin-bottom: 8px;">📦</div>
+        <h2 style="color: #dc2626; margin: 0; font-size: 24px;">Order Delivery Tomorrow</h2>
+        <p style="color: #6b7280; margin: 4px 0 0; font-size: 14px;">1 day before scheduled delivery</p>
+      </div>
+
+      <div style="background: #fef3c7; padding: 20px; border-radius: 8px; margin-bottom: 24px;">
+        <h3 style="color: #991b1b; margin: 0 0 12px; font-size: 18px;">👤 ${order.customerName}</h3>
+        
+        <div style="background: white; padding: 16px; border-radius: 6px; margin-bottom: 12px; border-left: 4px solid #d97706;">
+          <p style="margin: 0 0 8px; color: #6b7280; font-size: 14px;"><strong>Delivery Date:</strong></p>
+          <p style="margin: 0; color: #374151; font-size: 16px;">${deliveryDateLabel}</p>
+        </div>
+
+        <div style="background: white; padding: 16px; border-radius: 6px; margin-bottom: 12px; border-left: 4px solid #d97706;">
+          <p style="margin: 0 0 8px; color: #6b7280; font-size: 14px;"><strong>Delivery Time:</strong></p>
+          <p style="margin: 0; color: #374151; font-size: 16px;">${deliveryTimeLabel}</p>
+        </div>
+
+        <div style="background: white; padding: 16px; border-radius: 6px; border-left: 4px solid #d97706;">
+          <p style="margin: 0 0 8px; color: #6b7280; font-size: 14px;"><strong>Items:</strong></p>
+          <ul style="margin: 0; padding-left: 20px;">
+            ${order.orderedItems
+              .map(item => `<li style="color: #374151; margin-bottom: 2px;">${item.quantity}× ${item.name}</li>`)
+              .join('')}
+          </ul>
+        </div>
+      </div>
+
+      <div style="background: #eff6ff; border: 1px solid #bfdbfe; padding: 16px; border-radius: 8px;">
+        <p style="color: #1e40af; margin: 0; font-size: 14px;">
+          <strong>✅ Action Required:</strong> Please ensure all ingredients are prepared and measurements confirmed for tomorrow's ${deliveryTimeLabel} delivery.
+        </p>
+      </div>
+    `
+
+    const htmlBody = emailWrapper(content)
+    const plainTextBody = `Yellow Roast Co. - Order Reminder
+
+Customer: ${order.customerName}
+Delivery scheduled for: ${deliveryDateLabel} at ${deliveryTimeLabel}
+
+Items to prepare:
+${order.orderedItems.map(item => `- ${item.quantity}x ${item.name}`).join('\n')}
+
+Please ensure all ingredients are prepared and measurements confirmed for tomorrow's delivery.`
+
+    await sendEmailNotification(subject, htmlBody, plainTextBody, recipientEmail)
+    console.log(`[email-notifications] Sent 1-day reminder for order ${order.id} (${order.customerName})`)
+  } catch (err) {
+    console.error('[email-notifications] Error sending 1-day notification:', err)
+  }
+}
+
+/**
+ * Send "1 hour before delivery" notification
+ */
+const sendOneHourBeforeNotification = async (
+  order: CustomerOrder,
+  recipientEmail: string
+): Promise<void> => {
+  try {
+    const deliveryDate = new Date(order.createdAt)
+    if (order.cookTime) {
+      const [hours, minutes] = order.cookTime.split(':').map(Number)
+      deliveryDate.setHours(hours, minutes, 0, 0)
+    }
+
+    const deliveryDateLabel = deliveryDate.toLocaleDateString('en-PH', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    })
+
+    const deliveryTimeLabel = order.cookTime
+      ? new Date(`2024-01-01T${order.cookTime}`).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
+      : 'TBD'
+
+    const subject = `⚡ URGENT: ${order.customerName}'s Order Delivery in 1 Hour (${deliveryTimeLabel})`
+
+    const content = `
+      <div style="text-align: center; margin-bottom: 24px;">
+        <div style="font-size: 48px; margin-bottom: 8px;">🚨</div>
+        <h2 style="color: #dc2626; margin: 0; font-size: 24px;">ORDER DELIVERY IN 1 HOUR</h2>
+        <p style="color: #6b7280; margin: 4px 0 0; font-size: 14px;">Immediate action required</p>
+      </div>
+
+      <div style="background: #fee2e2; border: 2px solid #dc2626; padding: 20px; border-radius: 8px; margin-bottom: 24px;">
+        <h3 style="color: #991b1b; margin: 0 0 12px; font-size: 18px;">⏰ ${order.customerName}</h3>
+        <p style="margin: 0 0 8px; color: #7f1d1d; font-size: 16px;"><strong>Delivery at: ${deliveryTimeLabel} TODAY</strong></p>
+        
+        <div style="background: white; padding: 12px; border-radius: 4px; margin-top: 12px;">
+          <p style="margin: 0 0 8px; color: #6b7280; font-size: 13px;"><strong>Items to deliver:</strong></p>
+          <ul style="margin: 0; padding-left: 20px;">
+            ${order.orderedItems
+              .map(item => `<li style="color: #374151; margin-bottom: 2px;">${item.quantity}× ${item.name}</li>`)
+              .join('')}
+          </ul>
+        </div>
+      </div>
+
+      <div style="background: #fef3c7; border: 1px solid #fcd34d; padding: 16px; border-radius: 8px; text-align: center;">
+        <p style="color: #92400e; margin: 0; font-size: 14px;">
+          <strong>⚡ FINAL PREPARATION:</strong> Pack order now for immediate delivery!
+        </p>
+      </div>
+    `
+
+    const htmlBody = emailWrapper(content)
+    const plainTextBody = `Yellow Roast Co. - URGENT ORDER DELIVERY
+
+⚡ URGENT: Order delivery in 1 HOUR
+
+Customer: ${order.customerName}
+Delivery Time: ${deliveryTimeLabel}
+
+Items to deliver:
+${order.orderedItems.map(item => `- ${item.quantity}x ${item.name}`).join('\n')}
+
+FINAL PREPARATION: Pack order now for immediate delivery!`
+
+    await sendEmailNotification(subject, htmlBody, plainTextBody, recipientEmail)
+    console.log(`[email-notifications] Sent 1-hour reminder for order ${order.id} (${order.customerName})`)
+  } catch (err) {
+    console.error('[email-notifications] Error sending 1-hour notification:', err)
+  }
+}
+
+/**
+ * Reset advanced notification state (call at midnight for new day)
+ */
+export const resetAdvancedNotificationState = (): void => {
+  advancedNotificationState = {
+    sentOneDayReminders: new Set(),
+    sentOneHourReminders: new Set()
+  }
+  console.log('[email-notifications] Advanced notification state reset for new day')
 }

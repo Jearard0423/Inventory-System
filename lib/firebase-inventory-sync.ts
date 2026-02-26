@@ -289,10 +289,12 @@ export const saveInventoryItemToFirebase = async (
 ) => {
   try {
     const itemRef = ref(database, `inventories/items/${itemId}`)
-    await set(itemRef, {
+    // Remove undefined values before saving to Firebase
+    const cleanItem = cleanUndefined({
       ...item,
       lastUpdated: new Date().toISOString(),
     })
+    await set(itemRef, cleanItem)
   } catch (error: any) {
     if (error.code !== "PERMISSION_DENIED") {
       console.error("Error saving inventory item to Firebase:", error)
@@ -502,6 +504,22 @@ export const getMenuFromFirebase = async () => {
   }
 }
 
+// Utility function to remove undefined values from objects (Firebase doesn't allow undefined)
+const cleanUndefined = (obj: any): any => {
+  if (Array.isArray(obj)) {
+    return obj.map(item => cleanUndefined(item))
+  }
+  if (obj !== null && typeof obj === 'object') {
+    return Object.entries(obj).reduce((acc, [key, value]) => {
+      if (value !== undefined) {
+        acc[key] = cleanUndefined(value)
+      }
+      return acc
+    }, {} as any)
+  }
+  return obj
+}
+
 /**
  * Customer order to Firebase
  * Falls back silently if permissions denied
@@ -509,10 +527,12 @@ export const getMenuFromFirebase = async () => {
 export const saveOrderToFirebase = async (orderId: string, order: CustomerOrder) => {
   try {
     const orderRef = ref(database, `inventories/orders/${orderId}`)
-    await set(orderRef, {
+    // Remove undefined values before saving to Firebase
+    const cleanOrder = cleanUndefined({
       ...order,
       lastUpdated: new Date().toISOString(),
     })
+    await set(orderRef, cleanOrder)
   } catch (error: any) {
     if (error.code !== "PERMISSION_DENIED") {
       console.error("Error saving order to Firebase:", error)

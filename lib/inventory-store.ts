@@ -1145,6 +1145,18 @@ export const saveOrder = (order: Omit<Order, 'id' | 'orderNumber' | 'createdAt'>
   saveToLocalStorage(CUSTOMER_ORDERS_KEY, customerOrders);
   saveToLocalStorage(KITCHEN_ITEMS_KEY, kitchenItems);
   
+  // Also save to Firebase RTDB for persistence
+  if (typeof window !== 'undefined') {
+    try {
+      const { saveOrderToFirebase } = require('./firebase-inventory-sync');
+      saveOrderToFirebase(customerOrder.id, customerOrder).catch((err: any) => {
+        console.warn('Firebase order sync failed (non-critical):', err);
+      });
+    } catch (err) {
+      console.warn('[inventory-store] Firebase sync not available:', err);
+    }
+  }
+  
   // Dispatch multiple events for real-time updates
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event("kitchen-updated"));
@@ -1423,10 +1435,13 @@ export const showStockNotification = (warnings: string[], isError: boolean = fal
     });
   });
 };
-export const restoreStockForOrder = (order: { items: { id: string; quantity: number }[] }): boolean => {
+export const restoreStockForOrder = (order: { items: { id: string; name: string; quantity: number }[] }): boolean => {
   let success = true;
   
+  // Restore both menu item stock, ingredient stock (for meals),
+  // and raw stock based on RAW_STOCK_DEDUCTION_MAP (mirrors saveOrder logic)
   order.items.forEach((orderItem) => {
+    // 1. Restore main item stock
     const item = inventoryItems.find(item => item.id === orderItem.id);
     if (item) {
       item.stock += orderItem.quantity;
@@ -1439,21 +1454,56 @@ export const restoreStockForOrder = (order: { items: { id: string; quantity: num
       } else {
         item.status = 'in-stock';
       }
-      
-      // Restore container stock if applicable
-      restoreContainerForItem(item.name, orderItem.quantity);
-
-      // Restore utensils if this item requires utensils
-      if (requiresUtensils(item)) {
-        restoreUtensilsForQuantity(orderItem.quantity);
-      }
-
-      // Save to localStorage
-      saveToLocalStorage(INVENTORY_ITEMS_KEY, inventoryItems);
     } else {
       success = false;
     }
+
+    // 1a. Restore ingredient stock if this item is a meal with a mapped ingredient
+    const ingredient = MEAL_INGREDIENTS_MAP[orderItem.name];
+    if (ingredient) {
+      const ingredientItem = inventoryItems.find(i => i.name === ingredient.ingredient);
+      if (ingredientItem) {
+        ingredientItem.stock += orderItem.quantity;
+        if (ingredientItem.stock === 0) {
+          ingredientItem.status = 'out-of-stock';
+        } else if (ingredientItem.stock <= 5) {
+          ingredientItem.status = 'low-stock';
+        } else {
+          ingredientItem.status = 'in-stock';
+        }
+      }
+    }
+
+    // 2. Restore raw stock based on item type (matches saveOrder deduction)
+    const rawStockDeduction = RAW_STOCK_DEDUCTION_MAP[orderItem.name];
+    if (rawStockDeduction) {
+      const rawStockItem = inventoryItems.find(item => item.name === rawStockDeduction.rawStock);
+      if (rawStockItem) {
+        const totalRestore = rawStockDeduction.amount * orderItem.quantity;
+        rawStockItem.stock += totalRestore;
+        
+        // Update status based on new stock level
+        if (rawStockItem.stock === 0) {
+          rawStockItem.status = 'out-of-stock';
+        } else if (rawStockItem.stock <= 5) {
+          rawStockItem.status = 'low-stock';
+        } else {
+          rawStockItem.status = 'in-stock';
+        }
+      }
+    }
+
+    // 3. Restore container stock if applicable
+    restoreContainerForItem(orderItem.name, orderItem.quantity);
+
+    // 4. Restore utensils if this item requires utensils
+    if (requiresUtensils(item)) {
+      restoreUtensilsForQuantity(orderItem.quantity);
+    }
   });
+  
+  // Save to localStorage
+  saveToLocalStorage(INVENTORY_ITEMS_KEY, inventoryItems);
   
   return success;
 };

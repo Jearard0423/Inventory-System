@@ -17,7 +17,7 @@ import {
   type KitchenItem,
   type CustomerOrder,
 } from "@/lib/inventory-store"
-import { checkAndSendFoodPreparationReminder, resetNotificationState } from "@/lib/email-notifications"
+import { checkAndSendFoodPreparationReminder, resetNotificationState, checkAndSendAdvancedOrderNotifications, resetAdvancedNotificationState } from "@/lib/email-notifications"
 import { useAuth } from "@/components/AuthProvider"
 
 // Helper function to convert 24-hour time to 12-hour format
@@ -149,6 +149,8 @@ export default function KitchenPage() {
       const orders = getCustomerOrders()
       const recipient = auth?.user?.email
       await checkAndSendFoodPreparationReminder(orders, recipient || undefined)
+      // Also check for advanced time-based notifications
+      await checkAndSendAdvancedOrderNotifications(orders, recipient || undefined)
     }, 5 * 60 * 1000) // Check every 5 minutes
 
     // Reset notification state at midnight (new day)
@@ -160,9 +162,11 @@ export default function KitchenPage() {
     
     const midnightResetTimeout = setTimeout(() => {
       resetNotificationState()
+      resetAdvancedNotificationState()
       // And reset again every 24 hours
       setInterval(() => {
         resetNotificationState()
+        resetAdvancedNotificationState()
       }, 24 * 60 * 60 * 1000)
     }, msUntilMidnight)
 
