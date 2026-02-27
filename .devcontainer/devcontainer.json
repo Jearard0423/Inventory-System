@@ -1,0 +1,9 @@
+{
+  "name": "Inventory System",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:20",
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {}
+  },
+  "postCreateCommand": "bash setup-env.sh && npm install",
+  "remoteUser": "node"
+}
