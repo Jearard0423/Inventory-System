@@ -208,28 +208,35 @@ export default function PreparedOrdersPage() {
 
     // Reduce inventory stock, containers, and utensils for each prepared item
     preparedItems.forEach(item => {
-      // Reduce main item stock
-      reduceStock(item.id, item.quantity)
-      
-      // Reduce raw stock based on item type
-      const rawStockDeduction = RAW_STOCK_DEDUCTION_MAP[item.name];
-      if (rawStockDeduction) {
-        const inventoryList = getMenuItems();
-        const rawStockItem = inventoryList.find(invItem => invItem.name === rawStockDeduction.rawStock);
-        if (rawStockItem) {
-          const totalDeduction = rawStockDeduction.amount * item.quantity;
-          reduceStock(rawStockItem.id, totalDeduction);
+      const inventoryList = getMenuItems();
+      const menuItem = inventoryList.find(mi => mi.id === item.id);
+      const availableMenuStock = menuItem?.stock || 0;
+
+      // Consume existing prepared/menu stock first
+      if (availableMenuStock >= item.quantity) {
+        reduceStock(item.id, item.quantity)
+      } else {
+        if (availableMenuStock > 0) {
+          reduceStock(item.id, availableMenuStock)
+        }
+        const remaining = item.quantity - availableMenuStock
+
+        // Reduce raw stock only for the remaining quantity that must be produced
+        const rawStockDeduction = RAW_STOCK_DEDUCTION_MAP[item.name];
+        if (rawStockDeduction) {
+          const rawStockItem = inventoryList.find(invItem => invItem.name === rawStockDeduction.rawStock);
+          if (rawStockItem) {
+            const totalDeduction = rawStockDeduction.amount * remaining;
+            if (totalDeduction > 0) reduceStock(rawStockItem.id, totalDeduction);
+          }
         }
       }
-      
-      // Reduce container stock
+
+      // Reduce container stock for all prepared units
       reduceContainerForItem(item.name, item.quantity)
-      
+
       // Reduce utensils for meals
-      const menuItems = getMenuItems()
-      const menuItem = menuItems.find(mi => mi.id === item.id)
       if (menuItem?.category === "meals") {
-        // Reduce 1 fork and 1 spoon per meal (total 2 utensils)
         for (let i = 0; i < item.quantity; i++) {
           reduceUtensilsForMeal("meal")
         }

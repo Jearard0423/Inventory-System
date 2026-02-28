@@ -158,7 +158,7 @@ export const initializeFirebaseSync = () => {
           )
         }
       },
-      (error) => {
+      (error: any) => {
         if (error.code === "PERMISSION_DENIED") {
           console.warn(
             "Firebase permission denied for inventories/items. Using localStorage only. " +
@@ -186,7 +186,7 @@ export const initializeFirebaseSync = () => {
           )
         }
       },
-      (error) => {
+      (error: any) => {
         if (error.code === "PERMISSION_DENIED") {
           console.warn(
             "Firebase permission denied for inventories/orders. Using localStorage only."
@@ -213,7 +213,7 @@ export const initializeFirebaseSync = () => {
           )
         }
       },
-      (error) => {
+      (error: any) => {
         if (error.code === "PERMISSION_DENIED") {
           console.warn(
             "Firebase permission denied for inventories/kitchen. Using localStorage only."
@@ -251,7 +251,7 @@ export const initializeFirebaseSync = () => {
           )
         }
       },
-      (error) => {
+      (error: any) => {
         if (error.code === "PERMISSION_DENIED") {
           console.warn(
             "Firebase permission denied for menu. Using localStorage only."
@@ -263,7 +263,7 @@ export const initializeFirebaseSync = () => {
     )
 
     console.log("Firebase sync initialized with menu support (with fallback to localStorage)")
-  } catch (error) {
+  } catch (error: any) {
     console.error("Failed to initialize Firebase sync:", error)
     console.log("Falling back to localStorage only")
   }

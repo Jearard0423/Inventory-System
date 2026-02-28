@@ -12,7 +12,9 @@ const yrcLogoSeg5 = '9FltiXj+eP+VddOupHXTrqWnUdo+sz6dKBktF/EprrhUcSa+HjVXmd9ZXkV
 const yrcLogoSeg6 = 'S1kZ8Flc3zZUEjuzVrKcYGsqkaaNa30CJOZnLn0Fc8sS+hzSxTeyLiaZaJ0hB+tZutJ9TF1pvqP/ALPtSMeQv4Uvay7i9rPuLFYxQsDEWT2zxSlNy3G6jluWazMxKACgDP1228+yZgPmTmt6ErSNsPPlkZfhi6NrqcfOFf5TXp0pWZvi4c9NnoorsPCCgDkfGkmZYIs9Bmuau9T1MvWjZX8OxgRSP6nFebiHrY1xL1SNeuU5hKACgBKQBQBUvtPivUw4w/ZhWlOo4M0p1XA5i+spbOTbIMr2YV6FOamro76c1NXRu+E4LCeT96N068gN0NdVJRZx46VSK02O1AwMAYFdB5AtABQAUAFABQAUAFABQAUAFACUAFAC0AFACUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFAHm/xc/5hH/bb/wBkr53Pf+Xfz/Q+dz3/AJd/P9D0ivoj6IKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAWgAoA888V3Bm1VxnhOBXJVd5HuYKHLTRf0gpa6aJZDjdzXm1W5TsiK15zsjM1HUnvHIB2xjoPWuinTUEb0qSgvMXStON2++TiNf1pVavJohVqvJotzpERI0CooVR6VwttnC227sWkISgAoAWkAUAFABQA2VN8bqehFVF2Y07M5OJfs94MdUf+tepB7M9GXvRPS4H3QRsT1UGu9bHz0lZtFW81a0swfNlXPoKlzSNadCdTZHF69qaahdiSIHaowM1zVJ8zPXwtF0o2ZBZ6rLaRlEVSCe9c06aluXOipu5cXxC38cQ/Csvq66MyeG8yxDr1u+N6lKh4aS2IeGkti/DcxTDMbhqxlFx3MZRcdyWpJCgYUCIbq2S6haOQZz0PpVQm4u6KhNwd0cs8c2m3gwxVkPBHevSp1L6o9FONWJ3+i6kmo2SyA/OvDD3rvhLmR4Vek6UrGjVGIUAFABQAUAFABQAUAJQAtACUAFAC0AFABQAlABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFAHm/xc/5hH/bb/2Svnc9/wCXfz/Q+dz3/l38/wBD0ivoj6IKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAWgBr8KT7UAeY6s2/Upye7muGe7Po6KtTQ66vGljjiXiNBjHrWUKdncIQs22RW0TTyrGvVjVSfKrlTlyq510ESwQrGo4ArzZy5meZJ8zuySpJCgBKACgBaACgAoAKAFFNAcnfkJfy/72a9Kl8KPRp6wRfuvEdzLbxwQ/u1VQpI6mt3UbVkYQwkYycpakNrpF9qDBgjYP8T9KShKRc8RTpaNmtB4O6Ge4/BRWiodzklmH8qLaeEbJfvO5/Gq9hEyePqdBsnhCyYfLJIPxo9ihrMJrdGdd+DpkGbaYP7GpdF9Dop5hF/ErGLNBd6dNiRXjI6VhKHRo7YyhVV1qaem60HxHccHoGrjq4e2sTnq0LaxNoEEAjkGuU5QoAWgRn61ZC4tjIo/eR8/UVvRnys2oVOWVuhS8MagbO9WNjiKXg59a9OjOzNMbS54XW6O+6jius8UKACgAoAKACgAoAKACgAoASgBRQAUAFABQAUAJQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFAHm/wAXP+YR/wBtv/ZK+dz3/l38/wBD53Pf+Xfz/Q9Ir6I+iCgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACg'
 const yrcLogoSeg7 = 'AoAKAFoAKAEoAWgBr/cb6UAjzDUFP26f/AHzXDLc+jpP3ERGJggcqdp4zSsVza2NPw/EGuHkP8IrnxErKxhiHpY6EVwnEFADJJo4/vuBVKLew1FvYgGo2xYKJMk+lU6UkX7KRaByKzMwzQAuaBBmgAoAZPOtvC0jnAAq4R5nYcYuTsjkn8y8um2LlpG4Ar00rJJHpK0I69Dr9F8ORWyLNdgPIecHoK6YUktWeViMZKbtDY1Zr2OEbIlBI9K562NjDSOrOeNJy1ZSkvpn/AIto9q4JYurLqbKlFERmlPWQ1k6k31L5Y9hRcSjpIaca1RbSFyRfQmiv5F4fkV008dOPxamcqKexakjttQhKSIHBHfqK9KnVhWWhknOk7o47XtAewbzYMtCT19KzqU+XVHrYbFKqrPcdomonIt5m/wB0159el9pBXpfaRuVynIFIAOCCD0NUtBHI6hGbW9dV4AbcK9GlK6TPTpvnhqegaNdfa9Nhkzk7cGvQi7o8KvDkm0X6oyCgAoAKACgAoAKACgBKACgBaACgAoAKACgBKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoA83+Ln/MI/7bf+yV87nv8Ay7+f6Hzue/8ALv5/oekV9EfRBQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUALQAlABQAUALQAjcgj2oA8/ksHu9dmt0HVySfQVyct5WPbVZU6Kky74qt47SK0t4lwqjJ9zVVVayMcFJzcpMi8PLiGRsdTXm4l6muI3RpXFxHboWkbArnjByehhGDk7IwbzWpZSVh+RfXvXZCgludkMOluUVaSeQLkszVs7RRs7RR0Wn6fHaoGYBpD1PpXDUqOTOGpVc/Qu5rEysGaBBmgBQaYC5oEYGvXZkmECn5V6120I2Vztw8LLmNnwlpapD9smX5m+7nsK9ClDqcWOr3fIjVvroljGh471w4zEtvkiYUqfVlCvOOgKBBTAKAFoAdHI0bBlOKqnUlTldCklJWZrL5d7asjgEMMEV71KoqsLnG705XR5/qtm+m37oOADlT7VzVIWdj3KNRVYJm/p90Lm1R889DXmVI8rsclSHJKxYzUEBmgRzniRMXKP/AHlrtwz0O7CvSx0HgqUvpzoT91q9Kk9Dz8wjadzpa1OEKACgAoAKACgAoAKAEoAKAFoAKACgAoAKACgBKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgDzf4uf8AMI/7bf8AslfO57/y7+f6Hzue/wDLv5/oekV9EfRBQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUALQAUAFACUALQAlAFa3sILeeWdF/eSnLE1KikXKo5JJ9DmfG3E1uf9msa256OXbMp6PcJBYyO5wAa82tFykkjetFymkjLvLqW9mzyR0VRXRTpqKsjphBU0QywvC22RSrdcGtHoNSUtUauiW4AM7DnoK5K8+hz15dDYDVynNYXdSFYXdQAZoAXNArCPJtRm9BTSuwSu7HKAtd3wB5LvXpwjayPRdoQ9D0XAtLBUXjaoArprT9nTbPAX7ydzKyScnvXgN3O2wUAFABQIWmAUwCkBbsJfLl2no1d2Cq8s+XuY1Y3VzN8aWoa2juQPmU4NehWWlzbL52k4mN4fuCJHhJ4PIrzcRHS524iN1c3M1yHIGaBGF4kOXi+ldmG6nZhepr+Bv8Aj3n+telSOTMfiR1dbHmhQAUAFABQAUAFABQAlABQAUALQAZoAM0AJQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFA'
 const yrcLogoSeg8 = 'BQAUAFABQAUAFABQAUAFABQB5v8XP+YR/22/8AZK+dz3/l38/0Pnc9/wCXfz/Q9Ir6I+iCgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKAFoASgAoAKACgBaAOS8cr8lu/viuesenlz1aOT81tmzJ256Vhy63PUsr3Ou8K6IEQXtyuSfuKa6KcOrPKxuJv7kTB11y+qXBP8AexWM37zO3DK1NGnYDbbRgeledVd5MyqayZaBrMyFzSsAbqLBYUGgVhc0AV76TZayHPatKavJF01eSMfw9H5urQAjoc16cFqdGKdqTO41VtsaL6ms8wlaCR5GHWrZmZryTqFzQIWgBaYBmgQZpgGaABW2sp9DTi+WSYNXRb1uMXOjy98Lmvel70LnPh5clVHC6dJ5V5GenOK4KivFnt1FeLOoDVwHni5oEYOvOHuAv90V3YdWR2YdWR0ng2AxaYzkY3tXoUloedj5XqWOhrU4goAKACgAoAKACgAoAKAEoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgDzf4uf8AMI/7bf8AslfO57/y7+f6Hzue/wDLv5/oekV9EfRBQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFAC0AFABQAUAFABQBz3jGAy6YHAyUOayrLQ7cBK1SxzHh3TDqN6u4fu4zlqxhHmZ6WLreyh5no0aBECqMADAFdZ4Dd9TzfWEI1K4B/v1xT3Z9Bh3+7RrW2BbxntivOmveMJ7srXWprEdsQ3N61pCjfcuFJvcoNdTzMBvOT2FbKEYo2UIxNi0jMMQVmLMeSTXJN3ZyzfMybdUE2F3UCsU9UfFm/vWtFe8a0V7xX8Jru1ZPZSa9KnuPHO1I6rWWw0YrnzDoefhlozODV5tjosLuoCw4GgVg3UwsG6gLBuoCwhamFgLUgNaIefpzKe6EV7lB81JHFL3alzzxx5dyf8AZauaSPfWsTpom3Ip9RXnyWpwNaivIEQsTwBRFXYkrs5yV2u7vjku2BXpU42SR3JckT0XTbYWtjDCB0UZrtirI8GrPnm2WqozCgAoAKACgAoAKACgAoAKACgAoAKACgAoASgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKAPN/i5/zCP+23/slfO57/AMu/n+h87nv/AC7+f6HpFfRH0QUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUAFABQAUALQAUAFABQAUAFABQAlAFbUbb7XZyw93XAqZK6sXSnySUiroWlLpdmIzgyE5ZvWlCPKjXE13Wlc1Ks5zgPFEPk6rIccP8wrkqK0j28HK9NFI3zm2WJTjH61z+zXNc29mua5NHpcrWL3jjZGOme9a8jtch11z8i3I9OQNc5PRRmsKrtEuo7I191chz2DdRYVhd1KwrFLVm/wBF/GtqHxGtFe8S+DUzqLNjolejR3MswfuJG9rbfv0HtXLjviRy4Ve6zOBrgOmwoaiwrDt1FgsG+iwWDfQFhN9MLCb6LCsLuosFjZ0dt9uV9DivXwbvCxxYhWkcRrEPk6jOvTDZrOorSZ7GHlzU0a1m263jPtXBNanPUVpMz9YvP+WCH61vRp9Wb0af2mW/COmefObqQfu4+me5rvpRu7mGOrcq5V1O4roPICgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgBKAFoAKAEoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKACgAoAKAPN/i5/zCP+23/slfO'
-const yrcLogoBase64 = yrcLogoSeg1 + yrcLogoSeg2 + yrcLogoSeg3 + yrcLogoSeg4 + yrcLogoSeg5 + yrcLogoSeg6 + yrcLogoSeg7 + yrcLogoSeg8
+// Use the public asset copy (created as /public/yrclogo.jpg)
+// Keep the variable name for compatibility with existing usage in this file
+const yrcLogoBase64 = '/yrclogo.jpg'
 
 /**
  * Get current Philippines time (UTC+8)
@@ -75,7 +77,7 @@ const formatPHDate = (date: Date): string => {
 /**
  * Format cook time (HH:MM format) to readable time label
  */
-const formatCookTime = (cookTime: string): string => {
+const formatCookTime = (cookTime?: string): string => {
   if (!cookTime) return 'TBD'
   try {
     const [hours, minutes] = cookTime.split(':').map(Number)
@@ -143,7 +145,21 @@ let notificationState: EmailNotificationState = {
 }
 
 /** Yellow Roast Co. branded email wrapper with logo and color scheme */
-const emailWrapper = (content: string) => `
+const headerColorsForMeal = (mealType?: string) => {
+  const mt = (mealType || '').toLowerCase()
+  if (mt === 'breakfast') {
+    return { bgStart: '#fef08a', bgEnd: '#fcd34d', text: '#92400e', footerBg: '#fef3c7', footerBorder: '#fcd34d' }
+  }
+  if (mt === 'lunch') {
+    return { bgStart: '#bae6fd', bgEnd: '#7dd3fc', text: '#0f172a', footerBg: '#e0f2fe', footerBorder: '#7dd3fc' }
+  }
+  // dinner | default
+  return { bgStart: '#dc2626', bgEnd: '#ef4444', text: '#fef3c7', footerBg: '#fecaca', footerBorder: '#fca5a5' }
+}
+
+const emailWrapper = (content: string, mealType?: string) => {
+  const colors = headerColorsForMeal(mealType)
+  return `
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -158,7 +174,7 @@ const emailWrapper = (content: string) => `
       font-family: 'Segoe UI', Arial, sans-serif;
     }
     .logo-container {
-      background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%);
+      background: linear-gradient(135deg, ${colors.bgStart} 0%, ${colors.bgEnd} 100%);
       padding: 28px 32px;
       text-align: center;
     }
@@ -171,11 +187,11 @@ const emailWrapper = (content: string) => `
     }
     .brand-name {
       margin: 0;
-      color: #fef3c7;
+      color: ${colors.text};
       font-size: 26px;
       font-weight: 700;
       letter-spacing: 0.5px;
-      background: linear-gradient(135deg, #fef3c7 0%, #fcd34d 100%);
+      background: linear-gradient(135deg, ${colors.footerBg} 0%, ${colors.bgEnd} 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
@@ -195,11 +211,11 @@ const emailWrapper = (content: string) => `
 
           <!-- Header with Logo -->
           <tr>
-            <td class="logo-container" style="background:linear-gradient(135deg,#dc2626 0%,#ef4444 100%);padding:28px 32px;text-align:center;">
+            <td class="logo-container" style="background:linear-gradient(135deg,${colors.bgStart} 0%,${colors.bgEnd} 100%);padding:28px 32px;text-align:center;">
               <!-- YRC Logo as header image -->
-              <img src="/yrc-logo.png" alt="Yellow Roast Co. Logo" class="logo" style="display:block; margin:0 auto 12px; width:60px; height:60px;border-radius:8px;" />
-              <h1 style="margin:0;color:#fef3c7;font-size:26px;font-weight:700;letter-spacing:0.5px;">Yellow Roast Co.</h1>
-              <p style="margin:4px 0 0;color:#fef3c7;font-size:13px;">Premium Roasted Chicken & More</p>
+              <img src="${yrcLogoBase64}" alt="Yellow Roast Co. Logo" class="logo" style="display:block; margin:0 auto 12px; width:60px; height:60px;border-radius:8px;" />
+              <h1 style="margin:0;color:${colors.text};font-size:26px;font-weight:700;letter-spacing:0.5px;">Yellow Roast Co.</h1>
+              <p style="margin:4px 0 0;color:${colors.text};font-size:13px;">Premium Roasted Chicken & More</p>
             </td>
           </tr>
 
@@ -212,8 +228,8 @@ const emailWrapper = (content: string) => `
 
           <!-- Footer -->
           <tr>
-            <td style="background:#fecaca;padding:18px 32px;text-align:center;border-top:1px solid #fca5a5;">
-              <p style="margin:0;color:#991b1b;font-size:12px;">
+            <td style="background:${colors.footerBg};padding:18px 32px;text-align:center;border-top:1px solid ${colors.footerBorder};">
+              <p style="margin:0;color:${colors.text};font-size:12px;">
                 This is an automated notification from <strong>Yellow Roast Co.</strong> Inventory System.<br/>
                 Sent on ${todayLabel()} at ${nowLabel()}
               </p>
@@ -227,6 +243,8 @@ const emailWrapper = (content: string) => `
 </body>
 </html>
 `
+
+}
 
 /**
  * Format order details for email
@@ -549,7 +567,7 @@ export const setReminderInterval = (intervalMs: number): void => {
  * If no valid recipientEmail is provided nothing will be sent.
  */
 export const sendOrderPlacedNotification = async (
-  order: { id?: string; date: string; customerName: string; items: Array<{ name: string; quantity: number }>; cookTime?: string; createdAt?: string },
+  order: { id?: string; date: string; customerName: string; items: Array<{ name: string; quantity: number }>; cookTime?: string; createdAt?: string; mealType?: string; originalMealType?: string },
   recipientEmail?: string
 ): Promise<boolean> => {
   console.log('[email-notifications] sendOrderPlacedNotification called:', { recipientEmail, orderId: order.id, orderDate: order.date, cookTime: order.cookTime })
@@ -603,10 +621,12 @@ export const sendOrderPlacedNotification = async (
     // summary table containing every order scheduled for today
     if (order.id) {
       try {
-        const { getCustomerOrders } = require('./inventory-store')
-        const allOrders = getCustomerOrders()
+        // use regular orders (not customer orders) for summary table since
+        // they contain `date` and `items` fields we can easily display
+        const { getOrders } = require('./orders')
+        const allOrders = getOrders()
 
-        const toNotify = allOrders.filter(o => {
+        const toNotify = allOrders.filter((o: any) => {
           if (!o.id) return false
           const od = new Date(o.date)
           return od.toDateString() === today.toDateString()
@@ -616,7 +636,7 @@ export const sendOrderPlacedNotification = async (
           const subject = `🆕 ${toNotify.length} Order${toNotify.length > 1 ? 's' : ''} Today`;
 
           const rows = toNotify
-            .map(o => {
+            .map((o: any) => {
               const itemsText = o.items
                 .map((i: any) => `${i.quantity}× ${i.name}`)
                 .join(', ')
@@ -652,7 +672,7 @@ export const sendOrderPlacedNotification = async (
 
           const htmlBody = emailWrapper(content)
           const plainTextBody = `Yellow Roast Co. - ${toNotify.length} Order${toNotify.length > 1 ? 's' : ''} Today\n\n${toNotify
-            .map(o =>
+            .map((o: any) =>
               `${o.customerName} | ${o.items
                 .map((i: any) => `${i.quantity}x ${i.name}`)
                 .join(', ')} | ${o.cookTime || '—'} | ${o.date}`
@@ -702,7 +722,7 @@ export const sendOrderPlacedNotification = async (
           </p>
         </div>
       `
-      const htmlBody = emailWrapper(content)
+      const htmlBody = emailWrapper(content, order.mealType || order.originalMealType)
       const plainTextBody = `Yellow Roast Co. - URGENT: New Order - No Time Specified
 
 Customer: ${order.customerName}
@@ -741,7 +761,7 @@ URGENT: No delivery time was specified. Prepare this order ASAP!`
 
     // SCENARIO 2: Delivery within 2 hours - notify immediately to start prep
     const subject = `🆕 New Order - Delivery in ${Math.round(hoursUntilDelivery * 60)} Minutes`
-    const deliveryTimeLabel = formatCookTime(order.cookTime)
+    const deliveryTimeLabel = formatCookTime(order.cookTime || "")
     const content = `
       <div style="text-align: center; margin-bottom: 24px;">
         <div style="font-size: 48px; margin-bottom: 8px;">🐔</div>
@@ -777,7 +797,7 @@ URGENT: No delivery time was specified. Prepare this order ASAP!`
         </p>
       </div>
     `
-    const htmlBody = emailWrapper(content)
+    const htmlBody = emailWrapper(content, order.mealType || order.originalMealType)
     const plainTextBody = `Yellow Roast Co. - New Order - Immediate Prep Required
 
 Customer: ${order.customerName}

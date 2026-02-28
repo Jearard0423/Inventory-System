@@ -117,13 +117,37 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      const info = await mailer.sendMail({
+      // Attach logo as inline CID if available and rewrite HTML to reference cid
+      const fs = require('fs')
+      const path = require('path')
+      let htmlToSend = String(htmlBody)
+      const logoPublicPath = path.join(process.cwd(), 'public', 'yrclogo.jpg')
+      const shouldAttachLogo = fs.existsSync(logoPublicPath)
+
+      if (shouldAttachLogo) {
+        // replace occurrences like src="/yrclogo.jpg" or src='/yrclogo.jpg'
+        htmlToSend = htmlToSend.replace(/src=["']\/yrclogo\.jpg["']/g, 'src="cid:yrclogo@yellow"')
+      }
+
+      const mailOptions: any = {
         from: `"Yellow Roast Co." <${SMTP_USER}>`,
         to: recipientEmail,
         subject,
         text: plainTextBody,
-        html: htmlBody,
-      })
+        html: htmlToSend,
+      }
+
+      if (shouldAttachLogo) {
+        mailOptions.attachments = [
+          {
+            filename: 'yrclogo.jpg',
+            path: logoPublicPath,
+            cid: 'yrclogo@yellow'
+          }
+        ]
+      }
+
+      const info = await mailer.sendMail(mailOptions)
 
       console.log(`[email-api] ✅ Email sent to ${recipientEmail} – messageId: ${info.messageId}`)
 

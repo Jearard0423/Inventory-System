@@ -21,6 +21,7 @@ interface Order {
   paymentStatus: "paid" | "not-paid"
   paymentMethod?: "cash" | "gcash"
   cookTime?: string
+  mealType?: string
 }
 
 interface ProductSales {

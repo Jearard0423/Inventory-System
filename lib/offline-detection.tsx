@@ -44,12 +44,13 @@ export function useOfflineDetection() {
 /**
  * Offline Error Boundary Component
  */
-export function OfflineErrorBoundary({ children }: { children: React.ReactNode }): React.ReactNode {
+export function OfflineErrorBoundary({ children }: { children: React.ReactNode }) {
   const isOffline = useOfflineDetection()
 
   if (isOffline) {
     return null // Router will handle the redirect
   }
 
-  return children
+  return <>{children}</>
 }
+

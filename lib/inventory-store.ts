@@ -75,6 +75,7 @@ export interface CustomerOrder {
   deliveryMethod?: 'hand-in' | 'lalamove'
   isDelivery?: boolean
   paymentStatus?: 'paid' | 'unpaid'
+  paymentMethod?: 'cash' | 'gcash'
   total?: number
   remarks?: string
   specialRequests?: string
@@ -1074,39 +1075,51 @@ export const saveOrder = (order: Omit<Order, 'id' | 'orderNumber' | 'createdAt'>
   
   // Reduce stock for each ordered item
   newOrder.items.forEach(orderedItem => {
-    // Reduce main item stock
-    reduceStock(orderedItem.id, orderedItem.quantity);
-    
-    // Reduce parent ingredient stock if this is a meal with ingredients
-    const ingredient = MEAL_INGREDIENTS_MAP[orderedItem.name];
-    if (ingredient) {
-      const inventoryList = getInventory();
-      const ingredientItem = inventoryList.find(item => item.name === ingredient.ingredient);
-      if (ingredientItem) {
-        reduceStock(ingredientItem.id, orderedItem.quantity);
+    const inventoryList = getInventory();
+    const menuItem = inventoryList.find(item => item.id === orderedItem.id);
+    const availableMenuStock = menuItem?.stock || 0;
+
+    // If there is enough prepared/menu stock, consume it first and skip raw deductions
+    if (availableMenuStock >= orderedItem.quantity) {
+      reduceStock(orderedItem.id, orderedItem.quantity);
+    } else {
+      // Consume whatever prepared/menu stock exists
+      if (availableMenuStock > 0) {
+        reduceStock(orderedItem.id, availableMenuStock);
+      }
+
+      // Remaining quantity must be produced from raw stock (if mapping exists)
+      const remaining = orderedItem.quantity - availableMenuStock;
+
+      // If this meal maps to a parent ingredient (e.g., Chicken Yangchow -> Roast Chicken), reduce that ingredient for the remaining
+      const ingredient = MEAL_INGREDIENTS_MAP[orderedItem.name];
+      if (ingredient) {
+        const ingredientItem = inventoryList.find(item => item.name === ingredient.ingredient);
+        if (ingredientItem) {
+          reduceStock(ingredientItem.id, remaining);
+        }
+      }
+
+      // Reduce raw stock based on item type for the remaining quantity
+      const rawStockDeduction = RAW_STOCK_DEDUCTION_MAP[orderedItem.name];
+      if (rawStockDeduction) {
+        const rawStockItem = inventoryList.find(item => item.name === rawStockDeduction.rawStock);
+        if (rawStockItem) {
+          const totalDeduction = rawStockDeduction.amount * remaining;
+          if (totalDeduction > 0) reduceStock(rawStockItem.id, totalDeduction);
+        }
       }
     }
-    
-    // Reduce raw stock based on item type
-    const rawStockDeduction = RAW_STOCK_DEDUCTION_MAP[orderedItem.name];
-    if (rawStockDeduction) {
-      const inventoryList = getInventory();
-      const rawStockItem = inventoryList.find(item => item.name === rawStockDeduction.rawStock);
-      if (rawStockItem) {
-        // Since amount can be fractional, we need to handle fractional deductions
-        const totalDeduction = rawStockDeduction.amount * orderedItem.quantity;
-        reduceStock(rawStockItem.id, totalDeduction);
-      }
-    }
-    
-    // Reduce container stock
+
+    // If there was no menu stock at all and the meal has an ingredient mapping (already handled above),
+    // ensure we still reduce the ingredient when menu stock satisfied part of the order above.
+    // (ingredient deduction for full orders where menu stock covered all units is not needed)
+
+    // Reduce container stock for all sold units (packaging used regardless of source)
     reduceContainerForItem(orderedItem.name, orderedItem.quantity);
-    
+
     // Reduce utensils for applicable items (all meal/food categories except sisig and rice)
-    const inventory = getInventory();
-    const menuItem = inventory.find(item => item.id === orderedItem.id);
     if (requiresUtensils(menuItem)) {
-      // Reduce 1 of each utensil per ordered item
       for (let i = 0; i < orderedItem.quantity; i++) {
         reduceUtensilsForMeal("meal");
       }

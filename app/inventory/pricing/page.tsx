@@ -6,6 +6,13 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { POSLayout } from "@/components/pos-layout"
 import { Trash2, Plus } from "lucide-react"
+import {
+  Select,
+  SelectTrigger,
+  SelectContent,
+  SelectItem,
+  SelectValue,
+} from '@/components/ui/select'
 
 type Unit = "kg" | "g" | "pcs"
 
@@ -83,7 +90,13 @@ export default function PricingCalculatorPage() {
 
   const saveTemplate = (name: string) => {
     if (!name) return
-    const t = { ...templates, [name]: { ingredients, overhead: overheadPct, profit: profitPct, regularSellingPrice } }
+    const entry: { ingredients: Ingredient[]; overhead: number; profit: number; regularSellingPrice?: number } = {
+      ingredients,
+      overhead: overheadPct,
+      profit: profitPct,
+    }
+    if (regularSellingPrice !== "") entry.regularSellingPrice = regularSellingPrice as number
+    const t = { ...templates, [name]: entry }
     setTemplates(t)
     try { localStorage.setItem(TEMPLATES_KEY, JSON.stringify(t)) } catch (e) {}
     setTemplateName("")
@@ -408,15 +421,27 @@ export default function PricingCalculatorPage() {
                   setRegularSellingPrice("")
                 }}>New Template</Button>
                 <div className="ml-auto flex items-center gap-2">
-                  <select
-                    className="text-sm p-1 max-h-40 overflow-y-auto"
-                    size={Math.min(Object.keys(templates).length + 1, 10)}
-                    value={selectedTemplate || ""}
-                    onChange={(e) => { const v = e.target.value; if (v) { loadTemplate(v) } else { setSelectedTemplate("") } }}
+                  {/* use Radix Select to allow a scrollable dropdown menu */}
+                  <Select
+                    value={selectedTemplate}
+                    onValueChange={(v) => {
+                      if (v) {
+                        loadTemplate(v)
+                      } else {
+                        setSelectedTemplate("")
+                      }
+                    }}
                   >
-                    <option value="">Select template...</option>
-                    {Object.keys(templates).map(tn => <option key={tn} value={tn}>{tn}</option>)}
-                  </select>
+                    <SelectTrigger size="sm" className="w-48">
+                      <SelectValue placeholder="Select template..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.keys(templates).map(tn => (
+                        <SelectItem key={tn} value={tn}>{tn}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
                   <Button size="sm" variant="destructive" onClick={() => { if (selectedTemplate) { deleteTemplate(selectedTemplate); setSelectedTemplate(""); setTemplateName("") } }} disabled={!selectedTemplate}>Delete</Button>
                 </div>
               </div>

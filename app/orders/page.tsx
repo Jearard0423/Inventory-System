@@ -76,6 +76,7 @@ type Order = {
   createdAt?: string
   items: { id: string; name: string; price: number; quantity: number }[]
   total: number
+  status: "pending" | "completed"
   paymentStatus: "paid" | "not-paid"
   paymentMethod?: "cash" | "gcash"
   gcashPhone?: string
