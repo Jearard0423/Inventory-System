@@ -4,6 +4,7 @@ import React, { useState, useMemo, useEffect } from "react"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { POSLayout } from "@/components/pos-layout"
 import { Trash2, Plus } from "lucide-react"
 import {
@@ -433,6 +434,7 @@ export default function PricingCalculatorPage() {
                     }}
                   >
                     <SelectTrigger size="sm" className="w-48">
+
                       <SelectValue placeholder="Select template..." />
                     </SelectTrigger>
                     <SelectContent>
@@ -441,7 +443,6 @@ export default function PricingCalculatorPage() {
                       ))}
                     </SelectContent>
                   </Select>
-
                   <Button size="sm" variant="destructive" onClick={() => { if (selectedTemplate) { deleteTemplate(selectedTemplate); setSelectedTemplate(""); setTemplateName("") } }} disabled={!selectedTemplate}>Delete</Button>
                 </div>
               </div>

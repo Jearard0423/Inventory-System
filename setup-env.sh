@@ -2,13 +2,14 @@
 
 # Setup script for Yellow Roast Co. Inventory System
 # This script creates .env.local with the SMTP configuration
+# Runs automatically on Codespace startup via .devcontainer/devcontainer.json
 
 cat > .env.local << 'EOF'
 # Email Configuration for Yellow Roast Co. Inventory System
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=yellowroastco2024@gmail.com
-SMTP_PASSWORD=nvvgyhpmjjfdivgn
+SMTP_PASSWORD=lsascusqlbbldsbh
 
 # Firebase Configuration (if needed)
 NEXT_PUBLIC_FIREBASE_API_KEY=

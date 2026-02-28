@@ -244,6 +244,154 @@ const emailWrapper = (content: string, mealType?: string) => {
 </html>
 `
 
+
+/**
+ * Group orders by delivery time buckets (1hr, 2+hrs, 3+ days)
+ * Returns grouped HTML table sections with customer name, food ordered, date, and delivery time
+ */
+const groupOrdersByDeliveryTime = (orders: CustomerOrder[]): string => {
+  if (orders.length === 0) return ''
+
+  const now = getPHTime()
+  const groups: { [key: string]: CustomerOrder[] } = {
+    'within_1hr': [],
+    '1_to_2hrs': [],
+    'above_2hrs': [],
+    '3_days_advance': []
+  }
+
+  orders.forEach(order => {
+    if (!order.cookTime) {
+      groups['within_1hr'].push(order)
+      return
+    }
+
+    const deliveryDate = parseLocalDate(order.createdAt)
+    const [hours, minutes] = order.cookTime.split(':').map(Number)
+    deliveryDate.setHours(hours, minutes, 0, 0)
+
+    const timeUntilDelivery = deliveryDate.getTime() - now.getTime()
+    const hoursUntilDelivery = timeUntilDelivery / (1000 * 60 * 60)
+    const daysUntilDelivery = timeUntilDelivery / (1000 * 60 * 60 * 24)
+
+    if (hoursUntilDelivery <= 1 && hoursUntilDelivery > 0) {
+      groups['within_1hr'].push(order)
+    } else if (hoursUntilDelivery <= 2 && hoursUntilDelivery > 1) {
+      groups['1_to_2hrs'].push(order)
+    } else if (daysUntilDelivery >= 2 && daysUntilDelivery <= 3) {
+      groups['3_days_advance'].push(order)
+    } else {
+      groups['above_2hrs'].push(order)
+    }
+  })
+
+  let html = ''
+
+  // 1 Hour Due Table
+  if (groups['within_1hr'].length > 0) {
+    html += `
+      <div style="margin-bottom: 28px;">
+        <h3 style="color: #dc2626; font-size: 16px; margin: 0 0 12px; display: flex; align-items: center;">
+          <span style="font-size: 20px; margin-right: 8px;">⏰</span>
+          1 Hour Due
+        </h3>
+        <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse;">
+          <thead>
+            <tr style="background-color: #fee2e2; border: 1px solid #fca5a5;">
+              <th style="padding: 10px; text-align: left; color: #991b1b; font-size: 13px; font-weight: 600;">Customer Name</th>
+              <th style="padding: 10px; text-align: left; color: #991b1b; font-size: 13px; font-weight: 600;">Food Ordered</th>
+              <th style="padding: 10px; text-align: left; color: #991b1b; font-size: 13px; font-weight: 600;">Date Today</th>
+              <th style="padding: 10px; text-align: left; color: #991b1b; font-size: 13px; font-weight: 600;">Delivery Time</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${groups['within_1hr'].map(o => `
+              <tr style="border: 1px solid #fca5a5; background-color: #fef2f2;">
+                <td style="padding: 10px; color: #374151;">${o.customerName}</td>
+                <td style="padding: 10px; color: #374151;">${o.orderedItems.map((i: any) => `${i.quantity}× ${i.name}`).join(', ')}</td>
+                <td style="padding: 10px; color: #374151;">${o.createdAt || 'Today'}</td>
+                <td style="padding: 10px; color: #dc2626; font-weight: 600;">${o.cookTime || 'Immediate'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `
+  }
+
+  // 2+ Hours Due Table
+  if (groups['above_2hrs'].length > 0) {
+    html += `
+      <div style="margin-bottom: 28px;">
+        <h3 style="color: #ea580c; font-size: 16px; margin: 0 0 12px; display: flex; align-items: center;">
+          <span style="font-size: 20px; margin-right: 8px;">⏱️</span>
+          2+ Hours Due
+        </h3>
+        <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse;">
+          <thead>
+            <tr style="background-color: #fed7aa; border: 1px solid #fdba74;">
+              <th style="padding: 10px; text-align: left; color: #85400f; font-size: 13px; font-weight: 600;">Customer Name</th>
+              <th style="padding: 10px; text-align: left; color: #85400f; font-size: 13px; font-weight: 600;">Food Ordered</th>
+              <th style="padding: 10px; text-align: left; color: #85400f; font-size: 13px; font-weight: 600;">Date Today</th>
+              <th style="padding: 10px; text-align: left; color: #85400f; font-size: 13px; font-weight: 600;">Delivery Time</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${groups['above_2hrs'].map(o => `
+              <tr style="border: 1px solid #fdba74; background-color: #fffbeb;">
+                <td style="padding: 10px; color: #374151;">${o.customerName}</td>
+                <td style="padding: 10px; color: #374151;">${o.orderedItems.map((i: any) => `${i.quantity}× ${i.name}`).join(', ')}</td>
+                <td style="padding: 10px; color: #374151;">${o.createdAt || 'Today'}</td>
+                <td style="padding: 10px; color: #ea580c; font-weight: 600;">${o.cookTime || 'Not set'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `
+  }
+
+  // 3+ Days Advance Table
+  if (groups['3_days_advance'].length > 0) {
+    html += `
+      <div style="margin-bottom: 28px;">
+        <h3 style="color: #0284c7; font-size: 16px; margin: 0 0 12px; display: flex; align-items: center;">
+          <span style="font-size: 20px; margin-right: 8px;">📅</span>
+          3 Days Advance
+        </h3>
+        <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse;">
+          <thead>
+            <tr style="background-color: #bfdbfe; border: 1px solid #93c5fd;">
+              <th style="padding: 10px; text-align: left; color: #0c4a6e; font-size: 13px; font-weight: 600;">Customer Name</th>
+              <th style="padding: 10px; text-align: left; color: #0c4a6e; font-size: 13px; font-weight: 600;">Food Ordered</th>
+              <th style="padding: 10px; text-align: left; color: #0c4a6e; font-size: 13px; font-weight: 600;">Delivery Date</th>
+              <th style="padding: 10px; text-align: left; color: #0c4a6e; font-size: 13px; font-weight: 600;">Delivery Time</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${groups['3_days_advance'].map(o => {
+              const deliveryDate = parseLocalDate(o.createdAt)
+              const dateLabel = deliveryDate.toLocaleDateString('en-PH', { 
+                weekday: 'short', 
+                month: 'short', 
+                day: 'numeric' 
+              })
+              return `
+              <tr style="border: 1px solid #93c5fd; background-color: #f0f9ff;">
+                <td style="padding: 10px; color: #374151;">${o.customerName}</td>
+                <td style="padding: 10px; color: #374151;">${o.orderedItems.map((i: any) => `${i.quantity}× ${i.name}`).join(', ')}</td>
+                <td style="padding: 10px; color: #374151;">${dateLabel}</td>
+                <td style="padding: 10px; color: #0284c7; font-weight: 600;">${o.cookTime || 'Not set'}</td>
+              </tr>
+            `}).join('')}
+          </tbody>
+        </table>
+      </div>
+    `
+  }
+
+  return html
+
 }
 
 /**
@@ -632,24 +780,33 @@ export const sendOrderPlacedNotification = async (
           return od.toDateString() === today.toDateString()
         })
 
-        if (toNotify.length > 0) {
-          const subject = `🆕 ${toNotify.length} Order${toNotify.length > 1 ? 's' : ''} Today`;
+        if (toNotify.length === 0) {
+          return false
+        }
 
-          const rows = toNotify
-            .map((o: any) => {
-              const itemsText = o.items
-                .map((i: any) => `${i.quantity}× ${i.name}`)
-                .join(', ')
-              return `<tr>
+
+    const subject = `🆕 ${toNotify.length} Order${toNotify.length > 1 ? 's' : ''} Today`
+
+        const rows = toNotify
+          .map((o: any) => {
+            const itemsText = o.items
+              .map((i: any) => `${i.quantity}× ${i.name}`)
+              .join(', ')
+            return `<tr>
   <td style="padding:8px;border:1px solid #ddd">${o.customerName}</td>
   <td style="padding:8px;border:1px solid #ddd">${itemsText}</td>
   <td style="padding:8px;border:1px solid #ddd">${o.cookTime || '—'}</td>
   <td style="padding:8px;border:1px solid #ddd">${o.date}</td>
 </tr>`
-            })
-            .join('')
+          })
+          .join('')
+  <td style="padding:8px;border:1px solid #ddd">${itemsText}</td>
+  <td style="padding:8px;border:1px solid #ddd">${o.cookTime || '—'}</td>
+  <td style="padding:8px;border:1px solid #ddd">${o.date}</td>
+</tr>`
+      })
+      .join('')
 
-          const content = `
             <div style="text-align:center;margin-bottom:24px;">
               <div style="font-size:48px;margin-bottom:8px;">🐔</div>
               <h2 style="color:#dc2626;margin:0;font-size:24px;">${toNotify.length} Order${toNotify.length > 1 ? 's' : ''} Today</h2>
@@ -785,7 +942,7 @@ URGENT: No delivery time was specified. Prepare this order ASAP!`
               .map(i => `<li style="color: #374151; margin-bottom: 6px; font-size: 15px;">
                 <span style="display: inline-block; width: 24px; text-align: center; font-weight: 600; color: #dc2626;">${i.quantity}×</span>
                 <span style="font-weight: 500;">${i.name}</span>
-              </li>`)
+              </li>`) 
               .join('')}
           </ul>
         </div>
@@ -812,14 +969,11 @@ ${order.items
 START PREPARATION NOW - Delivery in ~${Math.round(hoursUntilDelivery * 60)} minutes!`
 
     const sent = await sendEmailNotification(subject, htmlBody, plainTextBody, recipientEmail)
-    if (sent && order.id) {
-      addNotifiedOrders([order.id])
-    }
-    if (!sent) {
-      console.warn('[email-notifications] Quick-prep order email failed to send')
+    if (sent && toNotify.length > 0) {
+      const ids = toNotify.map(o => o.id).filter(Boolean) as string[]
+      addNotifiedOrders(ids)
     }
     return sent
-
   } catch (err) {
     console.error('[email-notifications] Error sending new-order notification:', err)
     return false
@@ -940,9 +1094,9 @@ export const checkAndSendUpcomingOrdersReminder = async (
  * 2. "1 hour before" email when delivery time is approaching
  */
 interface AdvancedNotificationState {
-  sentOneDayReminders: Set<string> // groupKey (date_time) -> has 1-day reminder been sent
-  sentOneHourReminders: Set<string> // groupKey (date_time) -> has 1-hour reminder been sent
-  sentThirtyMinuteReminders: Set<string> // groupKey (date_time) -> has 30-min reminder been sent
+  sentOneDayReminders: Set<string> // bucket keys: within_1hr | 1_to_2hrs | above_2hrs | 3_days_advance
+  sentOneHourReminders: Set<string> // bucket keys: within_1hr | 1_to_2hrs | above_2hrs | 3_days_advance
+  sentThirtyMinuteReminders: Set<string> // bucket keys: within_1hr | 1_to_2hrs | above_2hrs | 3_days_advance
 }
 
 let advancedNotificationState: AdvancedNotificationState = {
@@ -951,16 +1105,60 @@ let advancedNotificationState: AdvancedNotificationState = {
   sentThirtyMinuteReminders: new Set(),
 }
 
-const getDeliveryGroupKey = (order: CustomerOrder): string => {
-  const dateStr = order.createdAt?.split('T')[0] || 'unknown'
-  const timeStr = order.cookTime || 'no-time'
-  return `${dateStr}_${timeStr}`
+type TimeBucket = 'within_1hr' | '1_to_2hrs' | 'above_2hrs' | '3_days_advance'
+
+/**
+ * Group orders by time-to-delivery buckets (ALL orders in same bucket grouped together)
+ * This ensures all 1-hour due orders are in ONE email, not split by exact time
+ */
+const groupOrdersByTimeBucket = (orders: CustomerOrder[]): Map<TimeBucket, CustomerOrder[]> => {
+  const now = getPHTime()
+  const groups: Map<TimeBucket, CustomerOrder[]> = new Map([
+    ['within_1hr', []],
+    ['1_to_2hrs', []],
+    ['above_2hrs', []],
+    ['3_days_advance', []]
+  ])
+
+  orders.forEach(order => {
+    if (!order.cookTime) {
+      groups.get('within_1hr')!.push(order)
+      return
+    }
+
+    const deliveryDate = parseLocalDate(order.createdAt)
+    const [hours, minutes] = order.cookTime.split(':').map(Number)
+    deliveryDate.setHours(hours, minutes, 0, 0)
+
+    const timeUntilDelivery = deliveryDate.getTime() - now.getTime()
+    const hoursUntilDelivery = timeUntilDelivery / (1000 * 60 * 60)
+    const daysUntilDelivery = timeUntilDelivery / (1000 * 60 * 60 * 24)
+
+    if (hoursUntilDelivery <= 1 && hoursUntilDelivery > 0) {
+      groups.get('within_1hr')!.push(order)
+    } else if (hoursUntilDelivery <= 2 && hoursUntilDelivery > 1) {
+      groups.get('1_to_2hrs')!.push(order)
+    } else if (daysUntilDelivery >= 2 && daysUntilDelivery <= 3) {
+      groups.get('3_days_advance')!.push(order)
+    } else if (hoursUntilDelivery > 2) {
+      groups.get('above_2hrs')!.push(order)
+    }
+  })
+
+  return groups
+}
+
+const getTimeBucketKey = (bucket: TimeBucket): string => {
+  return bucket // Simple string key for each bucket
 }
 
 /**
  * SCENARIO 3: Advanced notification system for future orders with time-based alerts
  * A day before delivery: sends "prepare tomorrow" reminder
  * Then 1 hour before: sends "final preparation" urgent alert
+ * 
+ * Groups ALL orders by time buckets (within_1hr, 1_to_2hrs, etc.)
+ * and sends ONE email per bucket
  * 
  * Call this periodically (e.g., every 30 minutes or hourly)
  */
@@ -976,10 +1174,7 @@ export const checkAndSendAdvancedOrderNotifications = async (
   }
 
   try {
-    // Group orders by delivery date and cluster those within 30 minutes of each other
-    const groupsByDateTime = new Map<string, CustomerOrder[]>()
-
-    // prepare list of valid orders with parsed times
+    // Filter to only valid orders (have delivery time, not yet delivered/served)
     const validOrders = orders.filter(o =>
       o.cookTime &&
       o.status !== 'served' &&
@@ -987,89 +1182,64 @@ export const checkAndSendAdvancedOrderNotifications = async (
       o.status !== 'complete'
     )
 
-    type Entry = { order: CustomerOrder; date: string; mins: number }
-    const entries: Entry[] = validOrders.map(o => {
-      const date = o.createdAt?.split('T')[0] || 'unknown'
-      const [h, m] = o.cookTime!.split(':').map(Number)
-      return { order: o, date, mins: h * 60 + m }
-    })
-
-    // sort by date then time
-    entries.sort((a, b) => a.date.localeCompare(b.date) || a.mins - b.mins)
-
-    for (const e of entries) {
-      let placed = false
-      for (const [key, group] of groupsByDateTime.entries()) {
-        const first = group[0]
-        const groupDate = first.createdAt?.split('T')[0] || 'unknown'
-        if (e.date !== groupDate) continue
-
-        const [fh, fm] = first.cookTime!.split(':').map(Number)
-        const fmins = fh * 60 + fm
-        if (Math.abs(e.mins - fmins) <= 30) {
-          group.push(e.order)
-          placed = true
-          break
-        }
-      }
-      if (!placed) {
-        const key = `${e.date}_${String(e.mins).padStart(4, '0')}`
-        groupsByDateTime.set(key, [e.order])
-      }
-    }
-
-    // Clean up old reminders
-    const validGroupKeys = new Set(groupsByDateTime.keys())
-    advancedNotificationState.sentOneDayReminders.forEach(key => {
-      if (!validGroupKeys.has(key)) advancedNotificationState.sentOneDayReminders.delete(key)
-    })
-    advancedNotificationState.sentOneHourReminders.forEach(key => {
-      if (!validGroupKeys.has(key)) advancedNotificationState.sentOneHourReminders.delete(key)
-    })
-    advancedNotificationState.sentThirtyMinuteReminders.forEach(key => {
-      if (!validGroupKeys.has(key)) advancedNotificationState.sentThirtyMinuteReminders.delete(key)
-    })
-
     const now = getPHTime()
 
-    for (const [groupKey, groupOrders] of groupsByDateTime.entries()) {
-      const order = groupOrders[0] // representative order for timing
-      // Parse delivery time from first order in group
-      const deliveryDate = parseLocalDate(order.createdAt)
-      const [deliveryHour, deliveryMinute] = order.cookTime!.split(':').map(Number)
-      deliveryDate.setHours(deliveryHour, deliveryMinute, 0, 0)
+    // GROUP BY TIME BUCKETS - all orders in same bucket get ONE email together
+    const timeGrouped = groupOrdersByTimeBucket(validOrders)
 
-      // Calculate time until delivery
-      const timeUntilDelivery = deliveryDate.getTime() - now.getTime()
-      const hoursUntilDelivery = timeUntilDelivery / (1000 * 60 * 60)
-      const daysUntilDelivery = timeUntilDelivery / (1000 * 60 * 60 * 24)
+    // Process each time bucket
+    for (const [bucket, bucketOrders] of timeGrouped.entries()) {
+      if (bucketOrders.length === 0) continue
 
-      console.log(`[email-notifications] Order ${order.id} (${order.customerName}):`, {
-        deliveryDate: deliveryDate.toISOString(),
-        now: now.toISOString(),
-        hoursUntilDelivery: hoursUntilDelivery.toFixed(2),
-        daysUntilDelivery: daysUntilDelivery.toFixed(2)
+      const bucketKey = getTimeBucketKey(bucket)
+      console.log(`[email-notifications] Processing bucket "${bucket}" with ${bucketOrders.length} order(s)`)
+
+      // Get earliest delivery time in this bucket for timing decisions
+      let earliestDeliveryTime = 0
+      bucketOrders.forEach(order => {
+        if (order.cookTime) {
+          const deliveryDate = parseLocalDate(order.createdAt)
+          const [hours, minutes] = order.cookTime.split(':').map(Number)
+          deliveryDate.setHours(hours, minutes, 0, 0)
+          const deliveryTime = deliveryDate.getTime()
+          if (earliestDeliveryTime === 0 || deliveryTime < earliestDeliveryTime) {
+            earliestDeliveryTime = deliveryTime
+          }
+        }
       })
 
-      // SCENARIO 3A: 1-DAY BEFORE REMINDER (if delivery is tomorrow or 1-2 days away)
-      if (daysUntilDelivery <= 1 && daysUntilDelivery > 0 && !advancedNotificationState.sentOneDayReminders.has(groupKey)) {
-        console.log(`[email-notifications] Triggering 1-day reminder for group ${groupKey} (${groupOrders.length} orders)`)
-        await sendOneDayBeforeNotification(groupOrders, recipientEmail)
-        advancedNotificationState.sentOneDayReminders.add(groupKey)
+      const timeUntilEarliestDelivery = earliestDeliveryTime - now.getTime()
+      const hoursUntilDelivery = timeUntilEarliestDelivery / (1000 * 60 * 60)
+      const daysUntilDelivery = timeUntilEarliestDelivery / (1000 * 60 * 60 * 24)
+
+      console.log(`[email-notifications] Bucket "${bucket}":`, {
+        ordersCount: bucketOrders.length,
+        hoursUntilDelivery: hoursUntilDelivery.toFixed(2),
+        daysUntilDelivery: daysUntilDelivery.toFixed(2),
+        alreadySent1DayReminder: advancedNotificationState.sentOneDayReminders.has(bucketKey),
+        alreadySent1HourReminder: advancedNotificationState.sentOneHourReminders.has(bucketKey),
+        alreadySent30MinReminder: advancedNotificationState.sentThirtyMinuteReminders.has(bucketKey)
+      })
+
+      // SCENARIO 3A: 1-DAY BEFORE REMINDER (if delivery date is tomorrow or 1-2 days away)
+      if (daysUntilDelivery <= 1 && daysUntilDelivery > 0 && !advancedNotificationState.sentOneDayReminders.has(bucketKey)) {
+        console.log(`[email-notifications] 📅 Sending 1-day reminder for bucket "${bucket}" (${bucketOrders.length} orders)`)
+        await sendOneDayBeforeNotification(bucketOrders, recipientEmail)
+        advancedNotificationState.sentOneDayReminders.add(bucketKey)
       }
 
       // SCENARIO 3B: 1-HOUR BEFORE REMINDER - Sent on delivery day, 1 hour before
-      if (hoursUntilDelivery <= 1 && hoursUntilDelivery > 0 && !advancedNotificationState.sentOneHourReminders.has(groupKey)) {
-        console.log(`[email-notifications] Triggering 1-hour reminder for group ${groupKey} (${groupOrders.length} orders)`)
-        await sendOneHourBeforeNotification(groupOrders, recipientEmail)
-        advancedNotificationState.sentOneHourReminders.add(groupKey)
+      if (hoursUntilDelivery <= 1 && hoursUntilDelivery > 0 && !advancedNotificationState.sentOneHourReminders.has(bucketKey)) {
+        console.log(`[email-notifications] 🚨 Sending 1-hour reminder for bucket "${bucket}" (${bucketOrders.length} orders)`)
+        await sendOneHourBeforeNotification(bucketOrders, recipientEmail)
+        advancedNotificationState.sentOneHourReminders.add(bucketKey)
       }
 
       // 30-MINUTE BEFORE REMINDER (<=0.5h and >0)
-      if (hoursUntilDelivery <= 0.5 && hoursUntilDelivery > 0 && !advancedNotificationState.sentThirtyMinuteReminders.has(groupKey)) {
-        console.log(`[email-notifications] Triggering 30-minute reminder for group ${groupKey} (${groupOrders.length} orders)`)
-        await sendThirtyMinuteNotification(groupOrders, recipientEmail)
-        advancedNotificationState.sentThirtyMinuteReminders.add(groupKey)
+      if (hoursUntilDelivery <= 0.5 && hoursUntilDelivery > 0 && !advancedNotificationState.sentThirtyMinuteReminders.has(bucketKey)) {
+        console.log(`[email-notifications] ⏰ Sending 30-minute reminder for bucket "${bucket}" (${bucketOrders.length} orders)`)
+        await sendThirtyMinuteNotification(bucketOrders, recipientEmail)
+        advancedNotificationState.sentThirtyMinuteReminders.add(bucketKey)
       }
     }
   } catch (error) {
@@ -1107,18 +1277,7 @@ const sendOneDayBeforeNotification = async (
 
     const subject = `📅 ${orders.length} Order${orders.length > 1 ? 's' : ''} Tomorrow at ${deliveryTimeLabel}`
 
-    const rows = orders
-      .map(o => {
-        const itemsText = o.orderedItems
-          .map((i: any) => `${i.quantity}× ${i.name}`)
-          .join(', ')
-        return `<tr>
-  <td style="padding:8px;border:1px solid #ddd">${o.customerName}</td>
-  <td style="padding:8px;border:1px solid #ddd">${itemsText}</td>
-  <td style="padding:8px;border:1px solid #ddd">${o.orderedItems.length}</td>
-</tr>`
-      })
-      .join('')
+    const groupedTables = groupOrdersByDeliveryTime(orders)
 
     const content = `
       <div style="text-align: center; margin-bottom: 24px;">
@@ -1129,18 +1288,7 @@ const sendOneDayBeforeNotification = async (
 
       <div style="background: linear-gradient(135deg, #fef3c7 0%, #fcd34d 100%); padding: 20px; border-radius: 8px; margin-bottom: 24px;">
         <p style="margin: 0 0 12px; color: #991b1b; font-size: 14px; font-weight: 600; text-transform: uppercase;">⏰ Delivery: ${deliveryTimeLabel} on ${deliveryDateLabel}</p>
-        <table width="100%" cellpadding="4" cellspacing="0" style="border-collapse:collapse;">
-          <thead>
-            <tr>
-              <th style="text-align:left;border:1px solid #ddd;padding:8px;">Customer</th>
-              <th style="text-align:left;border:1px solid #ddd;padding:8px;">Order Items</th>
-              <th style="text-align:left;border:1px solid #ddd;padding:8px;">Count</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows}
-          </tbody>
-        </table>
+        ${groupedTables}
       </div>
 
       <div style="background: #eff6ff; border: 2px solid #3b82f6; padding: 16px; border-radius: 8px; text-align: center;">
@@ -1204,18 +1352,7 @@ const sendOneHourBeforeNotification = async (
 
     const subject = `⚡ URGENT: ${orders.length} Order${orders.length > 1 ? 's' : ''} - Delivery in 1 Hour at ${deliveryTimeLabel}`
 
-    const rows = orders
-      .map(o => {
-        const itemsText = o.orderedItems
-          .map((i: any) => `${i.quantity}× ${i.name}`)
-          .join(', ')
-        return `<tr>
-  <td style="padding:8px;border:1px solid #ddd">${o.customerName}</td>
-  <td style="padding:8px;border:1px solid #ddd">${itemsText}</td>
-  <td style="padding:8px;border:1px solid #ddd">${o.orderedItems.length}</td>
-</tr>`
-      })
-      .join('')
+    const groupedTables = groupOrdersByDeliveryTime(orders)
 
     const content = `
       <div style="text-align: center; margin-bottom: 24px;">
@@ -1226,18 +1363,7 @@ const sendOneHourBeforeNotification = async (
 
       <div style="background: #fee2e2; border: 3px solid #dc2626; padding: 20px; border-radius: 8px; margin-bottom: 24px;">
         <p style="margin: 0 0 12px; color: #991b1b; font-size: 14px; font-weight: 600; text-transform: uppercase;">⏰ Delivery: ${deliveryTimeLabel} TODAY</p>
-        <table width="100%" cellpadding="4" cellspacing="0" style="border-collapse:collapse;">
-          <thead>
-            <tr>
-              <th style="text-align:left;border:1px solid #ddd;padding:8px;">Customer</th>
-              <th style="text-align:left;border:1px solid #ddd;padding:8px;">Order Items</th>
-              <th style="text-align:left;border:1px solid #ddd;padding:8px;">Count</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows}
-          </tbody>
-        </table>
+        ${groupedTables}
       </div>
 
       <div style="background: #fef3c7; border: 2px solid #f59e0b; padding: 16px; border-radius: 8px; text-align: center; margin-bottom: 16px;">
@@ -1309,18 +1435,7 @@ const sendThirtyMinuteNotification = async (
 
     const subject = `🚨 READY NOW: ${orders.length} Order${orders.length > 1 ? 's' : ''} - Delivery in 30 Minutes!`
 
-    const rows = orders
-      .map(o => {
-        const itemsText = o.orderedItems
-          .map((i: any) => `${i.quantity}× ${i.name}`)
-          .join(', ')
-        return `<tr>
-  <td style="padding:8px;border:1px solid #ddd">${o.customerName}</td>
-  <td style="padding:8px;border:1px solid #ddd">${itemsText}</td>
-  <td style="padding:8px;border:1px solid #ddd">${o.orderedItems.length}</td>
-</tr>`
-      })
-      .join('')
+    const groupedTables = groupOrdersByDeliveryTime(orders)
 
     const content = `
       <div style="text-align: center; margin-bottom: 24px;">
@@ -1331,18 +1446,7 @@ const sendThirtyMinuteNotification = async (
 
       <div style="background: #f97316; color: white; padding: 20px; border-radius: 8px; margin-bottom: 24px;">
         <p style="margin: 0 0 12px; font-size: 14px; font-weight: 600; text-transform: uppercase;">🚗 Delivery: ${deliveryTimeLabel} (30 minutes from now)</p>
-        <table width="100%" cellpadding="4" cellspacing="0" style="border-collapse:collapse;">
-          <thead>
-            <tr>
-              <th style="text-align:left;border:1px solid #ea580c;padding:8px;background:#ea580c;">Customer</th>
-              <th style="text-align:left;border:1px solid #ea580c;padding:8px;background:#ea580c;">Items</th>
-              <th style="text-align:left;border:1px solid #ea580c;padding:8px;background:#ea580c;">Qty</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows}
-          </tbody>
-        </table>
+        ${groupedTables}
       </div>
 
       <div style="background: #fef3c7; border: 2px solid #f59e0b; padding: 16px; border-radius: 8px; text-align: center;">
