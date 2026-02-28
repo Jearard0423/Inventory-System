@@ -777,13 +777,18 @@ export const sendOrderPlacedNotification = async (
         // use regular orders (not customer orders) for summary table since
         // they contain `date` and `items` fields we can easily display
         const { getOrders } = require('./orders')
+        const { getCustomerOrders } = require('./inventory-store')
         const allOrders = getOrders()
+        const allCustomerOrders = getCustomerOrders()
 
         const toNotify = allOrders.filter((o: any) => {
           if (!o.id) return false
           const od = new Date(o.date)
           // skip orders that have been delivered or completed
           if (o.status === 'delivered' || o.status === 'complete') return false
+          // also cross-check customerOrders delivery status
+          const custOrder = allCustomerOrders.find((co: any) => co.id === o.id)
+          if (custOrder && (custOrder.status === 'delivered' || custOrder.status === 'complete')) return false
           return od.toDateString() === today.toDateString()
         })
 
