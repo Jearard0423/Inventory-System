@@ -430,7 +430,7 @@ export default function PricingCalculatorPage() {
 
                       <SelectValue placeholder="Select template..." />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="max-h-48 overflow-auto">
                       {Object.keys(templates).map(tn => (
                         <SelectItem key={tn} value={tn}>{tn}</SelectItem>
                       ))}

@@ -855,7 +855,9 @@ export default function NewOrderPage() {
           customerName: savedOrder.customerName,
           items: savedOrder.items.map((i: { name: string; quantity: number }) => ({ name: i.name, quantity: i.quantity })),
           cookTime: cookTime || undefined,
-          createdAt: savedOrder.createdAt // ensure grouping based on timestamp
+          createdAt: savedOrder.createdAt, // ensure grouping based on timestamp
+          status: savedOrder.status,
+          paymentStatus: savedOrder.paymentStatus
         }, recipient)
 
         if (!success) {

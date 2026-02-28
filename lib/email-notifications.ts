@@ -715,16 +715,21 @@ export const setReminderInterval = (intervalMs: number): void => {
  * If no valid recipientEmail is provided nothing will be sent.
  */
 export const sendOrderPlacedNotification = async (
-  order: { id?: string; date: string; customerName: string; items: Array<{ name: string; quantity: number }>; cookTime?: string; createdAt?: string; mealType?: string; originalMealType?: string },
+  order: { id?: string; date: string; customerName: string; items: Array<{ name: string; quantity: number }>; cookTime?: string; createdAt?: string; mealType?: string; originalMealType?: string; status?: string; paymentStatus?: string },
   recipientEmail?: string
 ): Promise<boolean> => {
-  console.log('[email-notifications] sendOrderPlacedNotification called:', { recipientEmail, orderId: order.id, orderDate: order.date, cookTime: order.cookTime })
+  console.log('[email-notifications] sendOrderPlacedNotification called:', { recipientEmail, orderId: order.id, orderDate: order.date, cookTime: order.cookTime, status: order.status, paymentStatus: order.paymentStatus })
   
   if (!recipientEmail) {
     console.warn('[email-notifications] ❌ No recipient email provided - email NOT sent')
     return false
   }
 
+  // if the order has already been delivered/completed we don't send anything
+  if (order.status === 'delivered' || order.status === 'complete') {
+    console.log('[email-notifications] Order already delivered/completed, skipping notification')
+    return false
+  }
   // if we have an id, verify the order still exists (prevents emailing a just-cancelled order)
   if (order.id) {
     try {
@@ -777,6 +782,8 @@ export const sendOrderPlacedNotification = async (
         const toNotify = allOrders.filter((o: any) => {
           if (!o.id) return false
           const od = new Date(o.date)
+          // skip orders that have been delivered or completed
+          if (o.status === 'delivered' || o.status === 'complete') return false
           return od.toDateString() === today.toDateString()
         })
 
@@ -797,6 +804,7 @@ export const sendOrderPlacedNotification = async (
   <td style="padding:8px;border:1px solid #ddd">${itemsText}</td>
   <td style="padding:8px;border:1px solid #ddd">${o.cookTime || '—'}</td>
   <td style="padding:8px;border:1px solid #ddd">${o.date}</td>
+  <td style="padding:8px;border:1px solid #ddd">${o.paymentStatus || 'not-paid'}</td>
 </tr>`
           })
           .join('')
@@ -814,6 +822,7 @@ export const sendOrderPlacedNotification = async (
                   <th style="text-align:left;border:1px solid #ddd;padding:8px;">Order</th>
                   <th style="text-align:left;border:1px solid #ddd;padding:8px;">Time</th>
                   <th style="text-align:left;border:1px solid #ddd;padding:8px;">Date</th>
+                  <th style="text-align:left;border:1px solid #ddd;padding:8px;">Payment</th>
                 </tr>
               </thead>
               <tbody>
@@ -827,7 +836,7 @@ export const sendOrderPlacedNotification = async (
           .map((o: any) =>
             `${o.customerName} | ${o.items
               .map((i: any) => `${i.quantity}x ${i.name}`)
-              .join(', ')} | ${o.cookTime || '—'} | ${o.date}`
+              .join(', ')} | ${o.cookTime || '—'} | ${o.date} | ${o.paymentStatus || 'not-paid'}`
           )
           .join('\n')}`
 
