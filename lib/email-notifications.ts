@@ -243,7 +243,7 @@ const emailWrapper = (content: string, mealType?: string) => {
 </body>
 </html>
 `
-
+}
 
 /**
  * Group orders by delivery time buckets (1hr, 2+hrs, 3+ days)
@@ -785,7 +785,7 @@ export const sendOrderPlacedNotification = async (
         }
 
 
-    const subject = `🆕 ${toNotify.length} Order${toNotify.length > 1 ? 's' : ''} Today`
+        const subject = `🆕 ${toNotify.length} Order${toNotify.length > 1 ? 's' : ''} Today`
 
         const rows = toNotify
           .map((o: any) => {
@@ -800,13 +800,8 @@ export const sendOrderPlacedNotification = async (
 </tr>`
           })
           .join('')
-  <td style="padding:8px;border:1px solid #ddd">${itemsText}</td>
-  <td style="padding:8px;border:1px solid #ddd">${o.cookTime || '—'}</td>
-  <td style="padding:8px;border:1px solid #ddd">${o.date}</td>
-</tr>`
-      })
-      .join('')
 
+        const content = `
             <div style="text-align:center;margin-bottom:24px;">
               <div style="font-size:48px;margin-bottom:8px;">🐔</div>
               <h2 style="color:#dc2626;margin:0;font-size:24px;">${toNotify.length} Order${toNotify.length > 1 ? 's' : ''} Today</h2>
@@ -827,18 +822,21 @@ export const sendOrderPlacedNotification = async (
             </table>
           `
 
-          const htmlBody = emailWrapper(content)
-          const plainTextBody = `Yellow Roast Co. - ${toNotify.length} Order${toNotify.length > 1 ? 's' : ''} Today\n\n${toNotify
-            .map((o: any) =>
-              `${o.customerName} | ${o.items
-                .map((i: any) => `${i.quantity}x ${i.name}`)
-                .join(', ')} | ${o.cookTime || '—'} | ${o.date}`
-            )
-            .join('\n')}`
+        const htmlBody = emailWrapper(content)
+        const plainTextBody = `Yellow Roast Co. - ${toNotify.length} Order${toNotify.length > 1 ? 's' : ''} Today\n\n${toNotify
+          .map((o: any) =>
+            `${o.customerName} | ${o.items
+              .map((i: any) => `${i.quantity}x ${i.name}`)
+              .join(', ')} | ${o.cookTime || '—'} | ${o.date}`
+          )
+          .join('\n')}`
 
-          const sent = await sendEmailNotification(subject, htmlBody, plainTextBody, recipientEmail)
-          return sent
+        const sent = await sendEmailNotification(subject, htmlBody, plainTextBody, recipientEmail)
+        if (sent) {
+          const ids = toNotify.map((o: any) => o.id).filter(Boolean) as string[]
+          addNotifiedOrders(ids)
         }
+        return sent
       } catch (e) {
         console.warn('[email-notifications] summary-error', e)
       }
@@ -969,9 +967,8 @@ ${order.items
 START PREPARATION NOW - Delivery in ~${Math.round(hoursUntilDelivery * 60)} minutes!`
 
     const sent = await sendEmailNotification(subject, htmlBody, plainTextBody, recipientEmail)
-    if (sent && toNotify.length > 0) {
-      const ids = toNotify.map(o => o.id).filter(Boolean) as string[]
-      addNotifiedOrders(ids)
+    if (sent && order.id) {
+      addNotifiedOrders([order.id])
     }
     return sent
   } catch (err) {

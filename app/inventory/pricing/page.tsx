@@ -7,13 +7,6 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { POSLayout } from "@/components/pos-layout"
 import { Trash2, Plus } from "lucide-react"
-import {
-  Select,
-  SelectTrigger,
-  SelectContent,
-  SelectItem,
-  SelectValue,
-} from '@/components/ui/select'
 
 type Unit = "kg" | "g" | "pcs"
 
