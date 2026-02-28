@@ -72,6 +72,15 @@ export default function KitchenPage() {
     setKitchenItems(getKitchenItems())
     setCustomerOrders(allOrders)
     
+    // helper for meal type matching, treat missing types as "match all"
+    const mealTypeMatches = (order: CustomerOrder) => {
+      if (filterMealType === "all") return true
+      if (!order.mealType && !order.originalMealType) return true
+      const mt = order.mealType?.toLowerCase()
+      const omt = order.originalMealType?.toLowerCase()
+      return mt === filterMealType || omt === filterMealType
+    }
+
     // Get current date at midnight for comparison
     const today = new Date()
     today.setHours(0, 0, 0, 0)
@@ -92,9 +101,7 @@ export default function KitchenPage() {
         const isDelivered = order.status === 'delivered'
         
         // Check meal type filter
-        const matchesMealType = filterMealType === "all" || 
-          (order.mealType && order.mealType.toLowerCase() === filterMealType) ||
-          (order.originalMealType && order.originalMealType.toLowerCase() === filterMealType)
+        const matchesMealType = mealTypeMatches(order)
         
         // Only include orders from today that match the meal type, are not advanced orders, and are not delivered
         return isToday && !isAdvancedOrder && !isDelivered && matchesMealType
@@ -187,6 +194,7 @@ export default function KitchenPage() {
   today.setHours(0, 0, 0, 0)
   
   // Only show items from today's orders with meal type filter (excluding delivered orders)
+  // reuse mealTypeMatches from loadData scope (declared above)
   const toCookItems = kitchenItems
     .filter((item) => {
       const order = customerOrders.find(order => order.id === item.orderId)
@@ -196,9 +204,7 @@ export default function KitchenPage() {
       orderDate.setHours(0, 0, 0, 0)
       
       const matchesDate = orderDate.getTime() === today.getTime()
-      const matchesMealType = filterMealType === "all" || 
-        (order.mealType && order.mealType.toLowerCase() === filterMealType) ||
-        (order.originalMealType && order.originalMealType.toLowerCase() === filterMealType)
+      const matchesMealType = mealTypeMatches(order)
       const isNotDelivered = order.status !== 'delivered'
       
       return item.status === "to-cook" && matchesDate && matchesMealType && isNotDelivered
@@ -220,9 +226,7 @@ export default function KitchenPage() {
     orderDate.setHours(0, 0, 0, 0)
     
     const matchesDate = orderDate.getTime() === today.getTime()
-    const matchesMealType = filterMealType === "all" || 
-      (order.mealType && order.mealType.toLowerCase() === filterMealType) ||
-      (order.originalMealType && order.originalMealType.toLowerCase() === filterMealType)
+    const matchesMealType = mealTypeMatches(order)
     const isNotDelivered = order.status !== 'delivered'
     
     return item.status === "cooked" && matchesDate && matchesMealType && isNotDelivered
