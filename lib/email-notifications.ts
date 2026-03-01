@@ -472,7 +472,10 @@ const groupOrdersByDeliveryTime = (orders: CustomerOrder[]): string => {
 const formatOrderDetailsForEmail = (orders: CustomerOrder[]): string => {
   let details = `<table width="100%" cellpadding="0" cellspacing="0">`
 
-  const incompleteOrders = orders.filter(o => o.status !== 'complete' && o.status !== 'delivered')
+  const incompleteOrders = orders.filter(o => {
+    const s = (o.status || '').toLowerCase()
+    return s !== 'complete' && s !== 'ready' && s !== 'delivered' && s !== 'served' && s !== 'cancelled' && s !== 'canceled'
+  })
 
   incompleteOrders.forEach(order => {
     const pendingItems = order.orderedItems
@@ -628,18 +631,28 @@ export const checkAndSendFoodPreparationReminder = async (orders: CustomerOrder[
     const todayOrders = orders.filter(order => {
       const orderDate = parseLocalDate(order.createdAt)
       orderDate.setHours(0, 0, 0, 0)
+      const s = (order.status || '').toLowerCase()
       return orderDate.getTime() === today.getTime() && 
-             order.status !== 'complete' && 
-             order.status !== 'delivered'
+             s !== 'complete' && 
+             s !== 'ready' &&
+             s !== 'delivered' &&
+             s !== 'served' &&
+             s !== 'cancelled' &&
+             s !== 'canceled'
     })
 
     // Also gather any future/advanced orders (for awareness)
     const advancedOrders = orders.filter(order => {
       const orderDate = parseLocalDate(order.createdAt)
       orderDate.setHours(0, 0, 0, 0)
+      const s = (order.status || '').toLowerCase()
       return orderDate.getTime() > today.getTime() &&
-             order.status !== 'complete' &&
-             order.status !== 'delivered'
+             s !== 'complete' &&
+             s !== 'ready' &&
+             s !== 'delivered' &&
+             s !== 'served' &&
+             s !== 'cancelled' &&
+             s !== 'canceled'
     })
 
     notificationState.hasOrdersToday = todayOrders.length > 0 || advancedOrders.length > 0

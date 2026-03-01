@@ -15,6 +15,7 @@ import {
   updateCustomerOrders,
   updateKitchenItems,
   archiveOrderToHistory,
+  getOrderHistory,
   type KitchenItem,
   type CustomerOrder,
 } from "@/lib/inventory-store"
@@ -70,14 +71,44 @@ export default function KitchenPage() {
     setFilterMealType(mealType)
   }
 
+  // Returns only orders that are truly active — excludes anything finalized or already in history
+  const getActiveOrders = () => {
+    const history = getOrderHistory()
+    const finalHistoryIds = new Set(history.map(o => o.id))
+    const finalStatuses = new Set(['delivered', 'served', 'cancelled', 'canceled', 'complete', 'ready'])
+    return getCustomerOrders().filter(o => {
+      if (finalHistoryIds.has(o.id)) return false
+      const s = (o.status || '').toLowerCase()
+      if (finalStatuses.has(s)) return false
+      return true
+    })
+  }
+
   const loadData = () => {
     const allOrdersRaw = getCustomerOrders()
     const kItems = getKitchenItems()
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
+    // Build a set of order IDs that are already in history as delivered/cancelled
+    // This prevents Firebase from pushing stale data back into the kitchen view
+    const history = getOrderHistory()
+    const finalHistoryIds = new Set(
+      history
+        .filter(o => {
+          const s = (o.status || '').toLowerCase()
+          return s === 'delivered' || s === 'served' || s === 'cancelled' || s === 'canceled'
+        })
+        .map(o => o.id)
+    )
+
     const recentOrders = allOrdersRaw.filter(order => {
       try {
+        // Skip any order already archived as delivered/cancelled in history
+        if (finalHistoryIds.has(order.id)) {
+          console.log(`[Kitchen] Skipping history-finalized order: ${order.customerName} (${order.id})`)
+          return false
+        }
         // Always archive delivered/complete before any removal
         if (order.status === 'delivered' || order.status === 'complete' || order.status === 'ready') {
           archiveOrderToHistory(order)
@@ -240,7 +271,7 @@ export default function KitchenPage() {
     // Set up email notification checker - checks every 5 minutes for orders that need reminders
     // also run immediately on load so first reminder doesn't wait 5 minutes
     (async () => {
-      const orders = getCustomerOrders()
+      const orders = getActiveOrders()
       try {
         const recipients = await getAdminEmails()
         for (const r of recipients) {
@@ -253,7 +284,7 @@ export default function KitchenPage() {
     })()
 
     const notificationCheckInterval = setInterval(async () => {
-      const orders = getCustomerOrders()
+      const orders = getActiveOrders()
       try {
         // If an admin is logged in, send the immediate food-prep reminder only to that admin,
         // but ensure advanced reminders (1-day / 1-hour) are broadcast to all admin emails.
@@ -553,7 +584,7 @@ export default function KitchenPage() {
     updateKitchenItems(updated)
 
     // Update customer orders
-    const orders = getCustomerOrders()
+    const orders = getActiveOrders()
     const updatedOrders = orders.map((order) => {
       // Only affect the specific order(s) that correspond to the kitchen items being undone
       const orderItemsToUndo = itemsToUndo.filter(item => item.orderId === order.id)
@@ -809,7 +840,7 @@ export default function KitchenPage() {
 
           {/* Action Buttons */}
           <div className="flex gap-2 pt-4 border-t">
-            {order.status === 'incomplete' || order.status === 'cooking' ? (
+            {(!(['ready', 'delivered', 'served'] as string[]).includes(order.status)) ? (
               <Button
                 onClick={() => handleMoveToDelivery(order.id)}
                 disabled={!isComplete}
@@ -818,7 +849,7 @@ export default function KitchenPage() {
                 <CheckCircle className="h-4 w-4 mr-2" />
                 Mark Ready for Delivery
               </Button>
-            ) : order.status === 'complete' ? (
+            ) : order.status === 'ready' ? (
               <div className="flex-1 text-center py-2 bg-green-100 dark:bg-green-900/30 rounded-md">
                 <span className="text-sm font-medium text-green-700">✓ Ready for Delivery</span>
               </div>
@@ -840,7 +871,7 @@ export default function KitchenPage() {
   // Handler to mark order as complete and ready for delivery
   const handleMoveToDelivery = async (orderId: string) => {
     try {
-      const orders = getCustomerOrders()
+      const orders = getActiveOrders()
       const orderIndex = orders.findIndex(o => o.id === orderId)
       
       if (orderIndex === -1) {

@@ -156,7 +156,7 @@ const loadFromLocalStorage = () => {
         });
       };
 
-      parsed.kitchenItems = parsed.kitchenItems.filter(item => {
+      parsed.kitchenItems = parsed.kitchenItems.filter((item: any) => {
         const oid = (item.orderId || '').toString().trim();
         return !ORDERS_TO_REMOVE.includes(oid);
       });
@@ -280,7 +280,7 @@ if (initialData) {
       return !ORDERS_TO_REMOVE.includes(onum) && !ORDERS_TO_REMOVE.includes(oid);
     });
   };
-  initialData.kitchenItems = initialData.kitchenItems.filter(item => {
+  initialData.kitchenItems = initialData.kitchenItems.filter((item: any) => {
     const oid = (item.orderId || '').toString().trim();
     return !ORDERS_TO_REMOVE.includes(oid);
   });
@@ -585,8 +585,22 @@ if (typeof window !== 'undefined') {
     window.addEventListener('firebase-orders-updated', (ev: Event) => {
       if (ev instanceof CustomEvent && ev.detail) {
         try {
-          const orders = Object.values(ev.detail as any) as CustomerOrder[]
-          customerOrders = orders
+          const incomingOrders = Object.values(ev.detail as any) as CustomerOrder[]
+          const finalStatuses = new Set(['delivered', 'served', 'cancelled', 'canceled'])
+          // Merge: keep local final-status orders, update the rest from Firebase
+          const localFinalIds = new Map(
+            customerOrders
+              .filter(o => finalStatuses.has((o.status || '').toLowerCase()))
+              .map(o => [o.id, o])
+          )
+          customerOrders = incomingOrders.map(o => {
+            const localFinal = localFinalIds.get(o.id)
+            // If we have a local final status for this order, keep the local version
+            return localFinal || o
+          })
+          // Also add any local final orders not present in Firebase at all
+          incomingOrders.forEach(o => localFinalIds.delete(o.id))
+          localFinalIds.forEach(o => customerOrders.push(o))
           try {
             localStorage.setItem(CUSTOMER_ORDERS_KEY, JSON.stringify(customerOrders))
           } catch (err) {
