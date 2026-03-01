@@ -19,6 +19,8 @@ import {
 } from "@/lib/inventory-store"
 import { checkAndSendFoodPreparationReminder, resetNotificationState, checkAndSendAdvancedOrderNotifications, resetAdvancedNotificationState } from "@/lib/email-notifications"
 import { useAuth } from "@/components/AuthProvider"
+import { checkAndFireOrderReminders, resetOrderReminders } from "@/lib/order-reminders"
+import { syncOrderToRTDB, syncOrdersToRTDB, logOrderEvent } from "@/lib/rtdb-sync"
 
 // Helper function to convert 24-hour time to 12-hour format
 const formatTimeForDisplay = (time24: string): string => {
@@ -68,43 +70,79 @@ export default function KitchenPage() {
   }
 
   const loadData = () => {
-    const allOrders = getCustomerOrders()
+    // Clean up old orders first (older than 7 days)
+    const allOrdersRaw = getCustomerOrders()
+    const sevenDaysAgo = new Date()
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+    
+    const recentOrders = allOrdersRaw.filter(order => {
+      if (!order.createdAt) return true // Keep orders without date
+      try {
+        const orderDate = new Date(order.createdAt)
+        const isOld = orderDate < sevenDaysAgo
+        if (isOld) {
+          console.log(`[Kitchen] Removing order older than 7 days: ${order.customerName} (${order.id})`)
+        }
+        return !isOld
+      } catch {
+        return true // Keep on error
+      }
+    })
+    
+    // If we removed any orders, save the updated list
+    if (recentOrders.length < allOrdersRaw.length) {
+      updateCustomerOrders(recentOrders)
+      console.log(`[Kitchen] Cleanup: removed ${allOrdersRaw.length - recentOrders.length} old orders`)
+    }
+    
+    const allOrders = recentOrders
     setKitchenItems(getKitchenItems())
     setCustomerOrders(allOrders)
     
-    // helper for meal type matching, treat missing types as "match all"
-    const mealTypeMatches = (order: CustomerOrder) => {
-      if (filterMealType === "all") return true
-      if (!order.mealType && !order.originalMealType) return true
-      const mt = order.mealType?.toLowerCase()
-      const omt = order.originalMealType?.toLowerCase()
-      return mt === filterMealType || omt === filterMealType
+    // Helper to reliably check if an order is for today using local date string (avoids timezone issues)
+    const isOrderForToday = (order: CustomerOrder) => {
+      try {
+        if (!order.createdAt) {
+          console.warn('[Kitchen] Order missing createdAt:', order.id, order.customerName)
+          return false
+        }
+        const od = new Date(order.createdAt)
+        const today = new Date().toDateString()
+        const orderDate = od.toDateString()
+        const isToday = orderDate === today
+        if (!isToday) {
+          console.log(`[Kitchen] Filtered out old order: ${order.customerName} - Date: ${orderDate} vs Today: ${today}`)
+        }
+        return isToday
+      } catch (e) {
+        console.warn('[Kitchen] Error checking order date:', order.createdAt, e)
+        return false
+      }
     }
-
-    // Get current date at midnight for comparison
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
     
-    // Filter orders for today and exclude advanced orders and delivered orders
+    // Helper to check if order has a final status (should not appear in kitchen)
+  // 'complete' means cooked but not yet moved to delivery, so we still show it
+  const isFinalStatus = (order: CustomerOrder) => {
+    const isFinal = order.status === 'delivered' || order.status === 'served'
+        console.log(`[Kitchen] Filtered out final status: ${order.customerName} - Status: ${order.status}`)
+      }
+      return isFinal
+    }
+    
+    // Filter orders: today only, not final status, matching meal type
     const filtered = allOrders
       .filter(order => {
-        const orderDate = new Date(order.createdAt)
-        orderDate.setHours(0, 0, 0, 0)
-        
-        // Check if order is for today
-        const isToday = orderDate.getTime() === today.getTime()
-        
-        // Check if it's an advanced order (order is for a future date)
-        const isAdvancedOrder = orderDate > today
-        
-        // Check if order is delivered (exclude from kitchen view)
-        const isDelivered = order.status === 'delivered'
+        // Only show today's incomplete orders
+        if (!isOrderForToday(order)) return false
+        if (isFinalStatus(order)) return false
         
         // Check meal type filter
-        const matchesMealType = mealTypeMatches(order)
+        const matchesMealType = filterMealType === "all" || 
+          (order.mealType && order.mealType.toLowerCase() === filterMealType) ||
+          (order.originalMealType && order.originalMealType.toLowerCase() === filterMealType)
+        if (!matchesMealType) return false
         
-        // Only include orders from today that match the meal type, are not advanced orders, and are not delivered
-        return isToday && !isAdvancedOrder && !isDelivered && matchesMealType
+        return true
       })
       // Sort orders: incomplete first, then complete, both sorted by time (newest first)
       .sort((a, b) => {
@@ -117,6 +155,7 @@ export default function KitchenPage() {
       })
     
     setTodayOrders(filtered)
+    console.log(`[Kitchen] loadData complete: ${allOrders.length} total orders → ${filtered.length} today's orders for meal type "${filterMealType}"`)
   }
 
   // Track the current time-based meal type (for display only)
@@ -161,6 +200,12 @@ export default function KitchenPage() {
       await checkAndSendAdvancedOrderNotifications(orders, recipient || undefined)
     }, 5 * 60 * 1000) // Check every 5 minutes
 
+    // In-app reminder check every minute (for 30-min, 10-min, overdue alerts)
+    checkAndFireOrderReminders() // run immediately on load
+    const reminderCheckInterval = setInterval(() => {
+      checkAndFireOrderReminders()
+    }, 60 * 1000) // Check every minute
+
     // Reset notification state at midnight (new day)
     const now = new Date()
     const tomorrow = new Date(now)
@@ -171,16 +216,19 @@ export default function KitchenPage() {
     const midnightResetTimeout = setTimeout(() => {
       resetNotificationState()
       resetAdvancedNotificationState()
+      resetOrderReminders()
       // And reset again every 24 hours
       setInterval(() => {
         resetNotificationState()
         resetAdvancedNotificationState()
+        resetOrderReminders()
       }, 24 * 60 * 60 * 1000)
     }, msUntilMidnight)
 
     return () => {
       clearInterval(mealTypeInterval)
       clearInterval(notificationCheckInterval)
+      clearInterval(reminderCheckInterval)
       clearTimeout(midnightResetTimeout)
       window.removeEventListener("kitchen-updated", handleUpdate)
       window.removeEventListener("orders-updated", handleUpdate)
@@ -189,25 +237,39 @@ export default function KitchenPage() {
     }
   }, [filterMealType])
 
-  // Get today's date for filtering
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+  // Helper to reliably check if an order is for today using local date string (avoids timezone midnight issues)
+  const isOrderForToday = (order: CustomerOrder) => {
+    try {
+      const od = new Date(order.createdAt)
+      return od.toDateString() === new Date().toDateString()
+    } catch {
+      return false
+    }
+  }
+  
+  // Helper to check if a date is today (for consistent date comparisons)
+  const isDateToday = (date: Date | string) => {
+    try {
+      const d = typeof date === 'string' ? new Date(date) : date
+      return d.toDateString() === new Date().toDateString()
+    } catch {
+      return false
+    }
+  }
   
   // Only show items from today's orders with meal type filter (excluding delivered orders)
-  // reuse mealTypeMatches from loadData scope (declared above)
   const toCookItems = kitchenItems
     .filter((item) => {
       const order = customerOrders.find(order => order.id === item.orderId)
       if (!order) return false
+
+      const matchesDate = isOrderForToday(order)
+      const matchesMealType = filterMealType === "all" || 
+        (order.mealType && order.mealType.toLowerCase() === filterMealType) ||
+        (order.originalMealType && order.originalMealType.toLowerCase() === filterMealType)
+      const isNotFinal = order.status !== 'delivered' && order.status !== 'complete' && order.status !== 'served'
       
-      const orderDate = new Date(order.createdAt)
-      orderDate.setHours(0, 0, 0, 0)
-      
-      const matchesDate = orderDate.getTime() === today.getTime()
-      const matchesMealType = mealTypeMatches(order)
-      const isNotDelivered = order.status !== 'delivered'
-      
-      return item.status === "to-cook" && matchesDate && matchesMealType && isNotDelivered
+      return item.status === "to-cook" && matchesDate && matchesMealType && isNotFinal
     })
     // Sort to put completed items at the back
     .sort((a, b) => {
@@ -221,15 +283,14 @@ export default function KitchenPage() {
   const cookedItems = kitchenItems.filter((item) => {
     const order = customerOrders.find(order => order.id === item.orderId)
     if (!order) return false
+
+    const matchesDate = isOrderForToday(order)
+    const matchesMealType = filterMealType === "all" || 
+      (order.mealType && order.mealType.toLowerCase() === filterMealType) ||
+      (order.originalMealType && order.originalMealType.toLowerCase() === filterMealType)
+    const isNotFinal = order.status !== 'delivered' && order.status !== 'complete' && order.status !== 'served'
     
-    const orderDate = new Date(order.createdAt)
-    orderDate.setHours(0, 0, 0, 0)
-    
-    const matchesDate = orderDate.getTime() === today.getTime()
-    const matchesMealType = mealTypeMatches(order)
-    const isNotDelivered = order.status !== 'delivered'
-    
-    return item.status === "cooked" && matchesDate && matchesMealType && isNotDelivered
+    return item.status === "cooked" && matchesDate && matchesMealType && isNotFinal
   })
 
   // Group items by name and sort by completion status
@@ -301,10 +362,7 @@ export default function KitchenPage() {
       const order = customerOrders.find(order => order.id === item.orderId)
       if (!order) return false
       
-      const orderDate = new Date(order.createdAt)
-      orderDate.setHours(0, 0, 0, 0)
-      
-      return item.status === "to-cook" && item.itemName === itemName && orderDate.getTime() === today.getTime()
+      return item.status === "to-cook" && item.itemName === itemName && isOrderForToday(order)
     })
     
     if (itemsToCook.length === 0 || quantity <= 0) return
@@ -335,10 +393,7 @@ export default function KitchenPage() {
       const order = customerOrders.find(order => order.id === item.orderId)
       if (!order) return false
       
-      const orderDate = new Date(order.createdAt)
-      orderDate.setHours(0, 0, 0, 0)
-      
-      return item.status === "to-cook" && orderDate.getTime() === today.getTime()
+      return item.status === "to-cook" && isOrderForToday(order)
     })
     
     if (allItemsToCook.length === 0) return
@@ -367,10 +422,9 @@ export default function KitchenPage() {
     let cookedItemsForName = kitchenItems.filter(item => {
       const order = customerOrders.find(order => order.id === item.orderId)
       if (!order) return false
-      const orderDate = new Date(order.createdAt)
-      orderDate.setHours(0, 0, 0, 0)
+      
       // Only block undo for delivered orders; allow undo from completed ones so user can "un-complete" if needed
-      return item.status === "cooked" && item.itemName === itemName && orderDate.getTime() === today.getTime() && order.status !== 'delivered'
+      return item.status === "cooked" && item.itemName === itemName && isOrderForToday(order) && order.status !== 'delivered'
     })
 
     // If no cooked items from incomplete orders found, don't fall back - prevent affecting delivered orders
@@ -409,9 +463,10 @@ export default function KitchenPage() {
       const orderItemsToUndo = itemsToUndo.filter(item => item.orderId === order.id)
       if (orderItemsToUndo.length === 0) return order
 
+      const cookedItemsArr = order.cookedItems || []
       return {
         ...order,
-        cookedItems: order.cookedItems
+        cookedItems: cookedItemsArr
           .map((item) => {
             if (item.name === itemName) {
               const newQuantity = item.quantity - orderItemsToUndo.length
@@ -427,8 +482,10 @@ export default function KitchenPage() {
       // keep delivered orders untouched so they don't reappear
       if (order.status === 'delivered') return order
 
-      const totalOrdered = order.orderedItems.reduce((sum, item) => sum + item.quantity, 0)
-      const totalCooked = order.cookedItems.reduce((sum, item) => sum + item.quantity, 0)
+      const orderedItemsArr = order.orderedItems || []
+      const cookedItemsArr = order.cookedItems || []
+      const totalOrdered = orderedItemsArr.reduce((sum, item) => sum + item.quantity, 0)
+      const totalCooked = cookedItemsArr.reduce((sum, item) => sum + item.quantity, 0)
       return {
         ...order,
         status: totalOrdered === totalCooked && totalOrdered > 0 ? ("complete" as const) : ("incomplete" as const),
@@ -448,41 +505,25 @@ export default function KitchenPage() {
 
   // Calculate meal type counts
   const breakfastOrders = customerOrders.filter((order: CustomerOrder) => {
-    const orderDate = new Date(order.createdAt)
-    orderDate.setHours(0, 0, 0, 0)
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    return orderDate.getTime() === today.getTime() && 
+    return isOrderForToday(order) && 
            ((order.mealType && order.mealType.toLowerCase() === 'breakfast') ||
             (order.originalMealType && order.originalMealType.toLowerCase() === 'breakfast'))
   }).length
 
   const lunchOrders = customerOrders.filter((order: CustomerOrder) => {
-    const orderDate = new Date(order.createdAt)
-    orderDate.setHours(0, 0, 0, 0)
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    return orderDate.getTime() === today.getTime() && 
+    return isOrderForToday(order) && 
            ((order.mealType && order.mealType.toLowerCase() === 'lunch') ||
             (order.originalMealType && order.originalMealType.toLowerCase() === 'lunch'))
   }).length
 
   const dinnerOrders = customerOrders.filter((order: CustomerOrder) => {
-    const orderDate = new Date(order.createdAt)
-    orderDate.setHours(0, 0, 0, 0)
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    return orderDate.getTime() === today.getTime() && 
+    return isOrderForToday(order) && 
            ((order.mealType && order.mealType.toLowerCase() === 'dinner') ||
             (order.originalMealType && order.originalMealType.toLowerCase() === 'dinner'))
   }).length
 
   const otherOrders = customerOrders.filter((order: CustomerOrder) => {
-    const orderDate = new Date(order.createdAt)
-    orderDate.setHours(0, 0, 0, 0)
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    return orderDate.getTime() === today.getTime() && 
+    return isOrderForToday(order) && 
            ((order.mealType && order.mealType.toLowerCase() === 'other') ||
             (order.originalMealType && order.originalMealType.toLowerCase() === 'other'))
   }).length
@@ -504,13 +545,15 @@ export default function KitchenPage() {
   const currentOrders = sortedTodayOrders.slice(indexOfFirstOrder, indexOfLastOrder)
 
   const getMissingItems = (order: CustomerOrder) => {
-    const missingItems = order.orderedItems
+    const orderedItemsArr = order.orderedItems || []
+    const cookedItemsArr = order.cookedItems || []
+    const missingItems = orderedItemsArr
       .map(orderedItem => {
-        const cookedQty = order.cookedItems?.find(ci => ci.name === orderedItem.name)?.quantity || 0
+        const cookedQty = cookedItemsArr?.find(ci => ci.name === orderedItem.name)?.quantity || 0
         const remainingQty = orderedItem.quantity - cookedQty
         return remainingQty > 0 ? { ...orderedItem, quantity: remainingQty } : null
       })
-      .filter(Boolean) as typeof order.orderedItems
+      .filter(Boolean) as typeof orderedItemsArr
     return missingItems
   }
 
@@ -540,6 +583,8 @@ export default function KitchenPage() {
     }
     const missingItems = getMissingItems(order)
     const isComplete = order.status === "complete"
+    const cookedItemsArr = order.cookedItems || []
+    const orderedItemsArr = order.orderedItems || []
     
     return (
       <div className="space-y-4">
@@ -593,26 +638,26 @@ export default function KitchenPage() {
             <h4 className="font-semibold text-sm sm:text-base mb-3 flex items-center gap-2">
               <span>Ordered Items</span>
               <span className="text-xs text-muted-foreground">
-                ({order.orderedItems.reduce((sum, item) => sum + item.quantity, 0)} items)
+                ({orderedItemsArr.reduce((sum, item) => sum + item.quantity, 0)} items)
               </span>
             </h4>
             <div className="space-y-3">
-              {[...order.orderedItems].sort((a, b) => {
-                const aCookedQty = order.cookedItems.find(ci => ci.name === a.name)?.quantity || 0
-                const bCookedQty = order.cookedItems.find(ci => ci.name === b.name)?.quantity || 0
+              {[...orderedItemsArr].sort((a, b) => {
+                const aCookedQty = cookedItemsArr.find((ci: any) => ci.name === a.name)?.quantity || 0
+                const bCookedQty = cookedItemsArr.find((ci: any) => ci.name === b.name)?.quantity || 0
                 const aIsFullyCooked = aCookedQty >= a.quantity
                 const bIsFullyCooked = bCookedQty >= b.quantity
-                
+
                 // Sort by completion status (incomplete first, then complete)
                 if (aIsFullyCooked && !bIsFullyCooked) return 1
                 if (!aIsFullyCooked && bIsFullyCooked) return -1
-                
+
                 // If same status, sort by name
                 return a.name.localeCompare(b.name)
               }).map((item, idx) => {
-                const cookedQty = order.cookedItems.find(ci => ci.name === item.name)?.quantity || 0
+                const cookedQty = cookedItemsArr.find((ci: any) => ci.name === item.name)?.quantity || 0
                 const isFullyCooked = cookedQty >= item.quantity
-                
+
                 return (
                   <div key={idx} className="flex items-start justify-between py-2 border-b last:border-0 last:pb-0">
                     <div className="flex-1">
@@ -667,9 +712,76 @@ export default function KitchenPage() {
               </div>
             </div>
           )}
+
+          {/* Action Buttons */}
+          <div className="flex gap-2 pt-4 border-t">
+            {(order.status !== 'ready' && order.status !== 'delivered' && order.status !== 'served') ? (
+              <Button
+                onClick={() => handleMoveToDelivery(order.id)}
+                disabled={!isComplete}
+                className="flex-1 bg-green-600 hover:bg-green-700"
+              >
+                <CheckCircle className="h-4 w-4 mr-2" />
+                Mark Ready for Delivery
+              </Button>
+            ) : order.status === 'ready' ? (
+              <div className="flex-1 text-center py-2 bg-green-100 dark:bg-green-900/30 rounded-md">
+                <span className="text-sm font-medium text-green-700">✓ Ready for Delivery</span>
+              </div>
+            ) : null}
+            
+            <Button
+              variant="outline"
+              onClick={() => setSelectedOrder(null)}
+              className="flex-1"
+            >
+              Close
+            </Button>
+          </div>
         </div>
       </div>
     )
+  }
+
+  // Handler to mark order as complete and ready for delivery
+  const handleMoveToDelivery = async (orderId: string) => {
+    try {
+      const orders = getCustomerOrders()
+      const orderIndex = orders.findIndex(o => o.id === orderId)
+      
+      if (orderIndex === -1) {
+        console.error("Order not found")
+        return
+      }
+
+      const order = orders[orderIndex]
+      const updatedOrder = {
+        ...order,
+        status: 'ready' as const
+      }
+
+      // Update order status
+      const updatedOrders = [...orders]
+      updatedOrders[orderIndex] = updatedOrder
+      updateCustomerOrders(updatedOrders)
+
+      // Sync to RTDB
+      await syncOrderToRTDB(updatedOrder)
+      await logOrderEvent(orderId, order.customerName, 'ready', { 
+        itemsCooked: order.cookedItems.length 
+      })
+
+      // Update selected order in modal
+      setSelectedOrder(updatedOrder)
+
+      // Reload data
+      loadData()
+      window.dispatchEvent(new Event("customer-orders-updated"))
+
+      console.log(`[Kitchen] Order ${order.orderNumber} moved to ready for delivery`)
+    } catch (error) {
+      console.error("[Kitchen] Error moving order to delivery:", error)
+    }
   }
 
   return (
@@ -705,7 +817,18 @@ export default function KitchenPage() {
               {filterMealType === "all" && (
                 <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-green-500"></span>
               )}
-              All
+            </Button>
+            {/* sync history button */}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={async () => {
+                const orders = getCustomerOrders().filter(o => o.status === 'ready' || o.status === 'delivered' || o.status === 'complete');
+                const synced = await syncOrdersToRTDB(orders as any);
+                alert(`Synced ${synced} orders to RTDB`);
+              }}
+            >
+              Sync History
             </Button>
             <Button
               variant={filterMealType === "breakfast" ? "default" : "outline"}
@@ -1148,7 +1271,7 @@ export default function KitchenPage() {
                         <div className="mt-3 p-3 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded">
                           <p className="text-sm font-semibold text-green-600 dark:text-green-400 mb-2">Completed Items:</p>
                           <div className="flex flex-wrap gap-2">
-                            {order.orderedItems.map((item, idx) => (
+                            {(order.orderedItems || []).map((item, idx) => (
                               <Badge 
                                 key={idx} 
                                 className="text-xs px-2 py-1 bg-green-100 text-green-800 border-green-200 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800"
@@ -1160,8 +1283,7 @@ export default function KitchenPage() {
                         </div>
                       )}
                     </div>
-                  )
-                })}
+                  )})}
                 </div>
                 
                 {/* Pagination Controls */}

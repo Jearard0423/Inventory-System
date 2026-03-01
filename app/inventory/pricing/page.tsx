@@ -430,11 +430,17 @@ export default function PricingCalculatorPage() {
 
                       <SelectValue placeholder="Select template..." />
                     </SelectTrigger>
-                    <SelectContent className="max-h-48 overflow-auto">
-                      {Object.keys(templates).map(tn => (
-                        <SelectItem key={tn} value={tn}>{tn}</SelectItem>
-                      ))}
-                    </SelectContent>
+                      <SelectContent
+                        className="overflow-auto"
+                        style={{
+                          maxHeight: `${Object.keys(templates).length > 5 ? 5 * 36 : Object.keys(templates).length * 36 + 8}px`,
+                          overflowY: Object.keys(templates).length > 5 ? 'scroll' : 'auto',
+                        }}
+                      >
+                        {Object.keys(templates).map(tn => (
+                          <SelectItem key={tn} value={tn}>{tn}</SelectItem>
+                        ))}
+                      </SelectContent>
                   </Select>
                   <Button size="sm" variant="destructive" onClick={() => { if (selectedTemplate) { deleteTemplate(selectedTemplate); setSelectedTemplate(""); setTemplateName("") } }} disabled={!selectedTemplate}>Delete</Button>
                 </div>

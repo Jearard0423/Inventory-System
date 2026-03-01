@@ -15,7 +15,7 @@ import { getOrders, deleteOrder } from "@/lib/orders"
 import { saveNotification } from "@/lib/notifications-store"
 import { useToast } from '@/hooks/use-toast'
 import { Pagination } from "@/components/pagination"
-import { getCustomerOrders } from "@/lib/inventory-store"
+import { getCustomerOrders, updateCustomerOrders } from "@/lib/inventory-store"
 
 // Helper function to convert 24-hour time to 12-hour format
 const formatTimeForDisplay = (time24: string): string => {
@@ -517,6 +517,26 @@ export default function OrdersPage() {
     localStorage.setItem("yellowbell_orders", JSON.stringify(updatedOrders))
     window.dispatchEvent(new Event("orders-updated"))
 
+    // Also sync payment status to customer orders (inventory-store) so delivery/kitchen views reflect payment
+    try {
+      const cust = getCustomerOrders()
+      const updatedCust = cust.map(co =>
+        co.id === selectedOrder.id
+          ? {
+              ...co,
+              paymentStatus: 'paid' as const,
+              paymentMethod: paymentMethod,
+              // Only sync canonical payment fields to CustomerOrder
+              gcashPhone: undefined,
+              gcashReference: undefined,
+            }
+          : co,
+      )
+      updateCustomerOrders(updatedCust)
+    } catch (e) {
+      console.warn('[orders] Could not sync customer order payment status', e)
+    }
+
     setShowPaymentModal(false)
     setSelectedOrder(null)
     setAmountGiven("")
@@ -571,9 +591,27 @@ export default function OrdersPage() {
     localStorage.setItem("yellowbell_orders", JSON.stringify(updatedOrders))
     window.dispatchEvent(new Event("orders-updated"))
     
+    // Also sync undo to customer orders
+    try {
+      const cust = getCustomerOrders()
+      const updatedCust = cust.map(co =>
+        co.id === orderToUndoPayment.id
+          ? { ...co, paymentStatus: 'unpaid' as const }
+          : co,
+      )
+      updateCustomerOrders(updatedCust)
+    } catch (e) {
+      console.warn('[orders] Could not sync undo payment to customer orders', e)
+    }
+
     setShowUndoPaymentModal(false)
     setOrderToUndoPayment(null)
   }
+
+  // Also update customer orders when undoing a payment
+  useEffect(() => {
+    // no-op placeholder to keep hooks consistent (actual update performed in handleUndoPayment)
+  }, [])
 
   const handleGcashPhoneChange = (value: string) => {
     // Remove all non-digit characters

@@ -630,11 +630,25 @@ export const addCustomerOrder = (order: NewOrder): CustomerOrder => {
   return newOrder;
 };
 
+// When an order is delivered we also want to sync it to RTDB for history
+// and log an analytics event. This keeps delivery and kitchen pages in sync.
 export const markOrderAsDelivered = (orderId: string): boolean => {
   const orderIndex = customerOrders.findIndex(order => order.id === orderId);
   if (orderIndex === -1) return false;
   
   customerOrders[orderIndex].status = 'delivered';
+
+  // attempt to sync with RTDB (non-blocking)
+  try {
+    // require lazily to avoid circular dependency when importing from other modules
+    const { syncOrderToRTDB, logOrderEvent } = require("./rtdb-sync");
+    const order = customerOrders[orderIndex];
+    syncOrderToRTDB(order).catch(() => {});
+    logOrderEvent(order.id, order.customerName, 'delivered').catch(() => {});
+  } catch (e) {
+    // if RTDB isn't available just ignore
+    console.warn("RTDB sync unavailable:", e);
+  }
   
   // Update kitchen items
   kitchenItems = kitchenItems.map(item => {
@@ -652,7 +666,7 @@ export const markOrderAsDelivered = (orderId: string): boolean => {
   if (typeof window !== 'undefined') {
     try {
       const existingOrders = JSON.parse(localStorage.getItem("yellowbell_orders") || "[]")
-      const updatedOrders = existingOrders.map((o: any) => o.id === orderId ? { ...o, status: 'completed' } : o)
+      const updatedOrders = existingOrders.map((o: any) => o.id === orderId ? { ...o, status: 'complete' } : o)
       localStorage.setItem("yellowbell_orders", JSON.stringify(updatedOrders))
       window.dispatchEvent(new Event('orders-updated'))
     } catch (e) {
