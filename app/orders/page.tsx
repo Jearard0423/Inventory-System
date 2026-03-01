@@ -283,10 +283,26 @@ export default function OrdersPage() {
   const getOrderCountForDate = (day: number) => {
     const date = new Date(currentDate.getFullYear(), currentDate.getMonth(), day)
     date.setHours(0, 0, 0, 0)
-    return orders.filter((order) => {
+    // Read directly from localStorage to always get the freshest status
+    const freshOrders = typeof window !== 'undefined'
+      ? JSON.parse(localStorage.getItem('yellowbell_orders') || '[]')
+      : orders
+    const freshCustomerOrders = typeof window !== 'undefined'
+      ? JSON.parse(localStorage.getItem('yellowbell_customer_orders') || '[]')
+      : customerOrders
+    return freshOrders.filter((order: any) => {
       const orderDate = new Date(order.date)
       orderDate.setHours(0, 0, 0, 0)
-      return orderDate.toDateString() === date.toDateString()
+      if (orderDate.toDateString() !== date.toDateString()) return false
+      const s = (order.status || '').toLowerCase()
+      if (s !== 'pending') return false
+      // Cross-check customerOrders for latest delivery/cancel status
+      const custOrder = freshCustomerOrders.find((co: any) => co.id === order.id)
+      if (custOrder) {
+        const cs = (custOrder.status || '').toLowerCase()
+        if (cs === 'delivered' || cs === 'cancelled' || cs === 'canceled' || cs === 'complete' || cs === 'ready') return false
+      }
+      return true
     }).length
   }
 

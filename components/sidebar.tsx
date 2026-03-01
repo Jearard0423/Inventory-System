@@ -124,7 +124,7 @@ export function Sidebar() {
         <Button
           variant="ghost"
           size="icon"
-          className="fixed top-3 left-3 z-50 md:hidden bg-sidebar/95 backdrop-blur-sm text-sidebar-foreground h-12 w-12 rounded-lg"
+          className="fixed top-3 left-3 z-50 lg:hidden bg-sidebar/95 backdrop-blur-sm text-sidebar-foreground h-12 w-12 rounded-lg"
           onClick={() => setMobileOpen(true)}
         >
           <Menu className="h-6 w-6" />
@@ -134,7 +134,7 @@ export function Sidebar() {
       {/* Overlay for mobile */}
       {mobileOpen && (
         <div
-          className="fixed inset-0 bg-background/90 backdrop-blur-sm z-40 md:hidden"
+          className="fixed inset-0 bg-background/90 backdrop-blur-sm z-40 lg:hidden"
           onClick={() => setMobileOpen(false)}
           style={{
             WebkitTapHighlightColor: 'transparent',
@@ -170,7 +170,7 @@ export function Sidebar() {
               <Button
                 variant="ghost"
                 size="icon"
-                className="ml-auto md:hidden text-sidebar-foreground/70 hover:text-sidebar-foreground h-8 w-8"
+                className="ml-auto lg:hidden text-sidebar-foreground/70 hover:text-sidebar-foreground h-8 w-8"
                 onClick={() => setMobileOpen(false)}
               >
                 <ArrowLeft className="h-4 w-4" />

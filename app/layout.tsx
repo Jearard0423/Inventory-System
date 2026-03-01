@@ -4,6 +4,7 @@ import { Analytics } from "@vercel/analytics/next"
 import { AppLayout } from "@/components/app-layout"
 import AuthProvider from "@/components/AuthProvider"
 import { FirebaseSyncInitializer } from "@/components/firebase-sync-initializer"
+import { ReminderPoller } from "@/components/reminder-poller"
 import "./globals.css"
 
 const _geist = Geist({ subsets: ["latin"] })
@@ -29,6 +30,7 @@ export default function RootLayout({
       <body className={`font-sans antialiased`} suppressHydrationWarning>
         <AuthProvider>
           <FirebaseSyncInitializer />
+          <ReminderPoller />
           <AppLayout>
             {children}
           </AppLayout>

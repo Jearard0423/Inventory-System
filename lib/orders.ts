@@ -146,15 +146,36 @@ export const deleteOrder = (orderId: string): void => {
       }
     }
     
+    // Archive to order history as cancelled before removing
+    const { archiveOrderToHistory, getCustomerOrders, updateCustomerOrders, getKitchenItems, updateKitchenItems } = require("./inventory-store")
+    const customerOrders = getCustomerOrders()
+    const customerOrder = customerOrders.find((o: any) => o.id === orderId)
+    if (customerOrder) {
+      archiveOrderToHistory({ ...customerOrder, status: 'cancelled' })
+    } else {
+      // Archive from the regular order if no customer order exists
+      archiveOrderToHistory({
+        id: orderToDelete.id,
+        orderNumber: orderToDelete.orderNumber,
+        customerName: orderToDelete.customerName,
+        status: 'cancelled',
+        orderedItems: orderToDelete.items.map((i: any) => ({ name: i.name, quantity: i.quantity })),
+        cookedItems: [],
+        mealType: orderToDelete.mealType || '',
+        originalMealType: orderToDelete.mealType || '',
+        cookTime: orderToDelete.cookTime || '',
+        createdAt: orderToDelete.date || new Date().toISOString(),
+        total: orderToDelete.total || 0,
+        paymentStatus: orderToDelete.paymentStatus || 'unpaid',
+      })
+    }
+
     // Remove kitchen items for this order
-    const { getKitchenItems, updateKitchenItems } = require("./inventory-store")
     const kitchenItems = getKitchenItems()
     const updatedKitchenItems = kitchenItems.filter((item: { orderId: string }) => item.orderId !== orderId)
     updateKitchenItems(updatedKitchenItems)
-    
+
     // Remove customer order
-    const { getCustomerOrders, updateCustomerOrders } = require("./inventory-store")
-    const customerOrders = getCustomerOrders()
     const updatedCustomerOrders = customerOrders.filter((order: { id: string }) => order.id !== orderId)
     updateCustomerOrders(updatedCustomerOrders)
   }

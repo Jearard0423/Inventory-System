@@ -1345,14 +1345,17 @@ export const checkAndSendAdvancedOrderNotifications = async (
         alreadySent30MinReminder: advancedNotificationState.sentThirtyMinuteReminders.has(bucketKey)
       })
 
-      // SCENARIO 3A: 1-DAY BEFORE REMINDER (if delivery date is tomorrow or 1-2 days away)
-      if (daysUntilDelivery <= 1 && daysUntilDelivery > 0 && !advancedNotificationState.sentOneDayReminders.has(bucketKey)) {
-        console.log(`[email-notifications] 📅 Sending 1-day reminder for bucket "${bucket}" (${bucketOrders.length} orders)`)
+      // SCENARIO 3A: 2-HOUR BEFORE REMINDER for TOMORROW'S orders
+      // When an order is placed for tomorrow, notify 2 hours before the delivery time
+      // This means: delivery is within 25hrs but more than 1hr away, and between 0-2hrs window
+      if (daysUntilDelivery <= 1 && hoursUntilDelivery <= 2 && hoursUntilDelivery > 1 && !advancedNotificationState.sentOneDayReminders.has(bucketKey)) {
+        console.log(`[email-notifications] 📅 Sending 2-hour pre-reminder for bucket "${bucket}" (${bucketOrders.length} orders)`)
         await sendOneDayBeforeNotification(bucketOrders, recipientEmail)
         advancedNotificationState.sentOneDayReminders.add(bucketKey)
       }
 
-      // SCENARIO 3B: 1-HOUR BEFORE REMINDER - Sent on delivery day, 1 hour before
+      // SCENARIO 3B: 1-HOUR BEFORE REMINDER - For same-day/today orders, 1 hour before delivery
+      // This fires when delivery time is within 1 hour
       if (hoursUntilDelivery <= 1 && hoursUntilDelivery > 0 && !advancedNotificationState.sentOneHourReminders.has(bucketKey)) {
         console.log(`[email-notifications] 🚨 Sending 1-hour reminder for bucket "${bucket}" (${bucketOrders.length} orders)`)
         await sendOneHourBeforeNotification(bucketOrders, recipientEmail)
@@ -1399,7 +1402,7 @@ const sendOneDayBeforeNotification = async (
 
     const deliveryTimeLabel = formatCookTime(firstOrder.cookTime)
 
-    const subject = `📅 Reminder: ${orders.length} Order${orders.length > 1 ? 's' : ''} Due Tomorrow — ${deliveryTimeLabel}`
+    const subject = `📅 Reminder: ${orders.length} Order${orders.length > 1 ? 's' : ''} — Delivery in ~2 Hours — ${deliveryTimeLabel}`
 
     const oneDayMealType = (firstOrder.mealType || firstOrder.originalMealType || 'dinner').toLowerCase()
     const oneDayColors = headerColorsForMeal(oneDayMealType)
@@ -1408,7 +1411,7 @@ const sendOneDayBeforeNotification = async (
     const content = `
       <div style="margin-bottom:24px;">
         <div style="display:inline-block;background:${oneDayColors.badgeBg};border:1px solid ${oneDayColors.badgeBorder};border-radius:20px;padding:6px 16px;margin-bottom:16px;">
-          <span style="color:${oneDayColors.badgeText};font-weight:700;font-size:12px;letter-spacing:0.5px;">📅 1-DAY ADVANCE REMINDER</span>
+          <span style="color:${oneDayColors.badgeText};font-weight:700;font-size:12px;letter-spacing:0.5px;">📅 2-HOUR ADVANCE REMINDER</span>
         </div>
         <h2 style="margin:0 0 8px;color:#111827;font-size:24px;font-weight:800;">
           ${orders.length} Order${orders.length > 1 ? 's' : ''} Due Tomorrow
@@ -1422,7 +1425,7 @@ const sendOneDayBeforeNotification = async (
 
       <div style="margin-top:20px;padding:16px 18px;background:#eff6ff;border:2px solid #3b82f6;border-radius:8px;text-align:center;">
         <p style="color:#1e40af;margin:0;font-size:14px;font-weight:700;">
-          ✅ ACTION: Review ingredients and confirm all items can be prepared for tomorrow's ${deliveryTimeLabel} delivery.
+          ✅ ACTION: Delivery is in ~2 hours at ${deliveryTimeLabel} — begin final preparation NOW!
         </p>
       </div>
     `
@@ -1440,7 +1443,7 @@ ${orders
       )
       .join('\n')}
 
-ACTION: Review all ingredients and confirm items can be prepared for tomorrow's ${deliveryTimeLabel} delivery.`
+ACTION: Delivery is in approximately 2 hours at ${deliveryTimeLabel}. Begin preparation immediately!`
 
     await sendEmailNotification(subject, htmlBody, plainTextBody, recipientEmail)
     console.log(`[email-notifications] Sent 1-day reminder for group with ${orders.length} order(s)`)

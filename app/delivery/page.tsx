@@ -658,7 +658,7 @@ export default function DeliveryPage() {
                               Completed Items:
                             </h4>
                             <div className="flex flex-wrap gap-2">
-                              {order.cookedItems.map((item, idx) => (
+                              {(order.cookedItems ?? []).map((item, idx) => (
                                 <Badge 
                                   key={idx} 
                                   className="bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 border-green-300 dark:border-green-700"

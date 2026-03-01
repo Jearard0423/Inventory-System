@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { getCustomerOrders, getOrderHistory, type CustomerOrder } from "@/lib/inventory-store"
-import Pagination from "@/components/pagination"
+import { Pagination } from "@/components/pagination"
 
 export default function OrderHistoryPage() {
   const [orders, setOrders] = useState<CustomerOrder[]>([])
@@ -22,7 +22,14 @@ export default function OrderHistoryPage() {
 
   // Function to get delivery badge
   const getDeliveryBadge = (order: CustomerOrder) => {
-    if (order.status === 'delivered' || order.deliveryMethod === 'lalamove') {
+    const s = (order.status || '').toLowerCase()
+    if (s === 'cancelled' || s === 'canceled') {
+      return {
+        label: 'Cancelled',
+        className: 'bg-red-100 text-red-700 border-red-300'
+      }
+    }
+    if (s === 'delivered' || order.deliveryMethod === 'lalamove') {
       return {
         label: 'Delivered',
         className: 'bg-blue-100 text-blue-700 border-blue-300'
@@ -35,9 +42,10 @@ export default function OrderHistoryPage() {
   }
 
   const loadOrders = () => {
-    const liveOrders = getCustomerOrders().filter(
-      o => o.status === 'delivered' || o.status === 'complete'
-    )
+    const liveOrders = getCustomerOrders().filter(o => {
+      const s = (o.status || '').toLowerCase()
+      return s === 'delivered' || s === 'complete' || s === 'cancelled' || s === 'canceled'
+    })
     
     // Get permanent order history
     const archivedOrders = getOrderHistory()
