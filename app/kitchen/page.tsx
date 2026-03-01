@@ -14,6 +14,7 @@ import {
   getCustomerOrders,
   updateCustomerOrders,
   updateKitchenItems,
+  archiveOrderToHistory,
   type KitchenItem,
   type CustomerOrder,
 } from "@/lib/inventory-store"
@@ -70,31 +71,62 @@ export default function KitchenPage() {
   }
 
   const loadData = () => {
-    // Clean up old orders first (older than 7 days)
     const allOrdersRaw = getCustomerOrders()
-    const sevenDaysAgo = new Date()
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-    
+    const kItems = getKitchenItems()
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
     const recentOrders = allOrdersRaw.filter(order => {
-      if (!order.createdAt) return true // Keep orders without date
       try {
-        const orderDate = new Date(order.createdAt)
-        const isOld = orderDate < sevenDaysAgo
-        if (isOld) {
-          console.log(`[Kitchen] Removing order older than 7 days: ${order.customerName} (${order.id})`)
+        // Always archive delivered/complete before any removal
+        if (order.status === 'delivered' || order.status === 'complete') {
+          archiveOrderToHistory(order)
         }
-        return !isOld
+
+        const s = (order.status || '').toLowerCase()
+        const isFinal = s === 'delivered' || s === 'served' || s === 'cancelled' || s === 'canceled'
+
+        // Determine order date
+        const orderDate = order.createdAt ? new Date(order.createdAt) : null
+        if (!orderDate) return !isFinal // keep undated non-final orders
+
+        orderDate.setHours(0, 0, 0, 0)
+        const isToday = orderDate.getTime() === today.getTime()
+
+        // Remove if final status (delivered/cancelled) — always, regardless of date
+        if (isFinal) {
+          archiveOrderToHistory(order)
+          console.log(`[Kitchen] Removing final-status order: ${order.customerName} (${order.id}) status=${order.status}`)
+          return false
+        }
+
+        // Remove if not today
+        if (!isToday) {
+          archiveOrderToHistory(order)
+          console.log(`[Kitchen] Removing old order: ${order.customerName} (${order.id}) date=${order.createdAt}`)
+          return false
+        }
+
+        // Remove if incomplete/cooking but has NO kitchen items at all (stale ghost order)
+        const hasKitchenItems = kItems.some(ki => ki.orderId === order.id)
+        const isActiveStatus = s === 'incomplete' || s === 'cooking'
+        if (isActiveStatus && !hasKitchenItems) {
+          console.log(`[Kitchen] Removing ghost order with no kitchen items: ${order.customerName} (${order.id})`)
+          return false
+        }
+
+        return true
       } catch {
-        return true // Keep on error
+        return true
       }
     })
-    
-    // If we removed any orders, save the updated list
+
+    // Persist cleanup if anything was removed
     if (recentOrders.length < allOrdersRaw.length) {
       updateCustomerOrders(recentOrders)
-      console.log(`[Kitchen] Cleanup: removed ${allOrdersRaw.length - recentOrders.length} old orders`)
+      console.log(`[Kitchen] Cleanup: removed ${allOrdersRaw.length - recentOrders.length} stale orders`)
     }
-    
+
     const allOrders = recentOrders
     setKitchenItems(getKitchenItems())
     setCustomerOrders(allOrders)
@@ -122,34 +154,25 @@ export default function KitchenPage() {
     }
     
     // Helper to check if order has a final status (should not appear in kitchen)
-    // Note: 'complete' means cooked but not yet moved to delivery, so it should still appear
+    // Note: 'complete' means cooked but not yet delivered, so it SHOULD still appear
     const isFinalStatus = (order: CustomerOrder) => {
-      // treat only truly final states as final (delivered/served/cancelled)
-      const isFinal = order.status === 'delivered' || order.status === 'served' || order.status === 'cancelled'
+      const s = (order.status || '').toLowerCase()
+      // Hide delivered, served, and ALL spellings of cancelled
+      const isFinal = s === 'delivered' || s === 'served' || s === 'cancelled' || s === 'canceled'
       if (isFinal) {
         console.log(`[Kitchen] Filtered out final status: ${order.customerName} - Status: ${order.status}`)
       }
       return isFinal
     }
   
-  // Filter orders: today only, not final status, matching meal type
+  // Filter orders: not final status first (always), then today only, then meal type
     const filtered = allOrders
       .filter(order => {
-        // If an order has no kitchen items and is already final (delivered/served/cancelled), hide it
-        try {
-          const kItems = getKitchenItems()
-          const hasKitchenItemsForOrder = kItems.some(item => item.orderId === order.id)
-          const statusLower = (order.status || '').toString().toLowerCase()
-          if (!hasKitchenItemsForOrder && (statusLower === 'delivered' || statusLower === 'served' || statusLower === 'cancelled' || statusLower === 'canceled')) {
-            console.log(`[Kitchen] Hiding order without kitchen items: ${order.customerName} (${order.id}) - status=${order.status}`)
-            return false
-          }
-        } catch (e) {
-          console.warn('[Kitchen] could not evaluate kitchen items for order filter', e)
-        }
-        // Only show today's incomplete orders
-        if (!isOrderForToday(order)) return false
+        // ALWAYS hide delivered/cancelled/served regardless of date — check this first
         if (isFinalStatus(order)) return false
+
+        // Only show today's orders for non-final statuses
+        if (!isOrderForToday(order)) return false
         
         // Check meal type filter
         const matchesMealType = filterMealType === "all" || 
@@ -324,49 +347,47 @@ export default function KitchenPage() {
     }
   }
   
-  // Only show items from today's orders with meal type filter (excluding delivered orders)
+  // Only show items from today's active orders (todayOrders is already filtered: no delivered/cancelled/wrong date)
   const toCookItems = kitchenItems
     .filter((item) => {
-      const order = customerOrders.find(order => order.id === item.orderId)
+      const order = todayOrders.find(order => order.id === item.orderId)
       if (!order) return false
 
-      const matchesDate = isOrderForToday(order)
       const matchesMealType = filterMealType === "all" || 
         (order.mealType && order.mealType.toLowerCase() === filterMealType) ||
         (order.originalMealType && order.originalMealType.toLowerCase() === filterMealType)
       const isNotFinal = order.status !== 'delivered' && order.status !== 'complete' && order.status !== 'served'
       
-      return item.status === "to-cook" && matchesDate && matchesMealType && isNotFinal
+      return item.status === "to-cook" && matchesMealType && isNotFinal
     })
     // Sort to put completed items at the back
     .sort((a, b) => {
-      const aOrder = customerOrders.find(order => order.id === a.orderId)
-      const bOrder = customerOrders.find(order => order.id === b.orderId)
+      const aOrder = todayOrders.find(order => order.id === a.orderId)
+      const bOrder = todayOrders.find(order => order.id === b.orderId)
       const aComplete = aOrder?.status === 'complete' ? 1 : 0
       const bComplete = bOrder?.status === 'complete' ? 1 : 0
       return aComplete - bComplete
     })
   
   const cookedItems = kitchenItems.filter((item) => {
-    const order = customerOrders.find(order => order.id === item.orderId)
+    const order = todayOrders.find(order => order.id === item.orderId)
     if (!order) return false
 
-    const matchesDate = isOrderForToday(order)
     const matchesMealType = filterMealType === "all" || 
       (order.mealType && order.mealType.toLowerCase() === filterMealType) ||
       (order.originalMealType && order.originalMealType.toLowerCase() === filterMealType)
     const isNotFinal = order.status !== 'delivered' && order.status !== 'complete' && order.status !== 'served'
     
-    return item.status === "cooked" && matchesDate && matchesMealType && isNotFinal
+    return item.status === "cooked" && matchesMealType && isNotFinal
   })
 
   // Group items by name and sort by completion status
   const groupItemsByName = (items: KitchenItem[]) => {
     const grouped: Record<string, { count: number; items: KitchenItem[]; customers: string[] }> = {}
     
-    // Create a map of customer names to their order status
+    // Create a map of customer names to their order status (only from active today's orders)
     const customerStatus = new Map<string, boolean>()
-    customerOrders.forEach(order => {
+    todayOrders.forEach(order => {
       customerStatus.set(order.customerName, order.status === 'complete')
     })
     
@@ -425,11 +446,11 @@ export default function KitchenPage() {
 
   const handleMarkAsCooked = (itemName: string, quantity: number = 1) => {
     const itemsToCook = kitchenItems.filter(item => {
-      // Only include items from today's orders
-      const order = customerOrders.find(order => order.id === item.orderId)
+      // Only include items from active today's orders (todayOrders already excludes delivered/cancelled)
+      const order = todayOrders.find(order => order.id === item.orderId)
       if (!order) return false
       
-      return item.status === "to-cook" && item.itemName === itemName && isOrderForToday(order)
+      return item.status === "to-cook" && item.itemName === itemName
     })
     
     if (itemsToCook.length === 0 || quantity <= 0) return
@@ -456,11 +477,11 @@ export default function KitchenPage() {
 
   const handleMarkAllAsCooked = () => {
     const allItemsToCook = kitchenItems.filter(item => {
-      // Only include items from today's orders
-      const order = customerOrders.find(order => order.id === item.orderId)
+      // Only include items from active today's orders (todayOrders already excludes delivered/cancelled)
+      const order = todayOrders.find(order => order.id === item.orderId)
       if (!order) return false
       
-      return item.status === "to-cook" && isOrderForToday(order)
+      return item.status === "to-cook"
     })
     
     if (allItemsToCook.length === 0) return
@@ -487,11 +508,11 @@ export default function KitchenPage() {
     // Prefer cooked items that belong to orders which are not fully completed.
     // This avoids undoing items for previously completed customers who ordered the same meal.
     let cookedItemsForName = kitchenItems.filter(item => {
-      const order = customerOrders.find(order => order.id === item.orderId)
+      // Only include items from active today's orders (todayOrders already excludes delivered/cancelled)
+      const order = todayOrders.find(order => order.id === item.orderId)
       if (!order) return false
       
-      // Only block undo for delivered orders; allow undo from completed ones so user can "un-complete" if needed
-      return item.status === "cooked" && item.itemName === itemName && isOrderForToday(order) && order.status !== 'delivered'
+      return item.status === "cooked" && item.itemName === itemName && order.status !== 'delivered'
     })
 
     // If no cooked items from incomplete orders found, don't fall back - prevent affecting delivered orders
@@ -882,6 +903,7 @@ export default function KitchenPage() {
               {filterMealType === "all" && (
                 <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-green-500"></span>
               )}
+              All
             </Button>
             <Button
               variant={filterMealType === "breakfast" ? "default" : "outline"}

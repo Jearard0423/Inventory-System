@@ -86,10 +86,17 @@ const KITCHEN_ITEMS_KEY = 'yellowbell_kitchen_items';
 const CUSTOMER_ORDERS_KEY = 'yellowbell_customer_orders';
 const DELIVERY_ORDERS_KEY = 'yellowbell_delivery_orders';
 const INVENTORY_ITEMS_KEY = 'yellowbell_inventory_items';
+// Separate key for permanent order history (never pruned by kitchen cleanup)
+const ORDER_HISTORY_KEY = 'yellowbell_order_history';
 
 // Load data from localStorage
 // define list and helper early so they are available during module evaluation
-const ORDERS_TO_REMOVE: string[] = ['ORD-2952','ORD-9095','ORD-1423','ORD-1760'];
+const ORDERS_TO_REMOVE: string[] = [
+  'ORD-2952','ORD-9095','ORD-1423','ORD-1760',
+  'ORD-1267','ORD-8444','ORD-4974','ORD-2941','ORD-5413','ORD-2852',
+  // Latest screenshot stale orders
+  'ORD-3053','ORD-2052'
+];
 
 // Utility to purge unwanted orders from a serialized array stored under `key`
 function purgeOrdersFromKey(key: string): number {
@@ -518,6 +525,38 @@ export const updateCustomerOrders = (orders: CustomerOrder[]): void => {
   saveToLocalStorage(CUSTOMER_ORDERS_KEY, customerOrders);
 };
 
+/**
+ * Order History Archive - permanent storage that survives kitchen cleanup.
+ * Delivered/completed orders are written here so the history page always has them.
+ */
+export const getOrderHistory = (): CustomerOrder[] => {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(ORDER_HISTORY_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+
+export const archiveOrderToHistory = (order: CustomerOrder): void => {
+  if (typeof window === 'undefined') return;
+  try {
+    const history = getOrderHistory();
+    // Only archive if not already there
+    if (!history.find(h => h.id === order.id)) {
+      history.unshift(order);
+      localStorage.setItem(ORDER_HISTORY_KEY, JSON.stringify(history));
+    } else {
+      // Update existing record (e.g. status changed)
+      const updated = history.map(h => h.id === order.id ? { ...h, ...order } : h);
+      localStorage.setItem(ORDER_HISTORY_KEY, JSON.stringify(updated));
+    }
+  } catch (e) {
+    console.warn('[inventory-store] Failed to archive order to history:', e);
+  }
+};
+
 // Listen for Firebase real-time updates and update in-memory state accordingly.
 // We avoid calling `saveToLocalStorage` here to prevent a loop back to Firebase.
 if (typeof window !== 'undefined') {
@@ -738,6 +777,9 @@ export const markOrderAsDelivered = (orderId: string): boolean => {
   
   customerOrders[orderIndex].status = 'delivered';
 
+  // Archive to permanent history so order-history page always has it
+  archiveOrderToHistory(customerOrders[orderIndex]);
+
   // attempt to sync with RTDB (non-blocking)
   try {
     // require lazily to avoid circular dependency when importing from other modules
@@ -778,6 +820,8 @@ export const markOrderAsDelivered = (orderId: string): boolean => {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event("orders-updated"));
     window.dispatchEvent(new Event("delivery-updated"));
+    window.dispatchEvent(new Event("customer-orders-updated"));
+    window.dispatchEvent(new Event("kitchen-updated"));
   }
   
   return true;

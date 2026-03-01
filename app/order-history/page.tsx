@@ -1,293 +1,293 @@
 "use client"
 
-import type React from "react"
+import { useEffect, useState } from "react"
 import { POSLayout } from "@/components/pos-layout"
-import { Card, CardContent, CardHeader } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { AlertCircle, Calendar, Loader2, Search } from "lucide-react"
 import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Search, Calendar, TrendingUp, Truck, Hand } from "lucide-react"
-import { useState, useEffect } from "react"
-import { getCustomerOrders, type CustomerOrder } from "@/lib/inventory-store"
-import { Pagination } from "@/components/pagination"
+import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
+import { getCustomerOrders, getOrderHistory, type CustomerOrder } from "@/lib/inventory-store"
+import Pagination from "@/components/pagination"
 
 export default function OrderHistoryPage() {
   const [orders, setOrders] = useState<CustomerOrder[]>([])
   const [filteredOrders, setFilteredOrders] = useState<CustomerOrder[]>([])
-  const [searchTerm, setSearchTerm] = useState("")
-  const [dateFilter, setDateFilter] = useState("all-time")
+  const [isLoading, setIsLoading] = useState(true)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [dateFilter, setDateFilter] = useState<"all-time" | "today" | "yesterday" | "this-week">("all-time")
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 10
 
-  useEffect(() => {
-    const allOrders = getCustomerOrders()
-    // Filter only delivered or otherwise completed orders
-    const completedOrders = allOrders.filter(
-      order => order.status === "delivered" || order.status === "complete"
-    )
-    setOrders(completedOrders.sort((a, b) => 
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    ))
+  // Function to get delivery badge
+  const getDeliveryBadge = (order: CustomerOrder) => {
+    if (order.status === 'delivered' || order.deliveryMethod === 'lalamove') {
+      return {
+        label: 'Delivered',
+        className: 'bg-blue-100 text-blue-700 border-blue-300'
+      }
+    }
+    return {
+      label: 'Completed',
+      className: 'bg-green-100 text-green-700 border-green-300'
+    }
+  }
 
+  const loadOrders = () => {
+    const liveOrders = getCustomerOrders().filter(
+      o => o.status === 'delivered' || o.status === 'complete'
+    )
+    
+    // Get permanent order history
+    const archivedOrders = getOrderHistory()
+    
+    // Merge archive with live orders (live takes precedence on duplicate IDs)
+    const liveIds = new Set(liveOrders.map(o => o.id))
+    const mergedOrders = [
+      ...liveOrders,
+      ...archivedOrders.filter(o => !liveIds.has(o.id))
+    ]
+
+    setOrders(mergedOrders)
+    setIsLoading(false)
+  }
+
+  useEffect(() => {
+    loadOrders()
+
+    // Event listeners
     const handleOrdersUpdate = () => {
-      const updated = getCustomerOrders()
-      const completed = updated.filter(
-        order => order.status === "delivered" || order.status === 'complete'
-      )
-      setOrders(completed.sort((a, b) => 
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      ))
+      loadOrders()
     }
 
     window.addEventListener("orders-updated", handleOrdersUpdate)
-    return () => window.removeEventListener("orders-updated", handleOrdersUpdate)
+    window.addEventListener("delivery-updated", handleOrdersUpdate)
+
+    return () => {
+      window.removeEventListener("orders-updated", handleOrdersUpdate)
+      window.removeEventListener("delivery-updated", handleOrdersUpdate)
+    }
   }, [])
 
   // Apply filters
   useEffect(() => {
-    let result = [...orders]
+    let filtered = [...orders]
 
     // Date filter
     const now = new Date()
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
     const yesterday = new Date(today)
     yesterday.setDate(yesterday.getDate() - 1)
-    const thisWeekStart = new Date(today)
-    thisWeekStart.setDate(thisWeekStart.getDate() - today.getDay())
+    const weekStart = new Date(today)
+    weekStart.setDate(weekStart.getDate() - today.getDay())
 
-    if (dateFilter === "today") {
-      result = result.filter(order => {
-        const orderDate = new Date(order.createdAt)
-        return orderDate >= today && orderDate < new Date(today.getTime() + 24 * 60 * 60 * 1000)
-      })
-    } else if (dateFilter === "yesterday") {
-      result = result.filter(order => {
-        const orderDate = new Date(order.createdAt)
-        return orderDate >= yesterday && orderDate < today
-      })
-    } else if (dateFilter === "this-week") {
-      result = result.filter(order => {
-        const orderDate = new Date(order.createdAt)
-        return orderDate >= thisWeekStart
-      })
-    }
+    filtered = filtered.filter(order => {
+      const orderDate = new Date(order.createdAt)
+      const orderDateOnly = new Date(orderDate.getFullYear(), orderDate.getMonth(), orderDate.getDate())
+
+      switch (dateFilter) {
+        case "today":
+          return orderDateOnly.getTime() === today.getTime()
+        case "yesterday":
+          return orderDateOnly.getTime() === yesterday.getTime()
+        case "this-week":
+          return orderDateOnly.getTime() >= weekStart.getTime()
+        default:
+          return true
+      }
+    })
 
     // Search filter
-    if (searchTerm) {
-      result = result.filter(order =>
-        order.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        order.orderNumber?.toLowerCase().includes(searchTerm.toLowerCase())
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase()
+      filtered = filtered.filter(order =>
+        order.customerName.toLowerCase().includes(query) ||
+        order.orderNumber?.toLowerCase().includes(query)
       )
     }
 
-    setFilteredOrders(result)
+    setFilteredOrders(filtered)
     setCurrentPage(1)
-  }, [orders, searchTerm, dateFilter])
+  }, [orders, searchQuery, dateFilter])
 
-  const totalPages = Math.ceil(filteredOrders.length / itemsPerPage)
-  const startIndex = (currentPage - 1) * itemsPerPage
-  const paginatedOrders = filteredOrders.slice(startIndex, startIndex + itemsPerPage)
-
-  const getDeliveryBadge = (order: CustomerOrder) => {
-    if (order.status === "delivered") {
-      return {
-        icon: Truck,
-        label: "Delivered",
-        className: "bg-blue-100 text-blue-800"
-      }
-    } else if (order.deliveryMethod === "hand-in") {
-      return {
-        icon: Hand,
-        label: "Handed In",
-        className: "bg-green-100 text-green-800"
-      }
-    }
-    return { icon: Hand, label: "Unknown", className: "bg-gray-100 text-gray-800" }
+  // Calculate statistics
+  const stats = {
+    totalOrders: filteredOrders.length,
+    totalRevenue: filteredOrders.reduce((sum, order) => sum + (order.total || 0), 0),
+    averageOrderValue: filteredOrders.length > 0 ? Math.round(filteredOrders.reduce((sum, order) => sum + (order.total || 0), 0) / filteredOrders.length) : 0
   }
 
-  const getTotalRevenue = () => {
-    return filteredOrders.reduce((sum, order) => sum + (order.total || 0), 0)
+  // Pagination
+  const paginatedOrders = filteredOrders.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+  const totalPages = Math.ceil(filteredOrders.length / itemsPerPage)
+
+  if (isLoading) {
+    return (
+      <POSLayout>
+        <div className="flex items-center justify-center h-screen">
+          <Loader2 className="w-8 h-8 animate-spin" />
+        </div>
+      </POSLayout>
+    )
   }
 
   return (
     <POSLayout>
-      <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div>
-            <h1 className="text-3xl font-bold">Order History</h1>
-            <p className="text-muted-foreground mt-1">View completed and delivered orders</p>
-          </div>
+      <div className="space-y-4 pb-20">
+        {/* Header */}
+        <div className="flex items-center gap-2">
+          <Calendar className="w-6 h-6 text-blue-600" />
+          <h1 className="text-3xl font-bold">Order History</h1>
         </div>
 
-        {/* Stats */}
+        {/* Statistics */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card>
             <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Total Orders</p>
-                  <p className="text-2xl font-bold">{filteredOrders.length}</p>
-                </div>
-                <Truck className="h-8 w-8 text-blue-500 opacity-50" />
-              </div>
+              <p className="text-sm text-gray-600 mb-1">Total Orders</p>
+              <p className="text-2xl font-bold">{stats.totalOrders}</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Total Revenue</p>
-                  <p className="text-2xl font-bold">₱{getTotalRevenue().toFixed(2)}</p>
-                </div>
-                <TrendingUp className="h-8 w-8 text-green-500 opacity-50" />
-              </div>
+              <p className="text-sm text-gray-600 mb-1">Total Revenue</p>
+              <p className="text-2xl font-bold">₱{stats.totalRevenue.toLocaleString()}</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Avg Order Value</p>
-                  <p className="text-2xl font-bold">
-                    ₱{filteredOrders.length > 0 ? (getTotalRevenue() / filteredOrders.length).toFixed(2) : "0.00"}
-                  </p>
-                </div>
-                <Calendar className="h-8 w-8 text-purple-500 opacity-50" />
-              </div>
+              <p className="text-sm text-gray-600 mb-1">Avg Order Value</p>
+              <p className="text-2xl font-bold">₱{stats.averageOrderValue.toLocaleString()}</p>
             </CardContent>
           </Card>
         </div>
 
         {/* Filters */}
-        <Card>
-          <CardHeader>
-            <div className="flex flex-col md:flex-row gap-4">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search by customer name or order #..."
-                  className="pl-9"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-              </div>
-              <Select value={dateFilter} onValueChange={setDateFilter}>
-                <SelectTrigger className="w-full md:w-48">
-                  <SelectValue placeholder="Date Filter" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all-time">All Time</SelectItem>
-                  <SelectItem value="today">Today</SelectItem>
-                  <SelectItem value="yesterday">Yesterday</SelectItem>
-                  <SelectItem value="this-week">This Week</SelectItem>
-                </SelectContent>
-              </Select>
+        <div className="space-y-3">
+          <div className="flex flex-col md:flex-row gap-3">
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
+              <Input
+                placeholder="Search by customer name or order number"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
             </div>
-          </CardHeader>
-        </Card>
+          </div>
 
-        {/* Orders Table */}
-        <Card>
-          <CardContent className="p-0">
+          <div className="flex gap-2 flex-wrap">
+            {(['all-time', 'today', 'yesterday', 'this-week'] as const).map(filter => (
+              <Button
+                key={filter}
+                variant={dateFilter === filter ? 'default' : 'outline'}
+                onClick={() => setDateFilter(filter)}
+                className={dateFilter === filter ? 'bg-blue-600 hover:bg-blue-700' : ''}
+                size="sm"
+              >
+                {filter === 'all-time' ? 'All Time' : filter === 'this-week' ? 'This Week' : filter.charAt(0).toUpperCase() + filter.slice(1)}
+              </Button>
+            ))}
+          </div>
+        </div>
+
+        {/* Orders List */}
+        {paginatedOrders.length === 0 ? (
+          <Card className="bg-blue-50 border-blue-200">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-2 text-blue-600">
+                <AlertCircle className="w-5 h-5" />
+                <span>No orders found</span>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <>
+            {/* Desktop view */}
             <div className="hidden md:block overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-3 px-4 font-semibold">Order #</th>
-                    <th className="text-left py-3 px-4 font-semibold">Customer</th>
-                    <th className="text-left py-3 px-4 font-semibold">Date</th>
-                    <th className="text-left py-3 px-4 font-semibold">Items</th>
-                    <th className="text-left py-3 px-4 font-semibold">Total</th>
-                    <th className="text-left py-3 px-4 font-semibold">Status</th>
+              <table className="w-full text-sm">
+                <thead className="bg-gray-100 border-b-2 border-gray-300">
+                  <tr>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-700">Order #</th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-700">Customer</th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-700">Items</th>
+                    <th className="text-right px-4 py-3 font-semibold text-gray-700">Amount</th>
+                    <th className="text-center px-4 py-3 font-semibold text-gray-700">Status</th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-700">Date</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {paginatedOrders.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="py-16 text-center">
-                        <p className="text-sm text-muted-foreground">No orders found</p>
+                <tbody className="divide-y">
+                  {paginatedOrders.map(order => (
+                    <tr key={order.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 text-gray-900 font-medium">{order.orderNumber || order.id.slice(0, 8)}</td>
+                      <td className="px-4 py-3 text-gray-900">{order.customerName}</td>
+                      <td className="px-4 py-3 text-gray-600">
+                        {order.orderedItems?.length || 0} item{order.orderedItems?.length !== 1 ? 's' : ''}
+                      </td>
+                      <td className="px-4 py-3 text-right text-gray-900 font-medium">₱{(order.total || 0).toLocaleString()}</td>
+                      <td className="px-4 py-3 text-center">
+                        <Badge variant="outline" className={getDeliveryBadge(order).className}>
+                          {getDeliveryBadge(order).label}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 text-gray-600 text-sm">
+                        {new Date(order.createdAt).toLocaleDateString('en-PH', {
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
                       </td>
                     </tr>
-                  ) : (
-                    paginatedOrders.map((order) => {
-                      const deliveryBadge = getDeliveryBadge(order)
-                      const Icon = deliveryBadge.icon
-                      return (
-                        <tr key={order.id} className="border-b hover:bg-muted/50">
-                          <td className="py-3 px-4 font-medium">#{order.orderNumber}</td>
-                          <td className="py-3 px-4">{order.customerName}</td>
-                          <td className="py-3 px-4 text-sm">
-                            {new Date(order.createdAt).toLocaleDateString()} {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </td>
-                          <td className="py-3 px-4 text-sm">
-                            {order.orderedItems.reduce((sum, item) => sum + item.quantity, 0)} items
-                          </td>
-                          <td className="py-3 px-4 font-semibold">₱{(order.total || 0).toFixed(2)}</td>
-                          <td className="py-3 px-4">
-                            <div className="flex items-center gap-2">
-                              <Icon className="h-4 w-4" />
-                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${deliveryBadge.className}`}>
-                                {deliveryBadge.label}
-                              </span>
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    })
-                  )}
+                  ))}
                 </tbody>
               </table>
-              {totalPages > 1 && (
-                <div className="p-4 border-t">
-                  <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
-                </div>
-              )}
             </div>
 
-            {/* Mobile View */}
-            <div className="md:hidden space-y-4 p-4">
-              {paginatedOrders.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-8">No orders found</p>
-              ) : (
-                paginatedOrders.map((order) => {
-                  const deliveryBadge = getDeliveryBadge(order)
-                  const Icon = deliveryBadge.icon
-                  return (
-                    <Card key={order.id}>
-                      <CardContent className="pt-4">
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <p className="font-semibold text-sm">#{order.orderNumber}</p>
-                              <p className="text-muted-foreground text-xs">{order.customerName}</p>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <Icon className="h-4 w-4" />
-                              <span className={`text-xs font-medium px-2 py-1 rounded ${deliveryBadge.className}`}>
-                                {deliveryBadge.label}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">{order.orderedItems.reduce((sum, item) => sum + item.quantity, 0)} items</span>
-                            <span className="font-semibold">₱{(order.total || 0).toFixed(2)}</span>
-                          </div>
-                          <p className="text-xs text-muted-foreground">
-                            {new Date(order.createdAt).toLocaleDateString()} {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </p>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )
-                })
-              )}
-              {totalPages > 1 && (
-                <div className="pt-4">
-                  <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
-                </div>
-              )}
+            {/* Mobile view */}
+            <div className="md:hidden space-y-3">
+              {paginatedOrders.map(order => (
+                <Card key={order.id}>
+                  <CardContent className="pt-6">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <p className="font-semibold text-gray-900">{order.orderNumber || order.id.slice(0, 8)}</p>
+                        <Badge variant="outline" className={getDeliveryBadge(order).className}>
+                          {getDeliveryBadge(order).label}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-gray-600">{order.customerName}</p>
+                      <p className="text-sm text-gray-600">
+                        {order.orderedItems?.length || 0} item{order.orderedItems?.length !== 1 ? 's' : ''}
+                      </p>
+                      <div className="flex items-center justify-between pt-2 border-t">
+                        <p className="text-sm text-gray-600">
+                          {new Date(order.createdAt).toLocaleDateString('en-PH', {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </p>
+                        <p className="font-semibold text-gray-900">₱{(order.total || 0).toLocaleString()}</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
-          </CardContent>
-        </Card>
+          </>
+        )}
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+          />
+        )}
       </div>
     </POSLayout>
   )

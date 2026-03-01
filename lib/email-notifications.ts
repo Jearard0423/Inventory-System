@@ -146,17 +146,89 @@ let notificationState: EmailNotificationState = {
   hasOrdersToday: false,
 }
 
-/** Yellow Roast Co. branded email wrapper with logo and color scheme */
+/** Yellow Roast Co. branded email wrapper with meal-type color scheme
+ *  Breakfast → warm yellow/amber
+ *  Lunch     → sky blue
+ *  Dinner    → deep red (YRC brand)
+ *  Default   → YRC orange/red
+ */
 const headerColorsForMeal = (mealType?: string) => {
   const mt = (mealType || '').toLowerCase()
   if (mt === 'breakfast') {
-    return { bgStart: '#fef08a', bgEnd: '#fcd34d', text: '#92400e', footerBg: '#fef3c7', footerBorder: '#fcd34d' }
+    return {
+      headerBg:     'linear-gradient(135deg, #f59e0b 0%, #fbbf24 60%, #fde68a 100%)',
+      accentColor:  '#92400e',
+      badgeBg:      '#fef3c7',
+      badgeText:    '#92400e',
+      badgeBorder:  '#fcd34d',
+      tableThead:   '#fef3c7',
+      theadText:    '#78350f',
+      tableRow1:    '#fffbeb',
+      tableRow2:    '#fef9f0',
+      tableAccent:  '#f59e0b',
+      footerBg:     '#fef3c7',
+      footerBorder: '#fcd34d',
+      footerText:   '#92400e',
+      iconEmoji:    '🌅',
+      label:        'BREAKFAST ORDER',
+    }
   }
   if (mt === 'lunch') {
-    return { bgStart: '#bae6fd', bgEnd: '#7dd3fc', text: '#0f172a', footerBg: '#e0f2fe', footerBorder: '#7dd3fc' }
+    return {
+      headerBg:     'linear-gradient(135deg, #0284c7 0%, #38bdf8 60%, #bae6fd 100%)',
+      accentColor:  '#0c4a6e',
+      badgeBg:      '#e0f2fe',
+      badgeText:    '#0c4a6e',
+      badgeBorder:  '#7dd3fc',
+      tableThead:   '#e0f2fe',
+      theadText:    '#0c4a6e',
+      tableRow1:    '#f0f9ff',
+      tableRow2:    '#e0f2fe',
+      tableAccent:  '#0284c7',
+      footerBg:     '#e0f2fe',
+      footerBorder: '#7dd3fc',
+      footerText:   '#0c4a6e',
+      iconEmoji:    '☀️',
+      label:        'LUNCH ORDER',
+    }
   }
-  // dinner | default
-  return { bgStart: '#dc2626', bgEnd: '#ef4444', text: '#fef3c7', footerBg: '#fecaca', footerBorder: '#fca5a5' }
+  // dinner | default — YRC brand red
+  return {
+    headerBg:     'linear-gradient(135deg, #991b1b 0%, #dc2626 60%, #ef4444 100%)',
+    accentColor:  '#7f1d1d',
+    badgeBg:      '#fee2e2',
+    badgeText:    '#7f1d1d',
+    badgeBorder:  '#fca5a5',
+    tableThead:   '#fee2e2',
+    theadText:    '#7f1d1d',
+    tableRow1:    '#fff5f5',
+    tableRow2:    '#fef2f2',
+    tableAccent:  '#dc2626',
+    footerBg:     '#fee2e2',
+    footerBorder: '#fca5a5',
+    footerText:   '#7f1d1d',
+    iconEmoji:    '🌙',
+    label:        'DINNER ORDER',
+  }
+}
+
+/** Render a clean styled order row for use inside the email table */
+const renderOrderRow = (o: CustomerOrder, colors: ReturnType<typeof headerColorsForMeal>, isAlt: boolean) => {
+  const items = (o.orderedItems || []).map((i: any) => `<strong>${i.quantity}×</strong> ${i.name}`).join(', ')
+  const delivTime = o.cookTime ? formatCookTime(o.cookTime) : '—'
+  const payment = (o.paymentStatus === 'paid')
+    ? `<span style="color:#16a34a;font-weight:600;">✓ Paid</span>`
+    : `<span style="color:#dc2626;font-weight:600;">Unpaid</span>`
+  return `
+    <tr style="background:${isAlt ? colors.tableRow2 : colors.tableRow1};">
+      <td style="padding:10px 12px;border-bottom:1px solid ${colors.badgeBorder};font-weight:600;color:#1f2937;">
+        ${o.customerName}
+        ${o.orderNumber ? `<br><span style="font-size:11px;color:#6b7280;font-weight:400;">#${o.orderNumber}</span>` : ''}
+      </td>
+      <td style="padding:10px 12px;border-bottom:1px solid ${colors.badgeBorder};color:#374151;font-size:13px;">${items}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid ${colors.badgeBorder};color:${colors.tableAccent};font-weight:700;font-size:14px;">${delivTime}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid ${colors.badgeBorder};font-size:13px;">${payment}</td>
+    </tr>`
 }
 
 const emailWrapper = (content: string, mealType?: string) => {
@@ -165,87 +237,85 @@ const emailWrapper = (content: string, mealType?: string) => {
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
   <title>Yellow Roast Co.</title>
-  <style>
-    body {
-      margin: 0;
-      padding: 0;
-      background-color: #fef9f0;
-      font-family: 'Segoe UI', Arial, sans-serif;
-    }
-    .logo-container {
-      background: linear-gradient(135deg, ${colors.bgStart} 0%, ${colors.bgEnd} 100%);
-      padding: 28px 32px;
-      text-align: center;
-    }
-    .logo {
-      width: 60px;
-      height: 60px;
-      margin-bottom: 12px;
-      border-radius: 8px;
-      display: inline-block;
-    }
-    .brand-name {
-      margin: 0;
-      color: ${colors.text};
-      font-size: 26px;
-      font-weight: 700;
-      letter-spacing: 0.5px;
-      background: linear-gradient(135deg, ${colors.footerBg} 0%, ${colors.bgEnd} 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-    .brand-tagline {
-      margin: 4px 0 0;
-      color: #fef3c7;
-      font-size: 13px;
-    }
-  </style>
 </head>
-<body style="margin:0;padding:0;background-color:#fef9f0;font-family:'Segoe UI',Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#fef9f0;padding:30px 10px;">
-    <tr>
-      <td align="center">
-        <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.08);">
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:'Segoe UI',Arial,sans-serif;">
 
-          <!-- Header with Logo -->
-          <tr>
-            <td class="logo-container" style="background:linear-gradient(135deg,${colors.bgStart} 0%,${colors.bgEnd} 100%);padding:28px 32px;text-align:center;">
-              <!-- YRC Logo as header image -->
-              <img src="${yrcLogoBase64}" alt="Yellow Roast Co. Logo" class="logo" style="display:block; margin:0 auto 12px; width:60px; height:60px;border-radius:8px;" />
-              <h1 style="margin:0;color:${colors.text};font-size:26px;font-weight:700;letter-spacing:0.5px;">Yellow Roast Co.</h1>
-              <p style="margin:4px 0 0;color:${colors.text};font-size:13px;">Premium Roasted Chicken & More</p>
-            </td>
-          </tr>
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:32px 12px;">
+    <tr><td align="center">
+      <table width="620" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.12);max-width:620px;">
 
-          <!-- Body -->
-          <tr>
-            <td style="padding:32px 36px;">
-              ${content}
-            </td>
-          </tr>
+        <!-- ═══ HEADER ═══ -->
+        <tr>
+          <td style="background:${colors.headerBg};padding:36px 40px;text-align:center;">
+            <img src="${yrcLogoBase64}" alt="Yellow Roast Co." width="72" height="72"
+                 style="border-radius:12px;border:3px solid rgba(255,255,255,0.35);margin-bottom:16px;display:block;margin-left:auto;margin-right:auto;"/>
+            <h1 style="margin:0;color:#ffffff;font-size:28px;font-weight:800;letter-spacing:0.5px;text-shadow:0 1px 4px rgba(0,0,0,0.2);">
+              Yellow Roast Co.
+            </h1>
+            <p style="margin:6px 0 0;color:rgba(255,255,255,0.88);font-size:13px;letter-spacing:1.2px;font-weight:500;">
+              ${colors.label} &nbsp;·&nbsp; ${colors.iconEmoji} &nbsp;KITCHEN NOTIFICATION
+            </p>
+          </td>
+        </tr>
 
-          <!-- Footer -->
-          <tr>
-            <td style="background:${colors.footerBg};padding:18px 32px;text-align:center;border-top:1px solid ${colors.footerBorder};">
-              <p style="margin:0;color:${colors.text};font-size:12px;">
-                This is an automated notification from <strong>Yellow Roast Co.</strong> Inventory System.<br/>
-                Sent on ${todayLabel()} at ${nowLabel()}
-              </p>
-            </td>
-          </tr>
+        <!-- ═══ TIMESTAMP STRIP ═══ -->
+        <tr>
+          <td style="background:${colors.badgeBg};padding:10px 40px;border-bottom:1px solid ${colors.badgeBorder};">
+            <p style="margin:0;color:${colors.badgeText};font-size:12px;font-weight:600;letter-spacing:0.5px;">
+              📅 ${todayLabel()} &nbsp;&nbsp;🕐 ${nowLabel()} &nbsp;(Asia/Manila)
+            </p>
+          </td>
+        </tr>
 
-        </table>
-      </td>
-    </tr>
+        <!-- ═══ BODY CONTENT ═══ -->
+        <tr>
+          <td style="padding:36px 40px;">
+            ${content}
+          </td>
+        </tr>
+
+        <!-- ═══ FOOTER ═══ -->
+        <tr>
+          <td style="background:${colors.footerBg};padding:20px 40px;text-align:center;border-top:2px solid ${colors.footerBorder};">
+            <p style="margin:0 0 4px;color:${colors.footerText};font-size:12px;font-weight:700;letter-spacing:0.5px;">
+              🐔 YELLOW ROAST CO. — INVENTORY SYSTEM
+            </p>
+            <p style="margin:0;color:${colors.footerText};font-size:11px;opacity:0.75;">
+              This is an automated notification. Do not reply to this email.
+            </p>
+          </td>
+        </tr>
+
+      </table>
+    </td></tr>
   </table>
+
 </body>
-</html>
-`
+</html>`
 }
+
+/** Shared styled order table for use inside email body */
+const renderOrderTable = (orders: CustomerOrder[], colors: ReturnType<typeof headerColorsForMeal>) => {
+  if (!orders.length) return ''
+  return `
+  <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border-radius:10px;overflow:hidden;border:1px solid ${colors.badgeBorder};margin-top:8px;">
+    <thead>
+      <tr style="background:${colors.tableThead};">
+        <th style="padding:10px 12px;text-align:left;color:${colors.theadText};font-size:12px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;">Customer</th>
+        <th style="padding:10px 12px;text-align:left;color:${colors.theadText};font-size:12px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;">Items Ordered</th>
+        <th style="padding:10px 12px;text-align:left;color:${colors.theadText};font-size:12px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;">Delivery Time</th>
+        <th style="padding:10px 12px;text-align:left;color:${colors.theadText};font-size:12px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;">Payment</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${orders.map((o, i) => renderOrderRow(o, colors, i % 2 === 1)).join('')}
+    </tbody>
+  </table>`
+}
+
 
 /**
  * Group orders by delivery time buckets (1hr, 2+hrs, 3+ days)
@@ -596,53 +666,47 @@ export const checkAndSendFoodPreparationReminder = async (orders: CustomerOrder[
 
     // Send reminder email
     const reminderNumber = notificationState.remindersCount + 1
-    const subject = `Yellow Roast Co. Kitchen Reminder - Order Preparation (Reminder #${reminderNumber})`
-    const phTime = getPHTime()
+    const subject = `🐔 YRC Kitchen Reminder #${reminderNumber} — ${todayOrders.length} Order${todayOrders.length > 1 ? 's' : ''} Today`
     
-    const htmlBody = `
-      <div style="font-family: Arial, sans-serif; padding: 20px; background-color: #f5f5f5;">
-        <div style="background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-          <div style="text-align:center; margin-bottom: 10px;">
-            <h1 style="margin:0; color:#dc2626; font-size:24px;">Yellow Roast Co.</h1>
-            <p style="margin: 4px 0 0; color: #6b7280; font-size: 13px;">Premium Roasted Chicken & More</p>
-          </div>
-          <p style="color: #666; font-size: 16px; margin-top:15px;">
-            <strong>Reminder #${reminderNumber}</strong> &ndash; ${nowLabel()}
-          </p>
-          <p style="color:#444; font-size:14px;">
-            Orders below are scheduled for today. Please prepare them in time for delivery. A new reminder will be sent every ${Math.round(REMINDER_INTERVAL / 60000)} minutes.
-          </p>
-          
-          <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;">
-          
-          ${formatOrderDetailsForEmail(todayOrders)}
-          
-          <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;">
-          
-          <p style="color: #666; font-size: 14px; margin-top: 10px;">
-            <strong>Next reminder:</strong> in ${Math.round(REMINDER_INTERVAL / 60000)} minutes<br>
-            <strong>Pending orders:</strong> ${todayOrders.length}
-          </p>
-          
-          <div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px; margin-top: 15px; border-radius: 4px;">
-            <p style="margin: 0; color: #92400e; font-size: 14px;">
-              Please ensure all pending orders are prepared and ready before delivery time.
-            </p>
-          </div>
-          
-          <p style="color: #999; font-size: 12px; margin-top: 20px; border-top: 1px solid #e5e7eb; padding-top: 15px;">
-            This is an automated reminder from Yellow Roast Co. Inventory System.<br>
-            Sent on ${todayLabel()} at ${nowLabel()}<br>
-            Timezone: Asia/Manila (UTC+8)
-          </p>
+    // Detect meal type from the majority of orders
+    const mealTypeCounts: Record<string, number> = {}
+    todayOrders.forEach(o => {
+      const mt = (o.mealType || o.originalMealType || 'dinner').toLowerCase()
+      mealTypeCounts[mt] = (mealTypeCounts[mt] || 0) + 1
+    })
+    const dominantMealType = Object.entries(mealTypeCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'dinner'
+    const colors = headerColorsForMeal(dominantMealType)
+
+    const ordersTableHtml = renderOrderTable(todayOrders as unknown as CustomerOrder[], colors)
+
+    const content = `
+      <div style="margin-bottom:24px;">
+        <div style="display:inline-block;background:${colors.badgeBg};border:1px solid ${colors.badgeBorder};border-radius:8px;padding:8px 16px;margin-bottom:16px;">
+          <span style="color:${colors.badgeText};font-weight:700;font-size:13px;">🔔 REMINDER #${reminderNumber}</span>
         </div>
+        <h2 style="margin:0 0 8px;color:#111827;font-size:22px;font-weight:800;">
+          ${todayOrders.length} Order${todayOrders.length > 1 ? 's' : ''} Need Preparation
+        </h2>
+        <p style="margin:0;color:#6b7280;font-size:14px;">
+          Please prepare all pending orders before their delivery time.
+          Next reminder in <strong>${Math.round(REMINDER_INTERVAL / 60000)} minutes</strong>.
+        </p>
+      </div>
+
+      ${ordersTableHtml}
+
+      <div style="margin-top:20px;padding:14px 18px;background:${colors.badgeBg};border-left:4px solid ${colors.tableAccent};border-radius:0 8px 8px 0;">
+        <p style="margin:0;color:${colors.badgeText};font-size:13px;font-weight:600;">
+          ⏰ Please ensure all orders are ready before their scheduled delivery time.
+        </p>
       </div>
     `
 
+    const htmlBody = emailWrapper(content, dominantMealType)
+
     const plainTextBody = `
 Yellow Roast Co. Kitchen Reminder #${reminderNumber}
-${todayLabel()} at ${nowLabel()}
-Timezone: Asia/Manila (UTC+8)
+${todayLabel()} at ${nowLabel()} (Asia/Manila)
 
 Orders to prepare today:
 ${todayOrders.map(order => {
@@ -655,15 +719,12 @@ ${todayOrders.map(order => {
     })
     .filter(Boolean)
     .join(', ')
-  return `- ${order.customerName} (Order #${order.orderNumber || order.id}): ${pendingItems}`
+  return `- ${order.customerName} (Order #${order.orderNumber || order.id}): ${pendingItems} | Delivery: ${order.cookTime || 'TBD'}`
 }).join('\n')}
 
 Next reminder: in ${Math.round(REMINDER_INTERVAL / 60000)} minutes
 Orders pending: ${todayOrders.length}
-
-Please ensure all pending orders are prepared and ready before delivery time.
     `
-
     // determine who to send to (fallback to default admin)
     const to = recipientEmail || 'admin@yellowbell.com'
     // Send the email notification
@@ -840,51 +901,60 @@ export const sendOrderPlacedNotification = async (
         }
 
 
-        const subject = `🆕 ${toNotify.length} Order${toNotify.length > 1 ? 's' : ''} Today`
+        const subject = `🆕 ${toNotify.length} New Order${toNotify.length > 1 ? 's' : ''} Today — Yellow Roast Co.`
+
+        const mtCounts: Record<string, number> = {}
+        toNotify.forEach((o: any) => {
+          const mt = (o.mealType || o.originalMealType || 'dinner').toLowerCase()
+          mtCounts[mt] = (mtCounts[mt] || 0) + 1
+        })
+        const todaySummaryMealType = Object.entries(mtCounts).sort((a: any, b: any) => b[1] - a[1])[0]?.[0] || 'dinner'
+        const todayColors = headerColorsForMeal(todaySummaryMealType)
 
         const rows = toNotify
-          .map((o: any) => {
-            const itemsText = o.items
-              .map((i: any) => `${i.quantity}× ${i.name}`)
-              .join(', ')
-            return `<tr>
-  <td style="padding:8px;border:1px solid #ddd">${o.customerName}</td>
-  <td style="padding:8px;border:1px solid #ddd">${itemsText}</td>
-  <td style="padding:8px;border:1px solid #ddd">${o.cookTime || '—'}</td>
-  <td style="padding:8px;border:1px solid #ddd">${o.date}</td>
-  <td style="padding:8px;border:1px solid #ddd">${o.paymentStatus || 'not-paid'}</td>
-</tr>`
+          .map((o: any, i: number) => {
+            const items = (o.items || []).map((it: any) => `<strong>${it.quantity}×</strong> ${it.name}`).join(', ')
+            const time = o.cookTime ? formatCookTime(o.cookTime) : '—'
+            const payment = o.paymentStatus === 'paid'
+              ? `<span style="color:#16a34a;font-weight:600;">✓ Paid</span>`
+              : `<span style="color:#dc2626;font-weight:600;">Unpaid</span>`
+            return `<tr style="background:${i % 2 === 0 ? todayColors.tableRow1 : todayColors.tableRow2};">
+              <td style="padding:10px 12px;border-bottom:1px solid ${todayColors.badgeBorder};font-weight:600;color:#1f2937;">${o.customerName}</td>
+              <td style="padding:10px 12px;border-bottom:1px solid ${todayColors.badgeBorder};color:#374151;font-size:13px;">${items}</td>
+              <td style="padding:10px 12px;border-bottom:1px solid ${todayColors.badgeBorder};color:${todayColors.tableAccent};font-weight:700;">${time}</td>
+              <td style="padding:10px 12px;border-bottom:1px solid ${todayColors.badgeBorder};font-size:13px;">${payment}</td>
+            </tr>`
           })
           .join('')
 
         const content = `
-            <div style="text-align:center;margin-bottom:24px;">
-              <div style="font-size:48px;margin-bottom:8px;">🐔</div>
-              <h2 style="color:#dc2626;margin:0;font-size:24px;">${toNotify.length} Order${toNotify.length > 1 ? 's' : ''} Today</h2>
-              <p style="color:#6b7280;margin:4px 0 0;font-size:14px;">${todayLabel()} at ${nowLabel()}</p>
+          <div style="margin-bottom:24px;">
+            <div style="display:inline-block;background:${todayColors.badgeBg};border:1px solid ${todayColors.badgeBorder};border-radius:20px;padding:6px 16px;margin-bottom:16px;">
+              <span style="color:${todayColors.badgeText};font-weight:700;font-size:12px;letter-spacing:0.5px;">🆕 NEW ORDER${toNotify.length > 1 ? 'S' : ''} RECEIVED</span>
             </div>
-            <table width="100%" cellpadding="4" cellspacing="0" style="border-collapse:collapse;">
-              <thead>
-                <tr>
-                  <th style="text-align:left;border:1px solid #ddd;padding:8px;">Customer</th>
-                  <th style="text-align:left;border:1px solid #ddd;padding:8px;">Order</th>
-                  <th style="text-align:left;border:1px solid #ddd;padding:8px;">Time</th>
-                  <th style="text-align:left;border:1px solid #ddd;padding:8px;">Date</th>
-                  <th style="text-align:left;border:1px solid #ddd;padding:8px;">Payment</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${rows}
-              </tbody>
-            </table>
-          `
+            <h2 style="margin:0 0 8px;color:#111827;font-size:24px;font-weight:800;">${toNotify.length} Order${toNotify.length > 1 ? 's' : ''} Placed Today</h2>
+            <p style="margin:0;color:#6b7280;font-size:14px;">All orders below are scheduled for today and require preparation.</p>
+          </div>
+          <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border-radius:10px;overflow:hidden;border:1px solid ${todayColors.badgeBorder};">
+            <thead>
+              <tr style="background:${todayColors.tableThead};">
+                <th style="padding:10px 12px;text-align:left;color:${todayColors.theadText};font-size:12px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;">Customer</th>
+                <th style="padding:10px 12px;text-align:left;color:${todayColors.theadText};font-size:12px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;">Items Ordered</th>
+                <th style="padding:10px 12px;text-align:left;color:${todayColors.theadText};font-size:12px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;">Delivery Time</th>
+                <th style="padding:10px 12px;text-align:left;color:${todayColors.theadText};font-size:12px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;">Payment</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+          <div style="margin-top:20px;padding:14px 18px;background:${todayColors.badgeBg};border-left:4px solid ${todayColors.tableAccent};border-radius:0 8px 8px 0;">
+            <p style="margin:0;color:${todayColors.badgeText};font-size:13px;font-weight:600;">🍗 Begin preparation to ensure timely delivery for all customers.</p>
+          </div>
+        `
 
-        const htmlBody = emailWrapper(content)
-        const plainTextBody = `Yellow Roast Co. - ${toNotify.length} Order${toNotify.length > 1 ? 's' : ''} Today\n\n${toNotify
+        const htmlBody = emailWrapper(content, todaySummaryMealType)
+        const plainTextBody = `Yellow Roast Co. — ${toNotify.length} Order${toNotify.length > 1 ? 's' : ''} Today\n\n${toNotify
           .map((o: any) =>
-            `${o.customerName} | ${o.items
-              .map((i: any) => `${i.quantity}x ${i.name}`)
-              .join(', ')} | ${o.cookTime || '—'} | ${o.date} | ${o.paymentStatus || 'not-paid'}`
+            `${o.customerName} | ${(o.items||[]).map((i: any) => `${i.quantity}x ${i.name}`).join(', ')} | Delivery: ${o.cookTime || '—'} | Payment: ${o.paymentStatus || 'unpaid'}`
           )
           .join('\n')}`
 
@@ -1329,30 +1399,35 @@ const sendOneDayBeforeNotification = async (
 
     const deliveryTimeLabel = formatCookTime(firstOrder.cookTime)
 
-    const subject = `📅 ${orders.length} Order${orders.length > 1 ? 's' : ''} Tomorrow at ${deliveryTimeLabel}`
+    const subject = `📅 Reminder: ${orders.length} Order${orders.length > 1 ? 's' : ''} Due Tomorrow — ${deliveryTimeLabel}`
 
-    const groupedTables = groupOrdersByDeliveryTime(orders)
+    const oneDayMealType = (firstOrder.mealType || firstOrder.originalMealType || 'dinner').toLowerCase()
+    const oneDayColors = headerColorsForMeal(oneDayMealType)
+    const ordersTableOneDayHtml = renderOrderTable(orders, oneDayColors)
 
     const content = `
-      <div style="text-align: center; margin-bottom: 24px;">
-        <div style="font-size: 48px; margin-bottom: 8px;">📅</div>
-        <h2 style="color: #dc2626; margin: 0; font-size: 24px;">${orders.length} Order${orders.length > 1 ? 's' : ''} Tomorrow</h2>
-        <p style="color: #6b7280; margin: 4px 0 0; font-size: 13px;">Advance reminder - 1 day to prepare</p>
+      <div style="margin-bottom:24px;">
+        <div style="display:inline-block;background:${oneDayColors.badgeBg};border:1px solid ${oneDayColors.badgeBorder};border-radius:20px;padding:6px 16px;margin-bottom:16px;">
+          <span style="color:${oneDayColors.badgeText};font-weight:700;font-size:12px;letter-spacing:0.5px;">📅 1-DAY ADVANCE REMINDER</span>
+        </div>
+        <h2 style="margin:0 0 8px;color:#111827;font-size:24px;font-weight:800;">
+          ${orders.length} Order${orders.length > 1 ? 's' : ''} Due Tomorrow
+        </h2>
+        <p style="margin:0;color:#6b7280;font-size:14px;">
+          Scheduled for <strong>${deliveryDateLabel}</strong> at <strong style="color:${oneDayColors.tableAccent};">${deliveryTimeLabel}</strong>
+        </p>
       </div>
 
-      <div style="background: linear-gradient(135deg, #fef3c7 0%, #fcd34d 100%); padding: 20px; border-radius: 8px; margin-bottom: 24px;">
-        <p style="margin: 0 0 12px; color: #991b1b; font-size: 14px; font-weight: 600; text-transform: uppercase;">⏰ Delivery: ${deliveryTimeLabel} on ${deliveryDateLabel}</p>
-        ${groupedTables}
-      </div>
+      ${ordersTableOneDayHtml}
 
-      <div style="background: #eff6ff; border: 2px solid #3b82f6; padding: 16px; border-radius: 8px; text-align: center;">
-        <p style="color: #1e40af; margin: 0; font-size: 14px; font-weight: 600;">
-          ✅ ACTION: Review all ingredients and confirm items can be prepared for tomorrow's ${deliveryTimeLabel} delivery.
+      <div style="margin-top:20px;padding:16px 18px;background:#eff6ff;border:2px solid #3b82f6;border-radius:8px;text-align:center;">
+        <p style="color:#1e40af;margin:0;font-size:14px;font-weight:700;">
+          ✅ ACTION: Review ingredients and confirm all items can be prepared for tomorrow's ${deliveryTimeLabel} delivery.
         </p>
       </div>
     `
 
-    const htmlBody = emailWrapper(content, firstOrder.mealType || firstOrder.originalMealType)
+    const htmlBody = emailWrapper(content, oneDayMealType)
     const plainTextBody = `Yellow Roast Co. - Orders Due Tomorrow at ${deliveryTimeLabel}
 
 Delivery: ${deliveryDateLabel} at ${deliveryTimeLabel}
@@ -1404,36 +1479,38 @@ const sendOneHourBeforeNotification = async (
 
     const deliveryTimeLabel = formatCookTime(firstOrder.cookTime)
 
-    const subject = `⚡ URGENT: ${orders.length} Order${orders.length > 1 ? 's' : ''} - Delivery in 1 Hour at ${deliveryTimeLabel}`
+    const subject = `🚨 URGENT: ${orders.length} Order${orders.length > 1 ? 's' : ''} Due in 1 Hour — ${deliveryTimeLabel}`
 
-    const groupedTables = groupOrdersByDeliveryTime(orders)
+    const oneHrMealType = (firstOrder.mealType || firstOrder.originalMealType || 'dinner').toLowerCase()
+    const oneHrColors = headerColorsForMeal(oneHrMealType)
+    const ordersTableOneHrHtml = renderOrderTable(orders, oneHrColors)
 
     const content = `
-      <div style="text-align: center; margin-bottom: 24px;">
-        <div style="font-size: 48px; margin-bottom: 8px;">🚨</div>
-        <h2 style="color: #991b1b; margin: 0; font-size: 24px; text-transform: uppercase;">${orders.length} ORDER${orders.length > 1 ? 'S' : ''} IN 1 HOUR!</h2>
-        <p style="color: #7f1d1d; margin: 4px 0 0; font-size: 13px; font-weight: 600;">FINAL PREPARATION REQUIRED</p>
-      </div>
-
-      <div style="background: #fee2e2; border: 3px solid #dc2626; padding: 20px; border-radius: 8px; margin-bottom: 24px;">
-        <p style="margin: 0 0 12px; color: #991b1b; font-size: 14px; font-weight: 600; text-transform: uppercase;">⏰ Delivery: ${deliveryTimeLabel} TODAY</p>
-        ${groupedTables}
-      </div>
-
-      <div style="background: #fef3c7; border: 2px solid #f59e0b; padding: 16px; border-radius: 8px; text-align: center; margin-bottom: 16px;">
-        <p style="color: #92400e; margin: 0; font-size: 15px; font-weight: 700;">
-          ⚡ FINAL PREPARATION: Pack all orders NOW for immediate delivery!
+      <div style="margin-bottom:24px;">
+        <div style="display:inline-block;background:#fee2e2;border:2px solid #dc2626;border-radius:20px;padding:6px 16px;margin-bottom:16px;">
+          <span style="color:#991b1b;font-weight:800;font-size:12px;letter-spacing:0.5px;">🚨 1-HOUR URGENT REMINDER</span>
+        </div>
+        <h2 style="margin:0 0 8px;color:#991b1b;font-size:26px;font-weight:900;text-transform:uppercase;letter-spacing:0.5px;">
+          ${orders.length} Order${orders.length > 1 ? 's' : ''} in 1 Hour!
+        </h2>
+        <p style="margin:0;color:#6b7280;font-size:14px;">
+          Delivery at <strong style="color:#dc2626;font-size:18px;">${deliveryTimeLabel}</strong> — <strong>final preparation required NOW</strong>
         </p>
       </div>
 
-      <div style="background: #f3f4f6; padding: 12px; border-radius: 4px; text-align: center;">
-        <p style="color: #4b5563; margin: 0; font-size: 12px;">
-          Delivery scheduled for <strong>${deliveryTimeLabel}</strong> on <strong>${deliveryDateLabel}</strong>
+      ${ordersTableOneHrHtml}
+
+      <div style="margin-top:20px;padding:18px;background:#fee2e2;border:3px solid #dc2626;border-radius:8px;text-align:center;">
+        <p style="color:#7f1d1d;margin:0;font-size:16px;font-weight:800;">
+          ⚡ PACK ALL ORDERS NOW FOR IMMEDIATE DELIVERY!
+        </p>
+        <p style="color:#991b1b;margin:8px 0 0;font-size:13px;">
+          Delivery scheduled for ${deliveryDateLabel} at ${deliveryTimeLabel}
         </p>
       </div>
     `
 
-    const htmlBody = emailWrapper(content, firstOrder.mealType || firstOrder.originalMealType)
+    const htmlBody = emailWrapper(content, oneHrMealType)
     const plainTextBody = `Yellow Roast Co. - URGENT: ${orders.length} Order${orders.length > 1 ? 's' : ''} - 1 HOUR
 
 ⚡ URGENT: ${orders.length} order(s) delivery in 1 HOUR
@@ -1487,30 +1564,38 @@ const sendThirtyMinuteNotification = async (
 
     const deliveryTimeLabel = formatCookTime(firstOrder.cookTime)
 
-    const subject = `🚨 READY NOW: ${orders.length} Order${orders.length > 1 ? 's' : ''} - Delivery in 30 Minutes!`
+    const subject = `⏰ 30 Min Warning: ${orders.length} Order${orders.length > 1 ? 's' : ''} Due at ${deliveryTimeLabel}`
 
-    const groupedTables = groupOrdersByDeliveryTime(orders)
+    const thirtyMinMealType = (firstOrder.mealType || firstOrder.originalMealType || 'dinner').toLowerCase()
+    const thirtyMinColors = headerColorsForMeal(thirtyMinMealType)
+    const ordersTable30MinHtml = renderOrderTable(orders, thirtyMinColors)
 
     const content = `
-      <div style="text-align: center; margin-bottom: 24px;">
-        <div style="font-size: 48px; margin-bottom: 8px;">⏰</div>
-        <h2 style="color: #991b1b; margin: 0; font-size: 24px;">READY TO GO!</h2>
-        <p style="color: #7f1d1d; margin: 4px 0 0; font-size: 13px; font-weight: 600;">Orders ready for delivery in 30 minutes</p>
+      <div style="margin-bottom:24px;">
+        <div style="display:inline-block;background:#fff7ed;border:2px solid #f97316;border-radius:20px;padding:6px 16px;margin-bottom:16px;">
+          <span style="color:#c2410c;font-weight:800;font-size:12px;letter-spacing:0.5px;">⏰ 30-MINUTE WARNING</span>
+        </div>
+        <h2 style="margin:0 0 8px;color:#c2410c;font-size:26px;font-weight:900;">
+          🚗 Delivery in 30 Minutes!
+        </h2>
+        <p style="margin:0;color:#6b7280;font-size:14px;">
+          Orders due at <strong style="color:#f97316;font-size:18px;">${deliveryTimeLabel}</strong> — ensure everything is packed and ready.
+        </p>
       </div>
 
-      <div style="background: #f97316; color: white; padding: 20px; border-radius: 8px; margin-bottom: 24px;">
-        <p style="margin: 0 0 12px; font-size: 14px; font-weight: 600; text-transform: uppercase;">🚗 Delivery: ${deliveryTimeLabel} (30 minutes from now)</p>
-        ${groupedTables}
-      </div>
+      ${ordersTable30MinHtml}
 
-      <div style="background: #fef3c7; border: 2px solid #f59e0b; padding: 16px; border-radius: 8px; text-align: center;">
-        <p style="color: #92400e; margin: 0; font-size: 15px; font-weight: 700;">
-          ✅ All orders packed and ready. Customer arriving soon!
+      <div style="margin-top:20px;padding:18px;background:#fff7ed;border:3px solid #f97316;border-radius:8px;text-align:center;">
+        <p style="color:#c2410c;margin:0;font-size:15px;font-weight:800;">
+          ✅ Finalize packing — customer pickup/delivery in 30 minutes!
+        </p>
+        <p style="color:#ea580c;margin:8px 0 0;font-size:13px;">
+          ${deliveryDateLabel} at ${deliveryTimeLabel}
         </p>
       </div>
     `
 
-    const htmlBody = emailWrapper(content)
+    const htmlBody = emailWrapper(content, thirtyMinMealType)
     const plainTextBody = `Yellow Roast Co. - Ready for Delivery in 30 Minutes
 
 READY: ${orders.length} order(s) are packed and ready!
