@@ -16,33 +16,36 @@ export const syncOrderToRTDB = async (order: CustomerOrder): Promise<boolean> =>
     const timestamp = new Date().toISOString()
     const orderRef = ref(database, `orderHistory/${order.id}`)
     
+    // Sanitize order data: avoid undefined values (Realtime DB rejects undefined)
+    const safe = <T,>(v: T | undefined | null): T | null => (typeof v === 'undefined' ? null : v as T)
+
     const orderData = {
-      id: order.id,
-      orderNumber: order.orderNumber || "N/A",
-      customerName: order.customerName,
-      status: order.status,
-      mealType: order.mealType || order.originalMealType || "Unknown",
-      createdAt: order.createdAt,
+      id: safe(order.id),
+      orderNumber: safe(order.orderNumber) || "N/A",
+      customerName: safe(order.customerName) || "",
+      status: safe(order.status) || null,
+      mealType: safe(order.mealType) || safe(order.originalMealType) || "Unknown",
+      createdAt: safe(order.createdAt) || null,
       deliveredAt: order.status === 'delivered' ? timestamp : null,
       completedAt: order.status === 'complete' ? timestamp : null,
-      items: order.orderedItems.map(item => ({
-        name: item.name,
-        quantity: item.quantity,
-        price: item.price
+      items: (order.orderedItems || []).map(item => ({
+        name: item.name || '',
+        quantity: typeof item.quantity === 'number' ? item.quantity : 0,
+        price: typeof item.price === 'number' ? item.price : 0
       })),
-      cookedItems: order.cookedItems.map(item => ({
-        name: item.name,
-        quantity: item.quantity
+      cookedItems: (order.cookedItems || []).map(item => ({
+        name: item.name || '',
+        quantity: typeof item.quantity === 'number' ? item.quantity : 0
       })),
-      total: order.total,
-      paymentStatus: order.paymentStatus || 'unpaid',
-      paymentMethod: order.paymentMethod || 'unknown',
-      deliveryMethod: order.deliveryMethod || 'hand-in',
-      isDelivery: order.isDelivery || false,
-      deliveryPhone: order.deliveryPhone,
-      deliveryAddress: order.deliveryAddress,
-      remarks: order.remarks,
-      specialRequests: order.specialRequests,
+      total: typeof order.total === 'number' ? order.total : 0,
+      paymentStatus: safe(order.paymentStatus) || 'unpaid',
+      paymentMethod: safe(order.paymentMethod) || 'unknown',
+      deliveryMethod: safe(order.deliveryMethod) || 'hand-in',
+      isDelivery: !!order.isDelivery,
+      deliveryPhone: safe(order.deliveryPhone),
+      deliveryAddress: safe(order.deliveryAddress),
+      remarks: safe(order.remarks),
+      specialRequests: safe(order.specialRequests),
     }
     
     await set(orderRef, orderData)

@@ -1,0 +1,97 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Remove Orders (Debug)</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; padding: 20px; }
+    pre { background:#f6f6f6;padding:12px;border-radius:6px }
+    button { padding:8px 12px;border-radius:6px;border:1px solid #ddd;background:white;cursor:pointer }
+  </style>
+</head>
+<body>
+  <h1>Remove Orders (Debug)</h1>
+  <p>This page will remove the given order numbers from the app's localStorage keys (<code>yellowbell_customer_orders</code>, <code>yellowbell_orders</code>, <code>yellowbell_kitchen_items</code>). This is a destructive action — please make a backup first.</p>
+
+  <label for="orders">Order numbers to remove (comma separated):</label><br/>
+  <input id="orders" style="width:100%;max-width:600px;padding:8px;margin:8px 0" value="ORD-2952,ORD-9095,ORD-1423,ORD-1760" />
+  <div style="margin:12px 0">
+    <button id="run">Remove Orders</button>
+    <button id="backup">Backup localStorage</button>
+  </div>
+  <h3>Output</h3>
+  <pre id="out"></pre>
+
+  <script>
+    const out = document.getElementById('out')
+    const log = (...args) => { out.textContent += args.join(' ') + '\n' }
+
+    const backupAll = () => {
+      const keys = ['yellowbell_customer_orders','yellowbell_orders','yellowbell_kitchen_items','yellowbell_prepared_orders','yellowbell_inventory_items']
+      const data = {}
+      keys.forEach(k => data[k] = localStorage.getItem(k))
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'yellowbell_localstorage_backup_' + Date.now() + '.json'
+      a.click()
+      URL.revokeObjectURL(url)
+      log('Backup created')
+    }
+
+    document.getElementById('backup').addEventListener('click', () => {
+      try { backupAll() } catch (e) { log('Backup failed:', e) }
+    })
+
+    document.getElementById('run').addEventListener('click', () => {
+      const raw = document.getElementById('orders').value || ''
+      const targets = raw.split(',').map(s => s.trim()).filter(Boolean)
+      if (!targets.length) { log('No order numbers provided'); return }
+
+      // Helper to remove by orderNumber
+      const removeFromKey = (key, matchFn) => {
+        try {
+          const raw = localStorage.getItem(key)
+          if (!raw) return 0
+          let arr = JSON.parse(raw)
+          if (!Array.isArray(arr)) return 0
+          const before = arr.length
+          arr = arr.filter(o => !matchFn(o))
+          localStorage.setItem(key, JSON.stringify(arr))
+          return before - arr.length
+        } catch (e) {
+          log('Error processing', key, e)
+          return 0
+        }
+      }
+
+      let totalRemoved = 0
+
+      // Remove from customer orders (these are CustomerOrder objects)
+      targets.forEach(t => {
+        const removedCust = removeFromKey('yellowbell_customer_orders', (o) => (o.orderNumber && (''+o.orderNumber).trim() === t) || (o.id && (''+o.id).trim() === t))
+        const removedReg = removeFromKey('yellowbell_orders', (o) => (o.orderNumber && (''+o.orderNumber).trim() === t) || (o.id && (''+o.id).trim() === t))
+        const removedKitchen = removeFromKey('yellowbell_kitchen_items', (i) => i.orderId && (''+i.orderId).trim() === t)
+        log('Order', t, 'removed - customerOrders:', removedCust, 'regularOrders:', removedReg, 'kitchenItems:', removedKitchen)
+        totalRemoved += removedCust + removedReg + removedKitchen
+      })
+
+      // Dispatch events so the running app updates views
+      try {
+        window.dispatchEvent(new Event('orders-updated'))
+        window.dispatchEvent(new Event('customer-orders-updated'))
+        window.dispatchEvent(new Event('kitchen-updated'))
+        window.dispatchEvent(new Event('inventory-updated'))
+        window.dispatchEvent(new Event('prepared-orders-updated'))
+        log('Dispatched update events')
+      } catch (e) {
+        log('Failed to dispatch events:', e)
+      }
+
+      log('Total removed entries:', totalRemoved)
+      alert('Done. Check app UI (Kitchen/Orders) — if something looks off, restore the backup file you downloaded.')
+    })
+  </script>
+</body>
+</html>

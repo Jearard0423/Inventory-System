@@ -122,19 +122,31 @@ export default function KitchenPage() {
     }
     
     // Helper to check if order has a final status (should not appear in kitchen)
-  // 'complete' means cooked but not yet moved to delivery, so we still show it
-  const isFinalStatus = (order: CustomerOrder) => {
-    // treat any order that has reached an end state as final
-    const isFinal = order.status === 'delivered' || order.status === 'served' || order.status === 'complete' || order.status === 'cancelled'
-    if (isFinal) {
-      console.log(`[Kitchen] Filtered out final status: ${order.customerName} - Status: ${order.status}`)
+    // Note: 'complete' means cooked but not yet moved to delivery, so it should still appear
+    const isFinalStatus = (order: CustomerOrder) => {
+      // treat only truly final states as final (delivered/served/cancelled)
+      const isFinal = order.status === 'delivered' || order.status === 'served' || order.status === 'cancelled'
+      if (isFinal) {
+        console.log(`[Kitchen] Filtered out final status: ${order.customerName} - Status: ${order.status}`)
+      }
+      return isFinal
     }
-    return isFinal
-  }
   
   // Filter orders: today only, not final status, matching meal type
     const filtered = allOrders
       .filter(order => {
+        // If an order has no kitchen items and is already final (delivered/served/cancelled), hide it
+        try {
+          const kItems = getKitchenItems()
+          const hasKitchenItemsForOrder = kItems.some(item => item.orderId === order.id)
+          const statusLower = (order.status || '').toString().toLowerCase()
+          if (!hasKitchenItemsForOrder && (statusLower === 'delivered' || statusLower === 'served' || statusLower === 'cancelled' || statusLower === 'canceled')) {
+            console.log(`[Kitchen] Hiding order without kitchen items: ${order.customerName} (${order.id}) - status=${order.status}`)
+            return false
+          }
+        } catch (e) {
+          console.warn('[Kitchen] could not evaluate kitchen items for order filter', e)
+        }
         // Only show today's incomplete orders
         if (!isOrderForToday(order)) return false
         if (isFinalStatus(order)) return false
@@ -219,20 +231,32 @@ export default function KitchenPage() {
     const notificationCheckInterval = setInterval(async () => {
       const orders = getCustomerOrders()
       try {
-        let recipients: string[] = []
+        // If an admin is logged in, send the immediate food-prep reminder only to that admin,
+        // but ensure advanced reminders (1-day / 1-hour) are broadcast to all admin emails.
         if (auth && auth.user && auth.user.email) {
-          recipients = [auth.user.email]
+          // Send immediate prep reminder to the logged-in admin
+          await checkAndSendFoodPreparationReminder(orders, auth.user.email)
+
+          // Broadcast advanced reminders to all admins
+          try {
+            const allAdmins = await getAdminEmails()
+            for (const a of allAdmins) {
+              await checkAndSendAdvancedOrderNotifications(orders, a)
+            }
+          } catch (innerErr) {
+            console.warn('[kitchen-page] error fetching admin emails for advanced reminders', innerErr)
+          }
         } else {
-          recipients = await getAdminEmails()
-        }
-        if (recipients.length === 0) {
-          console.log('[kitchen-page] 🔄 No admin emails available for reminders')
-          return
-        }
-        console.log(`[kitchen-page] 🔄 Notification check: ${orders.length} orders, recipients: ${recipients.length}`)
-        for (const r of recipients) {
-          await checkAndSendFoodPreparationReminder(orders, r)
-          await checkAndSendAdvancedOrderNotifications(orders, r)
+          // No single logged-in admin: send both types to all admins
+          const admins = await getAdminEmails()
+          if (admins.length === 0) {
+            console.log('[kitchen-page] 🔄 No admin emails available for reminders')
+            return
+          }
+          for (const a of admins) {
+            await checkAndSendFoodPreparationReminder(orders, a)
+            await checkAndSendAdvancedOrderNotifications(orders, a)
+          }
         }
       } catch (e) {
         console.warn('[kitchen-page] error preparing recipient list for reminders', e)

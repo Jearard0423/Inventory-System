@@ -1092,7 +1092,7 @@ export const sendUpcomingOrdersReminder = async (
       </div>
     `
 
-    const htmlBody = emailWrapper(content)
+    const htmlBody = emailWrapper(content, firstOrder.mealType || firstOrder.originalMealType)
     const plainTextBody = `Yellow Roast Co. - Upcoming Orders for ${tomorrowLabel}
 
 You have ${tomorrowOrders.length} order${tomorrowOrders.length > 1 ? 's' : ''} scheduled for tomorrow:
@@ -1352,7 +1352,7 @@ const sendOneDayBeforeNotification = async (
       </div>
     `
 
-    const htmlBody = emailWrapper(content)
+    const htmlBody = emailWrapper(content, firstOrder.mealType || firstOrder.originalMealType)
     const plainTextBody = `Yellow Roast Co. - Orders Due Tomorrow at ${deliveryTimeLabel}
 
 Delivery: ${deliveryDateLabel} at ${deliveryTimeLabel}
@@ -1433,7 +1433,7 @@ const sendOneHourBeforeNotification = async (
       </div>
     `
 
-    const htmlBody = emailWrapper(content)
+    const htmlBody = emailWrapper(content, firstOrder.mealType || firstOrder.originalMealType)
     const plainTextBody = `Yellow Roast Co. - URGENT: ${orders.length} Order${orders.length > 1 ? 's' : ''} - 1 HOUR
 
 ⚡ URGENT: ${orders.length} order(s) delivery in 1 HOUR

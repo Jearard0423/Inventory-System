@@ -31,7 +31,7 @@ export default function OrderHistoryPage() {
     const handleOrdersUpdate = () => {
       const updated = getCustomerOrders()
       const completed = updated.filter(
-        order => order.status === "delivered"
+        order => order.status === "delivered" || order.status === 'complete'
       )
       setOrders(completed.sort((a, b) => 
         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()

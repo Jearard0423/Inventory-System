@@ -9,7 +9,8 @@ import { Badge } from "@/components/ui/badge"
 import { Plus, Minus, X, Check, Clock, Package, ArrowRight, Users, Trash2, BarChart3 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { cn } from "@/lib/utils"
-import { getMenuItems, reduceStock, reduceUtensilsForMeal, reduceContainerForItem, restoreStockForOrder, restoreUtensilsForQuantity, canOrderItem, type InventoryItem, RAW_STOCK_DEDUCTION_MAP } from "@/lib/inventory-store"
+import { getMenuItems, reduceStock, reduceUtensilsForMeal, reduceContainerForItem, restoreStockForOrder, restoreUtensilsForQuantity, canOrderItem, getOrderLimitMessage, type InventoryItem, RAW_STOCK_DEDUCTION_MAP } from "@/lib/inventory-store"
+import { useToast } from '@/hooks/use-toast'
 import { generateOrderNumber, generatePreparedOrderNumber, getOrders } from "@/lib/orders"
 
 const categories = ["All", "Chicken", "Liempo", "Sisig", "Rice", "Meals"]
@@ -118,6 +119,8 @@ export default function PreparedOrdersPage() {
     }
   }, [])
 
+  const { toast } = useToast()
+
   const getCategoryKey = (displayCategory: string) => {
     const map: Record<string, string> = {
       Chicken: "chicken",
@@ -177,8 +180,9 @@ export default function PreparedOrdersPage() {
 
     // ensure we have enough inventory to prepare this many
     if (!canOrderItem(item.id, requestedQty)) {
-      // optionally show a toast or console warning
+      const msg = getOrderLimitMessage(item.id, requestedQty) || `Insufficient stock for ${item.name}`
       console.warn('[Prepared] cannot prepare more of', item.name, '- insufficient stock')
+      toast({ title: 'Cannot prepare item', description: msg, variant: 'destructive' })
       return
     }
 
@@ -209,7 +213,9 @@ export default function PreparedOrdersPage() {
 
     // check against inventory before updating
     if (!canOrderItem(id, quantity)) {
+      const msg = getOrderLimitMessage(id, quantity) || `Insufficient stock for this item`
       console.warn('[Prepared] cannot update quantity to', quantity, 'for', id, '- insufficient stock')
+      toast({ title: 'Cannot update quantity', description: msg, variant: 'destructive' })
       return
     }
     

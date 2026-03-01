@@ -88,20 +88,75 @@ const DELIVERY_ORDERS_KEY = 'yellowbell_delivery_orders';
 const INVENTORY_ITEMS_KEY = 'yellowbell_inventory_items';
 
 // Load data from localStorage
+// define list and helper early so they are available during module evaluation
+const ORDERS_TO_REMOVE: string[] = ['ORD-2952','ORD-9095','ORD-1423','ORD-1760'];
+
+// Utility to purge unwanted orders from a serialized array stored under `key`
+function purgeOrdersFromKey(key: string): number {
+  if (typeof window === 'undefined') return 0;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return 0;
+    let arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return 0;
+    const before = arr.length;
+    arr = arr.filter((o: any) => {
+      if (!o) return false;
+      const onum = (o.orderNumber || '').toString().trim();
+      const oid = (o.id || o.orderId || '').toString().trim();
+      // also check kitchen items which use orderId
+      return !ORDERS_TO_REMOVE.includes(onum) && !ORDERS_TO_REMOVE.includes(oid);
+    });
+    if (arr.length < before) {
+      localStorage.setItem(key, JSON.stringify(arr));
+      console.log(`[inventory-store] Purged ${before - arr.length} entries from ${key}`);
+    }
+    return before - arr.length;
+  } catch (e) {
+    console.warn(`[inventory-store] Failed to purge orders from ${key}:`, e);
+    return 0;
+  }
+}
+
 const loadFromLocalStorage = () => {
   if (typeof window !== 'undefined') {
+    // make sure the unwanted orders are removed from storage before we read
+    ['yellowbell_customer_orders','yellowbell_orders','yellowbell_delivery_orders','yellowbell_kitchen_items'].forEach(key => {
+      purgeOrdersFromKey(key);
+    });
+
     try {
       const kitchenItemsData = localStorage.getItem(KITCHEN_ITEMS_KEY);
       const customerOrdersData = localStorage.getItem(CUSTOMER_ORDERS_KEY);
       const deliveryOrdersData = localStorage.getItem(DELIVERY_ORDERS_KEY);
       const inventoryItemsData = localStorage.getItem(INVENTORY_ITEMS_KEY);
       
-      return {
+      const parsed = {
         kitchenItems: kitchenItemsData ? JSON.parse(kitchenItemsData) : [],
         customerOrders: customerOrdersData ? JSON.parse(customerOrdersData) : [],
         deliveryOrders: deliveryOrdersData ? JSON.parse(deliveryOrdersData) : [],
         inventoryItems: inventoryItemsData ? JSON.parse(inventoryItemsData) : []
       };
+
+      // additional defensive filtering
+      const filterOrders = (arr: any[]) => {
+        if (!Array.isArray(arr)) return [];
+        return arr.filter(o => {
+          if (!o) return false;
+          const onum = (o.orderNumber || '').toString().trim();
+          const oid = (o.id || o.orderId || '').toString().trim();
+          return !ORDERS_TO_REMOVE.includes(onum) && !ORDERS_TO_REMOVE.includes(oid);
+        });
+      };
+
+      parsed.kitchenItems = parsed.kitchenItems.filter(item => {
+        const oid = (item.orderId || '').toString().trim();
+        return !ORDERS_TO_REMOVE.includes(oid);
+      });
+      parsed.customerOrders = filterOrders(parsed.customerOrders);
+      parsed.deliveryOrders = filterOrders(parsed.deliveryOrders);
+
+      return parsed;
     } catch (error) {
       console.error('Error loading from localStorage:', error);
       return {
@@ -201,8 +256,30 @@ export const saveInventoryItemToFirebase = async (item: InventoryItem) => {
   }
 };
 
-// Load initial data from localStorage
+// Load initial data from localStorage (this will purge unwanted orders first)
+
+// ensure purge helper is available before reading
+// (the purge logic defined later will run here via function hoisting)
 const initialData = loadFromLocalStorage();
+
+// sanitize anything loaded just in case
+if (initialData) {
+  const filterOrders = (arr: any[]) => {
+    if (!Array.isArray(arr)) return [];
+    return arr.filter(o => {
+      if (!o) return false;
+      const onum = (o.orderNumber || '').toString().trim();
+      const oid = (o.id || o.orderId || '').toString().trim();
+      return !ORDERS_TO_REMOVE.includes(onum) && !ORDERS_TO_REMOVE.includes(oid);
+    });
+  };
+  initialData.kitchenItems = initialData.kitchenItems.filter(item => {
+    const oid = (item.orderId || '').toString().trim();
+    return !ORDERS_TO_REMOVE.includes(oid);
+  });
+  initialData.customerOrders = filterOrders(initialData.customerOrders);
+  initialData.deliveryOrders = filterOrders(initialData.deliveryOrders);
+}
 
 // In-memory storage for kitchen items (loaded from localStorage)
 let kitchenItems: KitchenItem[] = initialData.kitchenItems;
@@ -228,6 +305,29 @@ const generateOrderNumber = () => {
 
 // Initialize with sample customer orders if empty
 const initializeCustomerOrders = () => {
+  // If there are any persisted orders, filter out the known unwanted ones
+  try {
+    if (Array.isArray(customerOrders) && customerOrders.length > 0) {
+      const before = customerOrders.length;
+      customerOrders = customerOrders.filter(o => {
+        if (!o) return false;
+        const onum = (o.orderNumber || '').toString().trim();
+        const oid = (o.id || '').toString().trim();
+        return !ORDERS_TO_REMOVE.includes(onum) && !ORDERS_TO_REMOVE.includes(oid);
+      });
+      if (customerOrders.length < before) {
+        try {
+          saveToLocalStorage(CUSTOMER_ORDERS_KEY, customerOrders);
+          console.log(`[inventory-store] Removed ${before - customerOrders.length} unwanted orders from localStorage`);
+        } catch (e) {
+          console.warn('[inventory-store] Failed to persist order cleanup to localStorage', e);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[inventory-store] Error during initializeCustomerOrders cleanup:', err);
+  }
+
   if (customerOrders.length === 0) {
     customerOrders = [];
   }

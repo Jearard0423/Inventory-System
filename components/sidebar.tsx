@@ -52,6 +52,10 @@ export function Sidebar() {
     if (saved) {
       setCollapsed(JSON.parse(saved))
     }
+    // allow external components to open mobile sidebar via custom event
+    const handleOpenMobile = () => setMobileOpen(true)
+    window.addEventListener('open-mobile-sidebar', handleOpenMobile)
+    return () => window.removeEventListener('open-mobile-sidebar', handleOpenMobile)
   }, [])
 
   // Save collapsed state to localStorage whenever it changes and handle body scroll
