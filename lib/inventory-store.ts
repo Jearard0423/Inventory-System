@@ -513,6 +513,10 @@ export const updateKitchenItems = (items: KitchenItem[]): void => {
   kitchenItems = [...items];
   // Persist kitchen items so UI stays in sync across views
   saveToLocalStorage(KITCHEN_ITEMS_KEY, kitchenItems);
+  // Notify kitchen page so toCookItems/cookedItems re-render immediately
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('kitchen-updated'));
+  }
 };
 
 export const getCustomerOrders = (): CustomerOrder[] => {

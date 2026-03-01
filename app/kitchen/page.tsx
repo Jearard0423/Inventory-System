@@ -230,6 +230,7 @@ export default function KitchenPage() {
       window.addEventListener("orders-updated", handleUpdate)
       window.addEventListener("customer-orders-updated", handleUpdate)
       window.addEventListener("inventory-updated", handleUpdate)
+      window.addEventListener("delivery-updated", handleUpdate)
       // watch for localStorage changes from other tabs (deletions, status updates, etc.)
       window.addEventListener("storage", handleUpdate)
     } else {
@@ -322,6 +323,7 @@ export default function KitchenPage() {
         window.removeEventListener("orders-updated", handleUpdate)
         window.removeEventListener("customer-orders-updated", handleUpdate)
         window.removeEventListener("inventory-updated", handleUpdate)
+        window.removeEventListener("delivery-updated", handleUpdate)
         window.removeEventListener("storage", handleUpdate)
       }
     }
