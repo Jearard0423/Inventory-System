@@ -17,10 +17,10 @@ import {
   type KitchenItem,
   type CustomerOrder,
 } from "@/lib/inventory-store"
-import { checkAndSendFoodPreparationReminder, resetNotificationState, checkAndSendAdvancedOrderNotifications, resetAdvancedNotificationState } from "@/lib/email-notifications"
+import { checkAndSendFoodPreparationReminder, resetNotificationState, checkAndSendAdvancedOrderNotifications, resetAdvancedNotificationState, getAdminEmails, parseLocalDate } from "@/lib/email-notifications"
 import { useAuth } from "@/components/AuthProvider"
 import { checkAndFireOrderReminders, resetOrderReminders } from "@/lib/order-reminders"
-import { syncOrderToRTDB, syncOrdersToRTDB, logOrderEvent } from "@/lib/rtdb-sync"
+import { syncOrderToRTDB, logOrderEvent } from "@/lib/rtdb-sync"
 
 // Helper function to convert 24-hour time to 12-hour format
 const formatTimeForDisplay = (time24: string): string => {
@@ -106,12 +106,13 @@ export default function KitchenPage() {
           console.warn('[Kitchen] Order missing createdAt:', order.id, order.customerName)
           return false
         }
-        const od = new Date(order.createdAt)
-        const today = new Date().toDateString()
-        const orderDate = od.toDateString()
-        const isToday = orderDate === today
+        const od = parseLocalDate(order.createdAt)
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        od.setHours(0, 0, 0, 0)
+        const isToday = od.getTime() === today.getTime()
         if (!isToday) {
-          console.log(`[Kitchen] Filtered out old order: ${order.customerName} - Date: ${orderDate} vs Today: ${today}`)
+          console.log(`[Kitchen] Filtered out old order: ${order.customerName} - Date: ${od.toDateString()} vs Today: ${today.toDateString()}`)
         }
         return isToday
       } catch (e) {
@@ -123,13 +124,15 @@ export default function KitchenPage() {
     // Helper to check if order has a final status (should not appear in kitchen)
   // 'complete' means cooked but not yet moved to delivery, so we still show it
   const isFinalStatus = (order: CustomerOrder) => {
-    const isFinal = order.status === 'delivered' || order.status === 'served'
-        console.log(`[Kitchen] Filtered out final status: ${order.customerName} - Status: ${order.status}`)
-      }
-      return isFinal
+    // treat any order that has reached an end state as final
+    const isFinal = order.status === 'delivered' || order.status === 'served' || order.status === 'complete' || order.status === 'cancelled'
+    if (isFinal) {
+      console.log(`[Kitchen] Filtered out final status: ${order.customerName} - Status: ${order.status}`)
     }
-    
-    // Filter orders: today only, not final status, matching meal type
+    return isFinal
+  }
+  
+  // Filter orders: today only, not final status, matching meal type
     const filtered = allOrders
       .filter(order => {
         // Only show today's incomplete orders
@@ -180,24 +183,60 @@ export default function KitchenPage() {
 
     // Update meal type every minute
     const mealTypeInterval = setInterval(updateMealType, 60000)
+    // also refresh order data periodically (ensures overnight/day‑change cleanup and delivered orders disappear)
+    const dataInterval = setInterval(loadData, 60000)
 
     const handleUpdate = () => {
       loadData()
     }
-    
-    window.addEventListener("kitchen-updated", handleUpdate)
-    window.addEventListener("orders-updated", handleUpdate)
-    window.addEventListener("customer-orders-updated", handleUpdate)
-    window.addEventListener("inventory-updated", handleUpdate)
+
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      window.addEventListener("kitchen-updated", handleUpdate)
+      window.addEventListener("orders-updated", handleUpdate)
+      window.addEventListener("customer-orders-updated", handleUpdate)
+      window.addEventListener("inventory-updated", handleUpdate)
+      // watch for localStorage changes from other tabs (deletions, status updates, etc.)
+      window.addEventListener("storage", handleUpdate)
+    } else {
+      console.warn('[kitchen-page] window.addEventListener is not available in this environment')
+    }
 
     // Set up email notification checker - checks every 5 minutes for orders that need reminders
+    // also run immediately on load so first reminder doesn't wait 5 minutes
+    (async () => {
+      const orders = getCustomerOrders()
+      try {
+        const recipients = await getAdminEmails()
+        for (const r of recipients) {
+          await checkAndSendFoodPreparationReminder(orders, r)
+          await checkAndSendAdvancedOrderNotifications(orders, r)
+        }
+      } catch (e) {
+        console.warn('[kitchen-page] error fetching admin emails for initial reminders', e)
+      }
+    })()
+
     const notificationCheckInterval = setInterval(async () => {
       const orders = getCustomerOrders()
-      const recipient = auth?.user?.email
-      console.log(`[kitchen-page] 🔄 Notification check: ${orders.length} orders, recipient: ${recipient ? '✓' : '✗'}`)
-      await checkAndSendFoodPreparationReminder(orders, recipient || undefined)
-      // Also check for advanced time-based notifications
-      await checkAndSendAdvancedOrderNotifications(orders, recipient || undefined)
+      try {
+        let recipients: string[] = []
+        if (auth && auth.user && auth.user.email) {
+          recipients = [auth.user.email]
+        } else {
+          recipients = await getAdminEmails()
+        }
+        if (recipients.length === 0) {
+          console.log('[kitchen-page] 🔄 No admin emails available for reminders')
+          return
+        }
+        console.log(`[kitchen-page] 🔄 Notification check: ${orders.length} orders, recipients: ${recipients.length}`)
+        for (const r of recipients) {
+          await checkAndSendFoodPreparationReminder(orders, r)
+          await checkAndSendAdvancedOrderNotifications(orders, r)
+        }
+      } catch (e) {
+        console.warn('[kitchen-page] error preparing recipient list for reminders', e)
+      }
     }, 5 * 60 * 1000) // Check every 5 minutes
 
     // In-app reminder check every minute (for 30-min, 10-min, overdue alerts)
@@ -227,13 +266,17 @@ export default function KitchenPage() {
 
     return () => {
       clearInterval(mealTypeInterval)
+      clearInterval(dataInterval)
       clearInterval(notificationCheckInterval)
       clearInterval(reminderCheckInterval)
       clearTimeout(midnightResetTimeout)
-      window.removeEventListener("kitchen-updated", handleUpdate)
-      window.removeEventListener("orders-updated", handleUpdate)
-      window.removeEventListener("customer-orders-updated", handleUpdate)
-      window.removeEventListener("inventory-updated", handleUpdate)
+      if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+        window.removeEventListener("kitchen-updated", handleUpdate)
+        window.removeEventListener("orders-updated", handleUpdate)
+        window.removeEventListener("customer-orders-updated", handleUpdate)
+        window.removeEventListener("inventory-updated", handleUpdate)
+        window.removeEventListener("storage", handleUpdate)
+      }
     }
   }, [filterMealType])
 
@@ -503,24 +546,22 @@ export default function KitchenPage() {
   const completeOrders = todayOrders.filter((order) => order.status === "complete").length
   const incompleteOrders = todayOrders.filter((order) => order.status === "incomplete").length
 
-  // Calculate meal type counts
-  const breakfastOrders = customerOrders.filter((order: CustomerOrder) => {
-    return isOrderForToday(order) && 
-           ((order.mealType && order.mealType.toLowerCase() === 'breakfast') ||
-            (order.originalMealType && order.originalMealType.toLowerCase() === 'breakfast'))
-  }).length
+  // Calculate meal type counts using already-filtered todayOrders
+  // todayOrders excludes delivered/served/complete/cancelled orders
+  const breakfastOrders = todayOrders.filter((order) =>
+    (order.mealType && order.mealType.toLowerCase() === 'breakfast') ||
+    (order.originalMealType && order.originalMealType.toLowerCase() === 'breakfast')
+  ).length
 
-  const lunchOrders = customerOrders.filter((order: CustomerOrder) => {
-    return isOrderForToday(order) && 
-           ((order.mealType && order.mealType.toLowerCase() === 'lunch') ||
-            (order.originalMealType && order.originalMealType.toLowerCase() === 'lunch'))
-  }).length
+  const lunchOrders = todayOrders.filter((order) =>
+    (order.mealType && order.mealType.toLowerCase() === 'lunch') ||
+    (order.originalMealType && order.originalMealType.toLowerCase() === 'lunch')
+  ).length
 
-  const dinnerOrders = customerOrders.filter((order: CustomerOrder) => {
-    return isOrderForToday(order) && 
-           ((order.mealType && order.mealType.toLowerCase() === 'dinner') ||
-            (order.originalMealType && order.originalMealType.toLowerCase() === 'dinner'))
-  }).length
+  const dinnerOrders = todayOrders.filter((order) =>
+    (order.mealType && order.mealType.toLowerCase() === 'dinner') ||
+    (order.originalMealType && order.originalMealType.toLowerCase() === 'dinner')
+  ).length
 
   const otherOrders = customerOrders.filter((order: CustomerOrder) => {
     return isOrderForToday(order) && 
@@ -817,18 +858,6 @@ export default function KitchenPage() {
               {filterMealType === "all" && (
                 <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-green-500"></span>
               )}
-            </Button>
-            {/* sync history button */}
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={async () => {
-                const orders = getCustomerOrders().filter(o => o.status === 'ready' || o.status === 'delivered' || o.status === 'complete');
-                const synced = await syncOrdersToRTDB(orders as any);
-                alert(`Synced ${synced} orders to RTDB`);
-              }}
-            >
-              Sync History
             </Button>
             <Button
               variant={filterMealType === "breakfast" ? "default" : "outline"}

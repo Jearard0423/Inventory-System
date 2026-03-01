@@ -1,6 +1,8 @@
 "use client"
 
 import { CustomerOrder } from './inventory-store'
+import { database } from './firebase'
+import { ref, get } from 'firebase/database'
 
 // Base64-encoded Yellow Roast Co. logo (public/yrc-logo.png)
 // Split into 8 segments to avoid TypeScript parser limits
@@ -99,7 +101,7 @@ const formatCookTime = (cookTime?: string): string => {
  * Parse a date string as LOCAL time, not UTC
  * Handles both "YYYY-MM-DD" format and ISO timestamps
  */
-const parseLocalDate = (dateString: string): Date => {
+export const parseLocalDate = (dateString: string): Date => {
   // If it's ISO format with T (has time component), parse normally
   if (dateString.includes('T')) {
     return new Date(dateString)
@@ -705,6 +707,47 @@ export const getNotificationState = (): EmailNotificationState => {
 export const setReminderInterval = (intervalMs: number): void => {
   REMINDER_INTERVAL = intervalMs
   console.log(`[email-notifications] Reminder interval set to ${intervalMs / 60000} minutes`)
+}
+
+/**
+ * Retrieve list of administrator email addresses.
+ *
+ * Reads from the Firebase `users` node and collects all email fields.
+ * Falls back to the `ADMIN_EMAIL` environment variable or a default if
+ * the database query fails or returns no entries.
+ */
+export const getAdminEmails = async (): Promise<string[]> => {
+  try {
+    const snapshot = await get(ref(database, 'users'))
+    const users = snapshot.val() || {}
+    const emails: string[] = []
+    Object.values(users).forEach((u: any) => {
+      if (u && typeof u.email === 'string' && u.email.trim()) {
+        emails.push(u.email.trim())
+      }
+    })
+
+    // always include the environment-provided admin email as a fallback
+    if (typeof process !== 'undefined' && process.env.ADMIN_EMAIL) {
+      emails.push(process.env.ADMIN_EMAIL)
+    }
+
+    // de-duplicate
+    let uniq = Array.from(new Set(emails))
+
+    if (uniq.length === 0) {
+      // still empty: nothing configured in Firebase and env var missing
+      const fallback = process.env.ADMIN_EMAIL || 'admin@yellowbell.com'
+      console.warn('[email-notifications] No admin emails found in database; using fallback', fallback)
+      uniq = [fallback]
+    }
+
+    return uniq
+  } catch (err) {
+    console.error('[email-notifications] Error fetching admin emails:', err)
+    const fallback = process.env.ADMIN_EMAIL || 'admin@yellowbell.com'
+    return [fallback]
+  }
 }
 
 /**

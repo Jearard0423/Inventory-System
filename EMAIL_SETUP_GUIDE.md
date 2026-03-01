@@ -314,6 +314,9 @@ ADMIN_EMAIL=admin@yellowbell  # ❌ Missing TLD
 - Email notifications check every 5 minutes for orders
 - Reminders only send every 30 minutes (configurable)
 - Reminder counter resets daily at midnight
+
+> ⚠️ **Offline notifications**
+> The in-browser reminders (`checkAndSendFoodPreparationReminder`, `checkAndSendAdvancedOrderNotifications`, `checkAndFireOrderReminders`) run only while a dashboard client is open. To ensure email alerts continue even when no one is logged in or the dashboard is closed, deploy the Cloud Function defined in `functions/index.js`. It reads orders from the Realtime Database (`inventories/orders`) and sends 1‑hour/30‑minute reminders to all admin/staff emails automatically every minute. See the functions folder for setup instructions.
 - If email fails, the app continues to work normally
 - Failed sends are logged but don't affect the app
 

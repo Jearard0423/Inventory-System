@@ -93,8 +93,12 @@ export default function PreparedOrdersInventoryPage() {
     calculateInventory()
     
     // Listen for updates
-    window.addEventListener("orders-updated", calculateInventory)
-    window.addEventListener("prepared-orders-updated", calculateInventory)
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      window.addEventListener("orders-updated", calculateInventory)
+      window.addEventListener("prepared-orders-updated", calculateInventory)
+    } else {
+      console.warn('[prepared-orders-inventory] window.addEventListener not available')
+    }
     
     return () => {
       window.removeEventListener("orders-updated", calculateInventory)

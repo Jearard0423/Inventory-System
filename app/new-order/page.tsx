@@ -16,7 +16,7 @@ import { Plus, Search, Trash2, X, Package, Calendar, Clock, User, MapPin, Credit
 import { useState, useEffect } from "react"
 import { cn } from "@/lib/utils"
 import { getInventory, getMenuItems, reduceStock, reduceUtensilsForMeal, reduceContainerForItem, saveOrder, checkAndWarnStockForItem, checkTotalCartStockRequirements, type InventoryItem, addMenuItem, deleteMenuItem, canOrderItem, canOrderCart, getItemStock, getOrderLimitMessage } from "@/lib/inventory-store"
-import { sendOrderPlacedNotification } from "@/lib/email-notifications"
+import { sendOrderPlacedNotification, getAdminEmails } from "@/lib/email-notifications"
 import { useToast } from '@/hooks/use-toast'
 import { useAuth } from "@/components/AuthProvider"
 import { getCustomerAnalytics, type CustomerData } from "@/lib/customers"
@@ -844,38 +844,43 @@ export default function NewOrderPage() {
     setGcashPhone("")
     setGcashReference("")
 
-    // send instant notification to logged-in user if the order is for today
-    const recipient = auth?.user?.email
-    if (recipient) {
-      // orderData.date is cookingDate
-      try {
-        const success = await sendOrderPlacedNotification({
-          id: savedOrder.id,
-          date: savedOrder.date,
-          customerName: savedOrder.customerName,
-          items: savedOrder.items.map((i: { name: string; quantity: number }) => ({ name: i.name, quantity: i.quantity })),
-          cookTime: cookTime || undefined,
-          createdAt: savedOrder.createdAt, // ensure grouping based on timestamp
-          status: savedOrder.status,
-          paymentStatus: savedOrder.paymentStatus
-        }, recipient)
-
-        if (!success) {
-          // show feedback so the admin knows the email did not go out
-          toast({
-            title: 'Notification failed',
-            description: 'Could not send email about the new order. Check your SMTP configuration.',
-            variant: 'destructive',
-          })
-        }
-      } catch (e) {
-        console.warn('failed to send new-order notification', e)
-        toast({
-          title: 'Notification error',
-          description: 'An unexpected error occurred while sending email.',
-          variant: 'destructive',
-        })
+    // send instant notification to the currently logged‑in user; if nobody is logged in,
+    // fall back to the admin/staff list.
+    try {
+      let recipients: string[] = []
+      if (auth && auth.user && auth.user.email) {
+        recipients = [auth.user.email]
+      } else {
+        recipients = await getAdminEmails()
       }
+
+      if (recipients.length === 0) {
+        console.warn('[new-order] no recipient email available for notification')
+      }
+
+      // fire notifications in parallel
+      await Promise.all(recipients.map(async (recipient) => {
+        try {
+          const success = await sendOrderPlacedNotification({
+            id: savedOrder.id,
+            date: savedOrder.date,
+            customerName: savedOrder.customerName,
+            items: savedOrder.items.map((i: { name: string; quantity: number }) => ({ name: i.name, quantity: i.quantity })),
+            cookTime: cookTime || undefined,
+            createdAt: savedOrder.createdAt, // ensure grouping based on timestamp
+            status: savedOrder.status,
+            paymentStatus: savedOrder.paymentStatus
+          }, recipient)
+
+          if (!success) {
+            console.warn('[new-order] notification to', recipient, 'failed')
+          }
+        } catch (e) {
+          console.warn('failed to send new-order notification to', recipient, e)
+        }
+      }))
+    } catch (e) {
+      console.warn('[new-order] error preparing recipient list', e)
     }
     setDeliveryPhone("")
     setDeliveryAddress("")

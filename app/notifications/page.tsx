@@ -32,8 +32,16 @@ export default function NotificationsPage() {
     }
 
     loadNotifications()
-    window.addEventListener("notifications-updated", loadNotifications)
-    return () => window.removeEventListener("notifications-updated", loadNotifications)
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      window.addEventListener("notifications-updated", loadNotifications)
+    } else {
+      console.warn('[notifications-page] window.addEventListener not available')
+    }
+    return () => {
+      if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+        window.removeEventListener("notifications-updated", loadNotifications)
+      }
+    }
   }, [])
 
   useEffect(() => {

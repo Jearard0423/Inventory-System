@@ -1462,6 +1462,15 @@ export const showStockNotification = (warnings: string[], isError: boolean = fal
     });
   });
 };
+export const increaseStock = (itemId: string, amount: number): boolean => {
+  const item = inventoryItems.find(i => i.id === itemId)
+  if (!item) return false
+  item.stock += amount
+  item.status = getStockStatus(item.stock)
+  saveToLocalStorage(INVENTORY_ITEMS_KEY, inventoryItems)
+  return true
+}
+
 export const restoreStockForOrder = (order: { items: { id: string; name: string; quantity: number }[] }): boolean => {
   let success = true;
   

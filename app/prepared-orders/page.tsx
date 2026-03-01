@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Plus, Minus, X, Check, Clock, Package, ArrowRight, Users, Trash2, BarChart3 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { cn } from "@/lib/utils"
-import { getMenuItems, reduceStock, reduceUtensilsForMeal, reduceContainerForItem, type InventoryItem, RAW_STOCK_DEDUCTION_MAP } from "@/lib/inventory-store"
+import { getMenuItems, reduceStock, reduceUtensilsForMeal, reduceContainerForItem, restoreStockForOrder, restoreUtensilsForQuantity, canOrderItem, type InventoryItem, RAW_STOCK_DEDUCTION_MAP } from "@/lib/inventory-store"
 import { generateOrderNumber, generatePreparedOrderNumber, getOrders } from "@/lib/orders"
 
 const categories = ["All", "Chicken", "Liempo", "Sisig", "Rice", "Meals"]
@@ -173,6 +173,15 @@ export default function PreparedOrdersPage() {
 
   const addToPrepared = (item: InventoryItem) => {
     const existingItem = preparedItems.find(i => i.id === item.id)
+    const requestedQty = existingItem ? existingItem.quantity + 1 : 1
+
+    // ensure we have enough inventory to prepare this many
+    if (!canOrderItem(item.id, requestedQty)) {
+      // optionally show a toast or console warning
+      console.warn('[Prepared] cannot prepare more of', item.name, '- insufficient stock')
+      return
+    }
+
     if (existingItem) {
       // If item exists, increment quantity
       updateQuantity(item.id, existingItem.quantity + 1)
@@ -195,6 +204,12 @@ export default function PreparedOrdersPage() {
   const updateQuantity = (id: string, quantity: number) => {
     if (quantity < 1) {
       removeFromPrepared(id)
+      return
+    }
+
+    // check against inventory before updating
+    if (!canOrderItem(id, quantity)) {
+      console.warn('[Prepared] cannot update quantity to', quantity, 'for', id, '- insufficient stock')
       return
     }
     
@@ -319,14 +334,20 @@ export default function PreparedOrdersPage() {
     const updatedOrders = preparedOrders.filter((order) => order.id !== orderToDelete)
     localStorage.setItem("yellowbell_prepared_orders", JSON.stringify(updatedOrders))
     
-    // Restore remaining quantities to inventory
+    // Restore remaining quantities to inventory (and auxiliary stocks)
     const orderToDeleteObj = preparedOrders.find(order => order.id === orderToDelete)
     if (orderToDeleteObj) {
       orderToDeleteObj.items.forEach(item => {
         if (item.remainingQuantity > 0) {
-          // Restore the remaining quantity to inventory
-          const currentStock = parseInt(localStorage.getItem(`inventory_${item.id}`) || '0')
-          localStorage.setItem(`inventory_${item.id}`, (currentStock + item.remainingQuantity).toString())
+          // restore main item (and any linked raw/ingredient stock)
+          restoreStockForOrder({ items: [{ id: item.id, name: item.name, quantity: item.remainingQuantity }] })
+
+          // restore containers and utensils if they were consumed
+          restoreContainerForItem(item.name, item.remainingQuantity)
+          // meals use 2 utensils per unit (same as order delete logic)
+          if (item.name.toLowerCase().includes("meal")) {
+            restoreUtensilsForQuantity(item.remainingQuantity * 2)
+          }
         }
       })
     }

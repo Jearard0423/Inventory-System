@@ -61,7 +61,7 @@ export default function DashboardPage() {
       if (order.date !== dateStr) return false
       if (order.status !== 'pending') return false
       const cust = customerOrders.find(o => o.id === order.id)
-      if (cust && cust.status === 'delivered') return false
+      if (cust && (cust.status === 'delivered' || cust.status === 'complete')) return false
       return true
     }).length
   }
@@ -93,7 +93,7 @@ export default function DashboardPage() {
     // ignore anything that isn't pending or has already been marked delivered
     if (order.status !== 'pending') return false
     const cust = getCustomerOrders().find(o => o.id === order.id)
-    if (cust && cust.status === 'delivered') return false
+    if (cust && (cust.status === 'delivered' || cust.status === 'complete')) return false
     return orderDate.toDateString() === today.toDateString()
   })
 
@@ -104,7 +104,7 @@ export default function DashboardPage() {
     orderDate.setHours(0, 0, 0, 0)
     if (order.status !== 'pending') return false
     const cust = getCustomerOrders().find(o => o.id === order.id)
-    if (cust && cust.status === 'delivered') return false
+    if (cust && (cust.status === 'delivered' || cust.status === 'complete')) return false
     return orderDate.toDateString() === tomorrow.toDateString()
   })
 
@@ -113,7 +113,7 @@ export default function DashboardPage() {
     orderDate.setHours(0, 0, 0, 0)
     if (order.status !== 'pending') return false
     const cust = getCustomerOrders().find(o => o.id === order.id)
-    if (cust && cust.status === 'delivered') return false
+    if (cust && (cust.status === 'delivered' || cust.status === 'complete')) return false
     return orderDate > today
   })
 
@@ -167,16 +167,22 @@ export default function DashboardPage() {
     }
 
     loadData()
-    window.addEventListener("inventory-updated", loadData)
-    window.addEventListener("orders-updated", loadData)
-    window.addEventListener("storage", loadData)
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      window.addEventListener("inventory-updated", loadData)
+      window.addEventListener("orders-updated", loadData)
+      window.addEventListener("storage", loadData)
+    } else {
+      console.warn('[dashboard-page] window.addEventListener not available')
+    }
 
     const interval = setInterval(loadData, 2000)
 
     return () => {
-      window.removeEventListener("inventory-updated", loadData)
-      window.removeEventListener("orders-updated", loadData)
-      window.removeEventListener("storage", loadData)
+      if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+        window.removeEventListener("inventory-updated", loadData)
+        window.removeEventListener("orders-updated", loadData)
+        window.removeEventListener("storage", loadData)
+      }
       clearInterval(interval)
     }
   }, [])

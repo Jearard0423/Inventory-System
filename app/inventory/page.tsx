@@ -78,9 +78,13 @@ export default function InventoryPage() {
     }
 
     // Listen for Firebase updates (highest priority) - set up immediately
-    window.addEventListener("firebase-inventory-updated", handleFirebaseInventoryUpdate)
-    // Listen for local updates (lower priority)
-    window.addEventListener("inventory-updated", handleInventoryUpdate)
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      window.addEventListener("firebase-inventory-updated", handleFirebaseInventoryUpdate)
+      // Listen for local updates (lower priority)
+      window.addEventListener("inventory-updated", handleInventoryUpdate)
+    } else {
+      console.warn('[inventory-page] window.addEventListener not available')
+    }
 
     // Wait longer for Firebase to initialize before using localStorage fallback
     // Firebase forceRefresh is async and can take 500ms-1s on slow connections
@@ -100,8 +104,10 @@ export default function InventoryPage() {
       isMounted = false
       clearTimeout(initialLoadTimer)
       clearTimeout(fallbackTimer)
-      window.removeEventListener("firebase-inventory-updated", handleFirebaseInventoryUpdate)
-      window.removeEventListener("inventory-updated", handleInventoryUpdate)
+      if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+        window.removeEventListener("firebase-inventory-updated", handleFirebaseInventoryUpdate)
+        window.removeEventListener("inventory-updated", handleInventoryUpdate)
+      }
     }
   }, [])
 

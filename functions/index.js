@@ -138,8 +138,18 @@ exports.scheduledOrderNotifier = functions.pubsub.schedule('every 1 minutes').on
       const orderDate = new Date(orderObj.date).getTime()
       const diffMs = orderDate - now
       const diffMin = Math.round(diffMs / 60000)
+      const diffDays = diffMs / (1000 * 60 * 60 * 24)
 
       const notifications = orderObj.notifications || {}
+
+      // Send 1-day reminder if delivery is tomorrow (within 1-2 days)
+      if (diffDays <= 1 && diffDays > 0 && !notifications['1d']) {
+        const html = buildOrderEmail(orderObj, process.env.BUSINESS_LOGO_URL || functions.config().app?.logo)
+        const subject = `📅 Order tomorrow — ${orderObj.customerName || ''}`
+        await Promise.all(recipientEmails.map(email => sendEmail(email, subject, html)))
+        await db.ref(`inventories/orders/${orderId}/notifications/1d`).set(true)
+        console.log(`Sent 1d reminder for order ${orderId}`)
+      }
 
       // Send 60-minute reminder if within window and not yet sent
       if (diffMin <= 60 && diffMin > 59 && !notifications['1h']) {
