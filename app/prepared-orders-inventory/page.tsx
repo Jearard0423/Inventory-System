@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
-import { Plus, Trash2, ShoppingCart, Loader2, TrendingUp, CheckCircle2, PackageCheck, ChefHat } from "lucide-react"
+import { Trash2, ShoppingCart, Loader2, TrendingUp, CheckCircle2, PackageCheck, ChefHat, Plus } from "lucide-react"
 import { getInventoryItems, reduceStock, addCustomerOrder, type InventoryItem, restoreStockForOrder } from "@/lib/inventory-store"
 import { cn } from "@/lib/utils"
 
@@ -33,13 +33,17 @@ export default function PreparedOrdersInventoryPage() {
   const [inventory, setInventory] = useState<InventoryItem[]>([])
   const [preparedOrders, setPreparedOrders] = useState<PreparedOrder[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [showAddItemModal, setShowAddItemModal] = useState(false)
+
+  // Cart state — items being staged before saving as a prepared order
+  const [cart, setCart] = useState<Record<string, number>>({})
+
+  // Convert modal state
+  const [showConvertModal, setShowConvertModal] = useState(false)
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
-  const [selectedItems, setSelectedItems] = useState<Record<string, number>>({})
+  const [selectedPreparedOrder, setSelectedPreparedOrder] = useState<PreparedOrder | null>(null)
   const [customerNameInput, setCustomerNameInput] = useState("")
   const [selectedMealType, setSelectedMealType] = useState<string>("lunch")
-  const [selectedPreparedOrder, setSelectedPreparedOrder] = useState<PreparedOrder | null>(null)
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'gcash'>('cash')
   const [cashAmount, setCashAmount] = useState("")
   const [gcashPhone, setGcashPhone] = useState("")
@@ -62,6 +66,15 @@ export default function PreparedOrdersInventoryPage() {
     window.addEventListener("inventory-updated", loadData)
     return () => window.removeEventListener("inventory-updated", loadData)
   }, [])
+
+  const foodItems = inventory.filter(i => !i.isUtensil && !i.isContainer && i.category !== 'raw-stock')
+
+  const cartTotal = Object.entries(cart).reduce((sum, [id, qty]) => {
+    const item = inventory.find(i => i.id === id)
+    return sum + (item ? item.price * qty : 0)
+  }, 0)
+
+  const cartItemCount = Object.values(cart).reduce((s, q) => s + q, 0)
 
   const consolidatedInventory = (() => {
     const result: Record<string, { prepared: number; sold: number; remaining: number; price: number }> = {}
@@ -88,18 +101,23 @@ export default function PreparedOrdersInventoryPage() {
   const activePrepared = preparedOrders.filter(o => o.status === 'prepared')
   const convertedOrders = preparedOrders.filter(o => o.status === 'converted')
 
-  const handleAddToPrepared = () => {
-    const itemsToAdd: Array<{ id: string; name: string; quantity: number; price: number }> = []
-    Object.entries(selectedItems).forEach(([itemId, quantity]) => {
-      if (quantity > 0) {
-        const item = inventory.find(i => i.id === itemId)
-        if (item) {
-          itemsToAdd.push({ id: itemId, name: item.name, quantity, price: item.price })
-        }
-      }
-    })
-    if (!itemsToAdd.length) { toast({ title: "No Items Selected", description: "Select at least one item", variant: "destructive" }); return }
-    if (!customerNameInput.trim()) { toast({ title: "Customer Name Required", description: "Please enter a customer name", variant: "destructive" }); return }
+  // Save cart as a prepared order (after entering customer name)
+  const handleSavePreparedOrder = () => {
+    if (!customerNameInput.trim()) {
+      toast({ title: "Customer Name Required", description: "Please enter the customer name", variant: "destructive" })
+      return
+    }
+    const itemsToAdd = Object.entries(cart)
+      .filter(([, qty]) => qty > 0)
+      .map(([id, qty]) => {
+        const item = inventory.find(i => i.id === id)!
+        return { id, name: item.name, quantity: qty, price: item.price }
+      })
+
+    if (!itemsToAdd.length) {
+      toast({ title: "Cart is empty", description: "Add at least one item", variant: "destructive" })
+      return
+    }
 
     const newOrder: PreparedOrder = {
       id: Math.random().toString(36).substr(2, 9),
@@ -110,18 +128,42 @@ export default function PreparedOrdersInventoryPage() {
       status: 'prepared',
       createdAt: new Date().toISOString()
     }
+
     itemsToAdd.forEach(i => reduceStock(i.id, i.quantity))
     const updated = [...preparedOrders, newOrder]
     setPreparedOrders(updated)
     localStorage.setItem('yellowbell_prepared_orders', JSON.stringify(updated))
-    toast({ title: "Prepared Order Created", description: `${newOrder.orderNumber} for ${customerNameInput}` })
-    setSelectedItems({}); setCustomerNameInput(""); setShowAddItemModal(false)
+    toast({ title: "Prepared Order Saved", description: `${newOrder.orderNumber} for ${customerNameInput}` })
+    setCart({})
+    setCustomerNameInput("")
+    setShowConvertModal(false)
+  }
+
+  const handleAdjustQuantity = (orderId: string, itemId: string, delta: number) => {
+    const updated = preparedOrders.map(order => {
+      if (order.id !== orderId) return order
+      return {
+        ...order,
+        items: order.items.map(item => {
+          if (item.id !== itemId) return item
+          const newQty = Math.max(0, Math.min(item.quantity, item.remainingQuantity + delta))
+          return { ...item, remainingQuantity: newQty }
+        })
+      }
+    })
+    setPreparedOrders(updated)
+    localStorage.setItem('yellowbell_prepared_orders', JSON.stringify(updated))
   }
 
   const handleConvertToOrder = () => {
     if (!selectedPreparedOrder) return
-    const items = selectedPreparedOrder.items.filter(i => i.remainingQuantity > 0).map(i => ({ id: i.id, name: i.name, quantity: i.remainingQuantity, price: i.price }))
-    if (!items.length) { toast({ title: "No Items to Convert", description: "All items have been sold", variant: "destructive" }); return }
+    const items = selectedPreparedOrder.items
+      .filter(i => i.remainingQuantity > 0)
+      .map(i => ({ id: i.id, name: i.name, quantity: i.remainingQuantity, price: i.price }))
+    if (!items.length) {
+      toast({ title: "No Items to Convert", description: "All items have been handed out", variant: "destructive" })
+      return
+    }
     try {
       const newOrder: any = {
         customerName: selectedPreparedOrder.customerName,
@@ -133,11 +175,14 @@ export default function PreparedOrdersInventoryPage() {
         ...(paymentMethod === 'gcash' ? { gcashPhone, gcashReference } : {})
       }
       addCustomerOrder(newOrder)
-      const updated = preparedOrders.map(o => o.id === selectedPreparedOrder.id ? { ...o, status: 'converted' as const } : o)
+      const updated = preparedOrders.map(o =>
+        o.id === selectedPreparedOrder.id ? { ...o, status: 'converted' as const } : o
+      )
       setPreparedOrders(updated)
       localStorage.setItem('yellowbell_prepared_orders', JSON.stringify(updated))
-      toast({ title: "Order Converted", description: "Converted to actual order successfully" })
-      setShowPaymentModal(false); setSelectedPreparedOrder(null)
+      toast({ title: "Order Converted", description: "Handed out successfully" })
+      setShowPaymentModal(false)
+      setSelectedPreparedOrder(null)
       setPaymentMethod('cash'); setCashAmount(""); setGcashPhone(""); setGcashReference("")
       loadData()
     } catch {
@@ -167,14 +212,9 @@ export default function PreparedOrdersInventoryPage() {
       <div className="space-y-6 pb-20">
 
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Prepared Orders</h1>
-            <p className="text-muted-foreground mt-1">Food that's ready and waiting to be served</p>
-          </div>
-          <Button onClick={() => { setShowAddItemModal(true); setSelectedItems({}); setCustomerNameInput("") }} className="gap-2">
-            <Plus className="w-4 h-4" /> New Prepared Order
-          </Button>
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Prepared Orders</h1>
+          <p className="text-muted-foreground mt-1">Tap + on any meal to stage it, then save with a customer name</p>
         </div>
 
         {/* Stats */}
@@ -214,7 +254,70 @@ export default function PreparedOrdersInventoryPage() {
           </Card>
         </div>
 
-        {/* Active Orders */}
+        {/* ── Meal Tiles with +/- ── */}
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <Plus className="w-5 h-5 text-primary" />
+            <h2 className="text-lg font-semibold">Add to Prepared</h2>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {foodItems.map(item => {
+              const qty = cart[item.id] || 0
+              return (
+                <Card key={item.id} className={cn("border-0 shadow-sm transition-all", qty > 0 ? "ring-2 ring-primary" : "")}>
+                  <CardContent className="p-4">
+                    <p className="font-semibold text-sm leading-tight mb-1">{item.name}</p>
+                    <p className="text-xs text-muted-foreground mb-3">₱{item.price.toLocaleString()}</p>
+                    <div className="flex items-center justify-between gap-2">
+                      <button
+                        onClick={() => setCart(p => ({ ...p, [item.id]: Math.max(0, (p[item.id] || 0) - 1) }))}
+                        disabled={qty === 0}
+                        className="w-8 h-8 rounded-full border-2 border-border flex items-center justify-center font-bold text-lg hover:bg-muted disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
+                      >−</button>
+                      <span className={cn("font-bold text-lg w-8 text-center", qty > 0 ? "text-primary" : "text-muted-foreground")}>
+                        {qty}
+                      </span>
+                      <button
+                        onClick={() => setCart(p => ({ ...p, [item.id]: (p[item.id] || 0) + 1 }))}
+                        className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold text-lg hover:bg-primary/90 transition-colors"
+                      >+</button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+
+          {/* Cart summary + Save button */}
+          {cartItemCount > 0 && (
+            <div className="mt-4 p-4 bg-primary/5 border border-primary/20 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div>
+                <p className="font-semibold text-sm">
+                  {cartItemCount} item{cartItemCount !== 1 ? 's' : ''} staged
+                </p>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {Object.entries(cart).filter(([, q]) => q > 0).map(([id, q]) => {
+                    const item = inventory.find(i => i.id === id)
+                    return item ? (
+                      <span key={id} className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                        {q}× {item.name}
+                      </span>
+                    ) : null
+                  })}
+                </div>
+                <p className="text-sm font-bold mt-1 text-primary">Total: ₱{cartTotal.toLocaleString()}</p>
+              </div>
+              <div className="flex gap-2 shrink-0">
+                <Button variant="outline" size="sm" onClick={() => setCart({})}>Clear</Button>
+                <Button size="sm" className="gap-2" onClick={() => setShowConvertModal(true)}>
+                  <ShoppingCart className="w-4 h-4" /> Save Order
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Active Prepared Orders ── */}
         <div>
           <div className="flex items-center gap-2 mb-3">
             <ChefHat className="w-5 h-5 text-primary" />
@@ -226,7 +329,7 @@ export default function PreparedOrdersInventoryPage() {
               <CardContent className="pt-8 pb-8 flex flex-col items-center text-center gap-2">
                 <PackageCheck className="w-12 h-12 text-muted-foreground/30" />
                 <p className="font-medium text-muted-foreground">No prepared orders yet</p>
-                <p className="text-sm text-muted-foreground/60">Create one to get started</p>
+                <p className="text-sm text-muted-foreground/60">Use the tiles above to stage items</p>
               </CardContent>
             </Card>
           ) : (
@@ -242,11 +345,23 @@ export default function PreparedOrdersInventoryPage() {
                       <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 text-xs">Ready</Badge>
                     </div>
                     {order.mealType && <Badge variant="secondary" className="text-xs mb-3 capitalize">{order.mealType}</Badge>}
-                    <div className="bg-muted/50 rounded-lg p-3 space-y-1.5 mb-4">
+                    <div className="bg-muted/50 rounded-lg p-3 space-y-2 mb-4">
                       {order.items.map((item, idx) => (
-                        <div key={idx} className="flex justify-between text-sm">
-                          <span className="text-foreground/80">{item.name}</span>
-                          <span className="font-semibold">{item.remainingQuantity}/{item.quantity}</span>
+                        <div key={idx} className="flex items-center justify-between text-sm gap-2">
+                          <span className="text-foreground/80 flex-1 truncate">{item.name}</span>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              onClick={() => handleAdjustQuantity(order.id, item.id, -1)}
+                              disabled={item.remainingQuantity === 0}
+                              className="w-6 h-6 rounded-full border border-border flex items-center justify-center font-bold hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+                            >−</button>
+                            <span className="font-semibold w-10 text-center text-xs">{item.remainingQuantity}/{item.quantity}</span>
+                            <button
+                              onClick={() => handleAdjustQuantity(order.id, item.id, 1)}
+                              disabled={item.remainingQuantity === item.quantity}
+                              className="w-6 h-6 rounded-full border border-border flex items-center justify-center font-bold hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+                            >+</button>
+                          </div>
                         </div>
                       ))}
                       <div className="pt-1.5 border-t border-border/50 flex justify-between text-sm font-bold">
@@ -256,7 +371,7 @@ export default function PreparedOrdersInventoryPage() {
                     </div>
                     <div className="space-y-2">
                       <Button className="w-full h-9 text-sm gap-2" onClick={() => { setSelectedPreparedOrder(order); setShowPaymentModal(true) }}>
-                        <ShoppingCart className="w-3.5 h-3.5" /> Convert to Order
+                        <ShoppingCart className="w-3.5 h-3.5" /> Hand Out
                       </Button>
                       <Button variant="outline" className="w-full h-9 text-sm text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/30"
                         onClick={() => { setSelectedPreparedOrder(order); setShowDeleteConfirm(true) }}>
@@ -279,7 +394,7 @@ export default function PreparedOrdersInventoryPage() {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {inventory.filter(i => !i.isUtensil && !i.isContainer && i.category !== 'raw-stock').map(item => {
+              {foodItems.map(item => {
                 const c = consolidatedInventory[item.id]
                 if (!c) return null
                 const pct = c.prepared > 0 ? (c.sold / c.prepared) * 100 : 0
@@ -318,7 +433,7 @@ export default function PreparedOrdersInventoryPage() {
                   <CardContent className="pt-5 pb-5">
                     <div className="flex items-start justify-between mb-3">
                       <div><p className="font-bold">{order.customerName}</p><p className="text-xs text-muted-foreground">{order.orderNumber}</p></div>
-                      <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 text-xs">Converted</Badge>
+                      <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 text-xs">Done</Badge>
                     </div>
                     <div className="bg-muted/40 rounded-lg p-3 space-y-1">
                       {order.items.map((item, idx) => (
@@ -335,17 +450,23 @@ export default function PreparedOrdersInventoryPage() {
           </div>
         )}
 
-        {/* Add Modal */}
-        <Dialog open={showAddItemModal} onOpenChange={setShowAddItemModal}>
-          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        {/* ── Save Order Modal (customer name + meal type) ── */}
+        <Dialog open={showConvertModal} onOpenChange={setShowConvertModal}>
+          <DialogContent className="max-w-sm">
             <DialogHeader>
-              <DialogTitle>Create Prepared Order</DialogTitle>
-              <DialogDescription>Select items and enter customer info</DialogDescription>
+              <DialogTitle>Save Prepared Order</DialogTitle>
+              <DialogDescription>Enter customer details to save this prepared order</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div>
                 <label className="text-sm font-medium mb-1 block">Customer Name *</label>
-                <Input placeholder="Enter customer name" value={customerNameInput} onChange={e => setCustomerNameInput(e.target.value)} />
+                <Input
+                  placeholder="Enter customer name"
+                  value={customerNameInput}
+                  onChange={e => setCustomerNameInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleSavePreparedOrder()}
+                  autoFocus
+                />
               </div>
               <div>
                 <label className="text-sm font-medium mb-2 block">Meal Type</label>
@@ -359,55 +480,36 @@ export default function PreparedOrdersInventoryPage() {
                   ))}
                 </div>
               </div>
-              <div>
-                <label className="text-sm font-medium mb-2 block">Select Items</label>
-                <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {inventory.filter(i => !i.isUtensil && !i.isContainer && i.category !== 'raw-stock').map(item => (
-                    <div key={item.id} className="flex items-center justify-between p-3 bg-muted/40 rounded-lg">
-                      <div>
-                        <p className="text-sm font-medium">{item.name}</p>
-                        <p className="text-xs text-muted-foreground">₱{item.price} · Stock: {item.stock}</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => setSelectedItems(p => ({ ...p, [item.id]: Math.max(0, (p[item.id] || 0) - 1) }))}
-                          className="w-7 h-7 rounded-full border flex items-center justify-center hover:bg-muted font-bold text-sm">−</button>
-                        <span className="w-6 text-center text-sm font-semibold">{selectedItems[item.id] || 0}</span>
-                        <button onClick={() => setSelectedItems(p => ({ ...p, [item.id]: (p[item.id] || 0) + 1 }))}
-                          className="w-7 h-7 rounded-full border flex items-center justify-center hover:bg-muted font-bold text-sm">+</button>
-                      </div>
+              {/* Order summary */}
+              <div className="bg-muted/50 rounded-lg p-3 space-y-1">
+                {Object.entries(cart).filter(([, q]) => q > 0).map(([id, q]) => {
+                  const item = inventory.find(i => i.id === id)
+                  return item ? (
+                    <div key={id} className="flex justify-between text-sm">
+                      <span>{item.name}</span>
+                      <span className="font-medium">{q}× · ₱{(item.price * q).toLocaleString()}</span>
                     </div>
-                  ))}
+                  ) : null
+                })}
+                <div className="border-t border-border pt-1.5 flex justify-between text-sm font-bold">
+                  <span>Total</span>
+                  <span className="text-primary">₱{cartTotal.toLocaleString()}</span>
                 </div>
               </div>
-              {Object.values(selectedItems).some(q => q > 0) && (
-                <div className="bg-muted/50 rounded-lg p-3">
-                  <p className="text-sm font-semibold mb-1">Selected:</p>
-                  {Object.entries(selectedItems).filter(([, q]) => q > 0).map(([id, q]) => {
-                    const item = inventory.find(i => i.id === id)
-                    return item ? <div key={id} className="flex justify-between text-sm"><span>{item.name}</span><span className="font-medium">{q}x · ₱{(item.price * q).toLocaleString()}</span></div> : null
-                  })}
-                  <div className="border-t border-border mt-2 pt-2 flex justify-between text-sm font-bold">
-                    <span>Total</span>
-                    <span className="text-primary">₱{Object.entries(selectedItems).filter(([, q]) => q > 0).reduce((s, [id, q]) => {
-                      const item = inventory.find(i => i.id === id); return s + (item ? item.price * q : 0)
-                    }, 0).toLocaleString()}</span>
-                  </div>
-                </div>
-              )}
             </div>
-            <DialogFooter className="mt-4">
-              <Button variant="outline" onClick={() => setShowAddItemModal(false)}>Cancel</Button>
-              <Button onClick={handleAddToPrepared}>Create Prepared Order</Button>
+            <DialogFooter className="mt-2">
+              <Button variant="outline" onClick={() => setShowConvertModal(false)}>Cancel</Button>
+              <Button onClick={handleSavePreparedOrder}>Save Order</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
 
-        {/* Payment Modal */}
+        {/* Hand Out / Payment Modal */}
         <Dialog open={showPaymentModal} onOpenChange={setShowPaymentModal}>
           <DialogContent className="max-w-sm">
             <DialogHeader>
-              <DialogTitle>Convert to Order</DialogTitle>
-              <DialogDescription>Payment for {selectedPreparedOrder?.customerName}</DialogDescription>
+              <DialogTitle>Hand Out Order</DialogTitle>
+              <DialogDescription>Payment method for {selectedPreparedOrder?.customerName}</DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
@@ -435,7 +537,7 @@ export default function PreparedOrdersInventoryPage() {
             </div>
             <DialogFooter className="mt-4">
               <Button variant="outline" onClick={() => setShowPaymentModal(false)}>Cancel</Button>
-              <Button onClick={handleConvertToOrder}>Confirm & Convert</Button>
+              <Button onClick={handleConvertToOrder}>Confirm Hand Out</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -446,7 +548,7 @@ export default function PreparedOrdersInventoryPage() {
             <DialogHeader>
               <DialogTitle>Delete Prepared Order?</DialogTitle>
               <DialogDescription>
-                This will delete <strong>{selectedPreparedOrder?.orderNumber}</strong> for <strong>{selectedPreparedOrder?.customerName}</strong> and restore all stock. This cannot be undone.
+                This will delete <strong>{selectedPreparedOrder?.orderNumber}</strong> for <strong>{selectedPreparedOrder?.customerName}</strong> and restore all stock.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter className="mt-4">

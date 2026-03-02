@@ -139,9 +139,9 @@ export default function DeliveryPage() {
       }
     }
     
-    if (filterStatus === "all") return order.status !== 'delivered'
+    if (filterStatus === "all") return order.status === "complete" || order.status === "ready"
     if (filterStatus === "delivered") return order.status === "delivered"
-    if (filterStatus === "complete") return order.status === "complete"
+    if (filterStatus === "complete") return order.status === "complete" || order.status === "ready"
     if (filterStatus === "incomplete") return order.status === "incomplete"
     return true
   }).filter((order) => {
