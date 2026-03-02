@@ -236,6 +236,13 @@ export default function NewOrderPage() {
   })
 
   const addToOrder = (item: InventoryItem) => {
+    // Customer name must be entered first
+    if (!customerName.trim()) {
+      setErrors(prev => ({ ...prev, customerName: "Please enter the customer name first" }))
+      const field = document.getElementById('customer-name')
+      if (field) { field.scrollIntoView({ behavior: 'smooth', block: 'center' }); field.focus() }
+      return
+    }
     // Check if item is out of stock
     if (item.stock <= 0) {
       setErrors(prev => ({ ...prev, orderItems: `${item.name} is out of stock!` }))
@@ -360,8 +367,8 @@ export default function NewOrderPage() {
       newErrors.cookingDate = "Cooking date is required"
     }
 
-    if (selectedMealType === "Other" && !cookTime) {
-      newErrors.cookTime = "Cook time is required for Other meal type"
+    if (!cookTime) {
+      newErrors.cookTime = "Cook time is required"
     }
 
     if (orderItems.length === 0) {
@@ -1882,6 +1889,8 @@ export default function NewOrderPage() {
                                 const remainingStock = item.stock - quantityInOrder
                                 const isOutOfStock = remainingStock === 0
                                 const willBeUnavailable = !canOrderItem(item.id, quantityInOrder + 1)
+                                // Only warn about raw materials when the item's own stock is already 0
+                                const showRawWarning = willBeUnavailable && isOutOfStock
                                 const isLowStock = remainingStock > 0 && remainingStock <= 5
                                 return (
                                   <div>
@@ -1893,7 +1902,7 @@ export default function NewOrderPage() {
                                       {isOutOfStock ? <AlertTriangle className="h-4 w-4 text-red-600" /> : isLowStock ? <AlertCircle className="h-4 w-4 text-orange-400" /> : <Package className="h-4 w-4" />}
                                       Stock: {remainingStock}
                                     </p>
-                                    {willBeUnavailable && !isOutOfStock && (
+                                    {showRawWarning && (
                                       <p className="text-xs text-red-600 mt-0.5">
                                         (insufficient raw materials)
                                       </p>

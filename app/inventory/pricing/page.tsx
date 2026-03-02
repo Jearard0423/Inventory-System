@@ -245,12 +245,12 @@ export default function PricingCalculatorPage() {
   return (
     <POSLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold">Pricing Calculator</h1>
             <p className="text-sm text-muted-foreground">Build product costs from ingredient lists and calculate suggested prices.</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
               <Button onClick={addIngredient} className="bg-primary hover:bg-primary/90">
                 <Plus className="h-4 w-4 mr-2" /> Add Ingredient
               </Button>
@@ -274,15 +274,15 @@ export default function PricingCalculatorPage() {
                 <div className="text-sm text-muted-foreground mb-2">Ingredients Used — enter the quantity used per product. Unit selects: kg / g / pcs. Purchase unit is the market/package unit and amount (eg. 1 kg or 1000 g).</div>
                 <div className="overflow-auto border rounded">
                   <table className="w-full table-fixed border-collapse">
-                    <thead className="bg-surface-2">
-                      <tr>
-                        <th className="px-3 py-2 text-left">Ingredient</th>
-                        <th className="px-3 py-2 text-left">Quantity (used)</th>
-                        <th className="px-3 py-2 text-left">Unit</th>
-                        <th className="px-3 py-2 text-left">Purchase Unit Amount</th>
-                        <th className="px-3 py-2 text-left">Purchase Unit</th>
-                        <th className="px-3 py-2 text-left">Cost per Purchase Unit (₱)</th>
-                        <th className="px-3 py-2 text-left">Cost Contribution</th>
+                    <thead className="bg-muted/50">
+                      <tr className="text-xs text-muted-foreground">
+                        <th className="px-3 py-2 text-left font-medium">Ingredient</th>
+                        <th className="px-3 py-2 text-left font-medium">Qty Used</th>
+                        <th className="px-3 py-2 text-left font-medium">Unit</th>
+                        <th className="px-3 py-2 text-left font-medium">Purchase Amt</th>
+                        <th className="px-3 py-2 text-left font-medium">Purchase Unit</th>
+                        <th className="px-3 py-2 text-left font-medium">Cost / Purchase (₱)</th>
+                        <th className="px-3 py-2 text-left font-medium">Cost</th>
                         <th className="px-3 py-2"></th>
                       </tr>
                     </thead>

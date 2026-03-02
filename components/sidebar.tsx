@@ -124,7 +124,7 @@ export function Sidebar() {
         <Button
           variant="ghost"
           size="icon"
-          className="fixed top-3 left-3 z-50 lg:hidden bg-sidebar/95 backdrop-blur-sm text-sidebar-foreground h-12 w-12 rounded-lg"
+          className="fixed top-3 right-3 z-50 lg:hidden bg-sidebar text-sidebar-foreground h-10 w-10 rounded-lg shadow-md"
           onClick={() => setMobileOpen(true)}
         >
           <Menu className="h-6 w-6" />

@@ -53,7 +53,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
   if (loading) return null
 
   // if not authenticated, show login UI
-  if (!user) return <LoginClient onSignIn={signIn} onSignUp={signUp} />
+  if (!user) return <LoginClient onSignIn={signIn} />
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

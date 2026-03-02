@@ -42,15 +42,17 @@ export default function OrderHistoryPage() {
   }
 
   const loadOrders = () => {
-    const liveOrders = getCustomerOrders().filter(o => {
-      const s = (o.status || '').toLowerCase()
-      return s === 'delivered' || s === 'complete' || s === 'cancelled' || s === 'canceled'
-    })
+    const finalStatuses = new Set(['delivered', 'cancelled', 'canceled'])
+
+    const liveOrders = getCustomerOrders().filter(o =>
+      finalStatuses.has((o.status || '').toLowerCase())
+    )
     
-    // Get permanent order history
-    const archivedOrders = getOrderHistory()
+    const archivedOrders = getOrderHistory().filter(o =>
+      finalStatuses.has((o.status || '').toLowerCase())
+    )
     
-    // Merge archive with live orders (live takes precedence on duplicate IDs)
+    // Merge — live takes precedence on duplicate IDs
     const liveIds = new Set(liveOrders.map(o => o.id))
     const mergedOrders = [
       ...liveOrders,

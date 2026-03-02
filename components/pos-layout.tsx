@@ -49,7 +49,7 @@ export function POSLayout({ children }: { children: ReactNode }) {
         <button
           aria-label="Open menu"
           onClick={() => window.dispatchEvent(new Event('open-mobile-sidebar'))}
-          className="fixed top-3 left-3 z-50 lg:hidden bg-sidebar/95 backdrop-blur-sm text-sidebar-foreground h-10 w-10 rounded-lg flex items-center justify-center"
+          className="fixed top-3 right-3 z-50 lg:hidden bg-sidebar text-sidebar-foreground h-10 w-10 rounded-lg flex items-center justify-center shadow-md"
         >
           <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12h18M3 6h18M3 18h18" /></svg>
         </button>

@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
 import { Plus, Trash2, ShoppingCart, Loader2, TrendingUp, CheckCircle2, PackageCheck, ChefHat } from "lucide-react"
-import { getInventoryItems, reduceStock, addCustomerOrder, canOrderItem, getOrderLimitMessage, type InventoryItem, type OrderItem, restoreStockForOrder } from "@/lib/inventory-store"
+import { getInventoryItems, reduceStock, addCustomerOrder, type InventoryItem, restoreStockForOrder } from "@/lib/inventory-store"
 import { cn } from "@/lib/utils"
 
 interface PreparedOrder {
@@ -89,15 +89,11 @@ export default function PreparedOrdersInventoryPage() {
   const convertedOrders = preparedOrders.filter(o => o.status === 'converted')
 
   const handleAddToPrepared = () => {
-    const itemsToAdd: OrderItem[] = []
+    const itemsToAdd: Array<{ id: string; name: string; quantity: number; price: number }> = []
     Object.entries(selectedItems).forEach(([itemId, quantity]) => {
       if (quantity > 0) {
         const item = inventory.find(i => i.id === itemId)
         if (item) {
-          if (!canOrderItem(itemId, quantity)) {
-            toast({ title: "Cannot Add Item", description: getOrderLimitMessage(itemId, quantity) || "Insufficient stock", variant: "destructive" })
-            return
-          }
           itemsToAdd.push({ id: itemId, name: item.name, quantity, price: item.price })
         }
       }
@@ -366,7 +362,7 @@ export default function PreparedOrdersInventoryPage() {
               <div>
                 <label className="text-sm font-medium mb-2 block">Select Items</label>
                 <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {inventory.filter(i => !i.isUtensil && !i.isContainer && i.category !== 'raw-stock' && i.stock > 0).map(item => (
+                  {inventory.filter(i => !i.isUtensil && !i.isContainer && i.category !== 'raw-stock').map(item => (
                     <div key={item.id} className="flex items-center justify-between p-3 bg-muted/40 rounded-lg">
                       <div>
                         <p className="text-sm font-medium">{item.name}</p>
@@ -376,7 +372,7 @@ export default function PreparedOrdersInventoryPage() {
                         <button onClick={() => setSelectedItems(p => ({ ...p, [item.id]: Math.max(0, (p[item.id] || 0) - 1) }))}
                           className="w-7 h-7 rounded-full border flex items-center justify-center hover:bg-muted font-bold text-sm">−</button>
                         <span className="w-6 text-center text-sm font-semibold">{selectedItems[item.id] || 0}</span>
-                        <button onClick={() => setSelectedItems(p => ({ ...p, [item.id]: Math.min(item.stock, (p[item.id] || 0) + 1) }))}
+                        <button onClick={() => setSelectedItems(p => ({ ...p, [item.id]: (p[item.id] || 0) + 1 }))}
                           className="w-7 h-7 rounded-full border flex items-center justify-center hover:bg-muted font-bold text-sm">+</button>
                       </div>
                     </div>

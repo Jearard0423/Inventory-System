@@ -494,6 +494,15 @@ export default function KitchenPage() {
     
     if (itemsToCook.length === 0 || quantity <= 0) return
     
+    // Sort by earliest delivery time so the most urgent order gets marked first
+    itemsToCook.sort((a, b) => {
+      const orderA = todayOrders.find(o => o.id === a.orderId)
+      const orderB = todayOrders.find(o => o.id === b.orderId)
+      const timeA = orderA?.cookTime || '99:99'
+      const timeB = orderB?.cookTime || '99:99'
+      return timeA.localeCompare(timeB)
+    })
+    
     // Mark the specified number of items as cooked
     const itemsToMark = itemsToCook.slice(0, Math.min(quantity, itemsToCook.length))
     
@@ -912,27 +921,27 @@ export default function KitchenPage() {
   return (
     <POSLayout>
       <div className="space-y-6">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
+        <div className="flex flex-col justify-between items-start gap-4 mb-4">
           <h1 className="text-2xl md:text-3xl font-bold">Kitchen View</h1>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 w-full md:w-auto">
-            <div className="text-center bg-orange-100 dark:bg-orange-900/50 px-3 py-2 rounded-lg border border-orange-200 dark:border-orange-800">
+          <div className="flex flex-wrap gap-3 w-full">
+            <div className="text-center bg-orange-100 dark:bg-orange-900/50 px-3 py-2 rounded-lg border border-orange-200 dark:border-orange-800 flex-1 min-w-[70px]">
               <p className="text-xs font-semibold text-orange-700 dark:text-orange-200">Breakfast</p>
               <p className="text-base md:text-lg font-bold text-orange-800 dark:text-orange-100">{breakfastOrders}</p>
             </div>
-            <div className="text-center bg-blue-100 dark:bg-blue-900/50 px-3 py-2 rounded-lg border border-blue-200 dark:border-blue-800">
+            <div className="text-center bg-blue-100 dark:bg-blue-900/50 px-3 py-2 rounded-lg border border-blue-200 dark:border-blue-800 flex-1 min-w-[70px]">
               <p className="text-xs font-semibold text-blue-700 dark:text-blue-200">Lunch</p>
               <p className="text-base md:text-lg font-bold text-blue-800 dark:text-blue-100">{lunchOrders}</p>
             </div>
-            <div className="text-center bg-purple-100 dark:bg-purple-900/50 px-3 py-2 rounded-lg border border-purple-200 dark:border-purple-800">
+            <div className="text-center bg-purple-100 dark:bg-purple-900/50 px-3 py-2 rounded-lg border border-purple-200 dark:border-purple-800 flex-1 min-w-[70px]">
               <p className="text-xs font-semibold text-purple-700 dark:text-purple-200">Dinner</p>
               <p className="text-base md:text-lg font-bold text-purple-800 dark:text-purple-100">{dinnerOrders}</p>
             </div>
-            <div className="text-center bg-teal-100 dark:bg-teal-900/50 px-3 py-2 rounded-lg border border-teal-200 dark:border-teal-800">
+            <div className="text-center bg-teal-100 dark:bg-teal-900/50 px-3 py-2 rounded-lg border border-teal-200 dark:border-teal-800 flex-1 min-w-[70px]">
               <p className="text-xs font-semibold text-teal-700 dark:text-teal-200">Other</p>
               <p className="text-base md:text-lg font-bold text-teal-800 dark:text-teal-100">{otherOrders}</p>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2 w-full md:w-auto">
+          <div className="flex flex-wrap gap-2 w-full">
             <Button
               variant={filterMealType === "all" ? "default" : "outline"}
               size="sm"

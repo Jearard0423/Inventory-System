@@ -45,7 +45,8 @@ export default function InventoryPage() {
 
   useEffect(() => {
     let isMounted = true
-    
+    let lastLocalSave = 0 // timestamp of last local save
+
     // Load initial data from localStorage (fallback)
     const loadInitialData = () => {
       if (isMounted) {
@@ -59,6 +60,12 @@ export default function InventoryPage() {
     // Firebase data handler - fires when Firebase RTDB updates
     const handleFirebaseInventoryUpdate = () => {
       if (isMounted) {
+        // If a local save happened within the last 5 seconds, ignore Firebase
+        // This prevents Firebase from overwriting fresh local edits
+        if (Date.now() - lastLocalSave < 5000) {
+          console.log('[inventory-page] Ignoring Firebase update - recent local save')
+          return
+        }
         console.log("Firebase inventory update received - loading fresh data")
         const freshData = getInventory()
         console.log('[inventory-page] Firebase update apply:', freshData.length, 'items')
@@ -71,6 +78,7 @@ export default function InventoryPage() {
     // Local inventory update handler
     const handleInventoryUpdate = () => {
       if (isMounted) {
+        lastLocalSave = Date.now()
         const data = getInventory()
         console.log('[inventory-page] Local update apply:', data.length, 'items')
         setMenuItems(data)
@@ -141,6 +149,27 @@ Limit details: ${breakdown}` : '')
     let addedItem: InventoryItem | null = null
 
     if (editingItem) {
+      const oldStock = editingItem.stock
+      const newStock = formData.stock
+      const stockDelta = newStock - oldStock // positive = adding stock, negative = removing
+
+      // If this item has linked raw stocks and we're ADDING stock,
+      // deduct the raw stock proportionally (making food from raw materials)
+      if (stockDelta > 0 && linkedItems.length > 0) {
+        const currentItems = [...menuItems]
+        linkedItems.forEach(link => {
+          const rawItem = currentItems.find(i => i.id === link.itemId)
+          if (rawItem) {
+            const rawToDeduct = stockDelta * link.ratio
+            rawItem.stock = Math.max(0, rawItem.stock - rawToDeduct)
+            rawItem.status = getStockStatus(rawItem.stock)
+          }
+        })
+        // Save raw stock changes
+        updateInventory(currentItems)
+        setMenuItems(currentItems)
+      }
+
       updatedItems = menuItems.map((item) =>
         item.id === editingItem.id
           ? {
