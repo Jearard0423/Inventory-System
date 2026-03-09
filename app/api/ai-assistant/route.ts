@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 
 /**
  * POST /api/ai-assistant
- * Uses Google Gemini API (free tier — 1,500 requests/day)
- * Get your free key at: aistudio.google.com → Get API Key
- * Add to .env.local: GEMINI_API_KEY=your-key-here
+ * Uses Groq API (free tier — fast inference)
+ * Get your free key at: console.groq.com → API Keys
+ * Add to .env.local: GROQ_API_KEY=your-key-here
  */
 
 const corsHeaders = {
@@ -20,11 +20,11 @@ export async function OPTIONS() {
 
 export async function POST(req: NextRequest) {
   try {
-    const apiKey = process.env.GEMINI_API_KEY
+    const apiKey = process.env.GROQ_API_KEY
 
     if (!apiKey) {
       return NextResponse.json(
-        { error: 'GEMINI_API_KEY is not set. Go to aistudio.google.com, get a free API key, then add GEMINI_API_KEY=your-key to your .env.local file and restart the server.' },
+        { error: 'GROQ_API_KEY is not set. Go to console.groq.com, create a free API key, then add GROQ_API_KEY=your-key to your .env.local file and restart the server.' },
         { status: 200, headers: corsHeaders }
       )
     }
@@ -52,41 +52,33 @@ If data is empty or missing, say so clearly and offer general guidance.
 ${context}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
 
-    // Build Gemini conversation history
-    // Gemini uses "user" and "model" roles (not "assistant")
-    const geminiHistory = messages.slice(0, -1).map((m: { role: string; content: string }) => ({
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: m.content }],
-    }))
+    // Groq uses the OpenAI-compatible chat completions format
+    const groqMessages = [
+      { role: 'system', content: systemPrompt },
+      ...messages.map((m: { role: string; content: string }) => ({
+        role: m.role === 'assistant' ? 'assistant' : 'user',
+        content: m.content,
+      })),
+    ]
 
-    // Last message is the current user prompt
-    const lastMessage = messages[messages.length - 1]
-    const userText = lastMessage?.content || ''
-
-    const geminiBody = {
-      system_instruction: { parts: [{ text: systemPrompt }] },
-      contents: [
-        ...geminiHistory,
-        { role: 'user', parts: [{ text: userText }] },
-      ],
-      generationConfig: {
-        maxOutputTokens: 1024,
-        temperature: 0.7,
-      },
-    }
-
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`
-
-    const response = await fetch(url, {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(geminiBody),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages: groqMessages,
+        max_tokens: 1024,
+        temperature: 0.7,
+      }),
     })
 
     if (!response.ok) {
       const errText = await response.text()
-      console.error('[ai-assistant] Gemini error:', response.status, errText)
-      let friendlyError = `Gemini API returned ${response.status}.`
+      console.error('[ai-assistant] Groq error:', response.status, errText)
+      let friendlyError = `Groq API returned ${response.status}.`
       try {
         const parsed = JSON.parse(errText)
         if (parsed?.error?.message) friendlyError = parsed.error.message
@@ -95,7 +87,7 @@ ${context}
     }
 
     const data = await response.json()
-    const reply = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '(no response)'
+    const reply = data.choices?.[0]?.message?.content ?? '(no response)'
     return NextResponse.json({ reply }, { headers: corsHeaders })
 
   } catch (err) {

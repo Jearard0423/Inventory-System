@@ -171,19 +171,34 @@ export const initializeFirebaseSync = () => {
     )
 
     // Set up orders listener with error handling
+    // IMPORTANT: Only merge ACTIVE orders from RTDB — never overwrite localStorage
+    // with completed/delivered/cancelled orders (that caused the stale 68-pending bug)
+    const ACTIVE_STATUSES = new Set(["incomplete", "cooking", "ready", "pending"])
     const ordersRef = ref(database, "inventories/orders")
     ordersListener = onValue(
       ordersRef,
       (snapshot) => {
         if (snapshot.exists()) {
-          const orders = snapshot.val()
-          window.dispatchEvent(
-            new CustomEvent("firebase-orders-updated", { detail: orders })
+          const rtdbOrders: Record<string, any> = snapshot.val()
+          const activeRtdbOrders = Object.values(rtdbOrders).filter((o: any) =>
+            ACTIVE_STATUSES.has((o.status || "").toLowerCase())
           )
-          localStorage.setItem(
-            "yellowbell_customer_orders",
-            JSON.stringify(Object.values(orders))
-          )
+          try {
+            const localRaw = localStorage.getItem("yellowbell_customer_orders")
+            const localOrders: any[] = localRaw ? JSON.parse(localRaw) : []
+            const rtdbById = new Map(activeRtdbOrders.map((o: any) => [o.id, o]))
+            const localById = new Map(localOrders.map((o: any) => [o.id, o]))
+            // RTDB active orders take precedence; keep local-only active orders too
+            const merged = new Map([...localById, ...rtdbById])
+            const mergedArray = Array.from(merged.values()).filter((o: any) =>
+              ACTIVE_STATUSES.has((o.status || "").toLowerCase())
+            )
+            localStorage.setItem("yellowbell_customer_orders", JSON.stringify(mergedArray))
+            window.dispatchEvent(new CustomEvent("firebase-orders-updated", { detail: rtdbOrders }))
+            console.log(`[firebase-sync] Orders merged: ${mergedArray.length} active orders`)
+          } catch (e) {
+            console.warn("[firebase-sync] Orders merge failed, skipping overwrite:", e)
+          }
         }
       },
       (error: any) => {
@@ -258,6 +273,25 @@ export const initializeFirebaseSync = () => {
           )
         } else {
           console.error("Firebase menu sync error:", error)
+        }
+      }
+    )
+
+    // Set up salesOrders listener — syncs completed/paid orders to sales page
+    const salesOrdersRef = ref(database, "inventories/salesOrders")
+    onValue(
+      salesOrdersRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const salesOrders = Object.values(snapshot.val())
+          localStorage.setItem("yellowbell_rtdb_sales_orders", JSON.stringify(salesOrders))
+          window.dispatchEvent(new CustomEvent("firebase-sales-updated", { detail: salesOrders }))
+          console.log(`[firebase-sync] Sales orders synced: ${salesOrders.length} orders`)
+        }
+      },
+      (error: any) => {
+        if (error.code !== "PERMISSION_DENIED") {
+          console.error("Firebase salesOrders sync error:", error)
         }
       }
     )

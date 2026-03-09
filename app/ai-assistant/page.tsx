@@ -1,7 +1,7 @@
 "use client"
 
 import React from "react"
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useRef } from "react"
 import { POSLayout } from "@/components/pos-layout"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -11,68 +11,67 @@ import {
   Bot, Send, User, Loader2, Sparkles, TrendingUp,
   Package, ShoppingCart, AlertTriangle, RefreshCw, BarChart3, ChefHat,
 } from "lucide-react"
-import { getInventoryItems, getCustomerOrders, getLowStockItems } from "@/lib/inventory-store"
-import { getOrders } from "@/lib/orders"
+import { getInventoryItems, getLowStockItems } from "@/lib/inventory-store"
 import { cn } from "@/lib/utils"
 
-// ─── Types ────────────────────────────────────────────────────────────────────
 interface Message {
   role: "user" | "assistant"
   content: string
 }
 
-// ─── Build live business context to send to Claude ───────────────────────────
+const ACTIVE_STATUSES = new Set(["incomplete", "cooking", "ready", "pending"])
+const DONE_STATUSES   = new Set(["delivered", "served", "cancelled", "canceled", "complete", "completed"])
+
+/** Read only active (non-finished) customer orders from localStorage */
+function readActiveCustomerOrders(): any[] {
+  try {
+    const raw = typeof window !== "undefined" ? localStorage.getItem("yellowbell_customer_orders") : null
+    if (!raw) return []
+    return (JSON.parse(raw) as any[]).filter(o => !DONE_STATUSES.has((o.status || "").toLowerCase()))
+  } catch { return [] }
+}
+
+/** Read only pending orders from yellowbell_orders */
+function readPendingOrders(): any[] {
+  try {
+    const raw = typeof window !== "undefined" ? localStorage.getItem("yellowbell_orders") : null
+    if (!raw) return []
+    return (JSON.parse(raw) as any[]).filter(o => (o.status || "").toLowerCase() === "pending")
+  } catch { return [] }
+}
+
 function buildContext(): string {
   try {
-    const inventory   = getInventoryItems()
-    const custOrders  = getCustomerOrders()
-    const orders      = getOrders()
-    const lowStock    = getLowStockItems()
+    const inventory  = getInventoryItems()
+    const custOrders = readActiveCustomerOrders()
+    const orders     = readPendingOrders()
+    const lowStock   = getLowStockItems()
 
-    const now = new Date()
+    const now    = new Date()
     const phTime = new Date(now.getTime() + now.getTimezoneOffset() * 60000 + 8 * 3600000)
-    const dateLabel = phTime.toLocaleDateString("en-PH", {
-      weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "Asia/Manila",
-    })
-    const timeLabel = phTime.toLocaleTimeString("en-PH", {
-      hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Manila",
-    })
+    const dateLabel = phTime.toLocaleDateString("en-PH", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "Asia/Manila" })
+    const timeLabel = phTime.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Manila" })
 
-    // ── Inventory breakdown ──────────────────────────────────────────────────
-    const food      = inventory.filter(i => !i.isUtensil && !i.isContainer && i.category !== "raw-stock")
-    const rawStock  = inventory.filter(i => i.category === "raw-stock")
-    const utensils  = inventory.filter(i => i.isUtensil)
+    const food       = inventory.filter(i => !i.isUtensil && !i.isContainer && i.category !== "raw-stock")
+    const rawStock   = inventory.filter(i => i.category === "raw-stock")
+    const utensils   = inventory.filter(i => i.isUtensil)
     const containers = inventory.filter(i => i.isContainer)
 
-    // ── Order metrics ────────────────────────────────────────────────────────
-    const todayStr   = phTime.toDateString()
+    const todayStr    = phTime.toDateString()
     const todayOrders = orders.filter(o => new Date(o.date || o.createdAt || "").toDateString() === todayStr)
-    const pendingCO   = custOrders.filter(o => !["delivered","served","cancelled","canceled"].includes(o.status))
     const paidOrders  = orders.filter(o => o.paymentStatus === "paid")
     const unpaidOrders = orders.filter(o => o.paymentStatus !== "paid")
-    const totalRevenue = paidOrders.reduce((s, o) => s + (o.total || 0), 0)
+    const totalRevenue   = paidOrders.reduce((s, o) => s + (o.total || 0), 0)
     const pendingRevenue = unpaidOrders.reduce((s, o) => s + (o.total || 0), 0)
-
-    // ── Top items ────────────────────────────────────────────────────────────
-    const freq: Record<string, number> = {}
-    orders.forEach(o => (o.items || []).forEach((it: any) => {
-      freq[it.name] = (freq[it.name] || 0) + (it.quantity || 1)
-    }))
-    const topItems = Object.entries(freq)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 8)
-      .map(([name, qty]) => `${name} (${qty} pcs)`)
-
-    // ── Meal type breakdown ──────────────────────────────────────────────────
-    const mealBreak: Record<string, number> = {}
-    orders.forEach(o => {
-      const mt = (o.mealType || o.originalMealType || "other").toLowerCase()
-      mealBreak[mt] = (mealBreak[mt] || 0) + 1
-    })
-
-    // ── Payment breakdown ────────────────────────────────────────────────────
     const cashCount  = paidOrders.filter(o => o.paymentMethod === "cash").length
     const gcashCount = paidOrders.filter(o => o.paymentMethod === "gcash").length
+
+    const freq: Record<string, number> = {}
+    orders.forEach(o => (o.items || []).forEach((it: any) => { freq[it.name] = (freq[it.name] || 0) + (it.quantity || 1) }))
+    const topItems = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, qty]) => `${name} (${qty} pcs)`)
+
+    const mealBreak: Record<string, number> = {}
+    orders.forEach(o => { const mt = (o.mealType || o.originalMealType || "other").toLowerCase(); mealBreak[mt] = (mealBreak[mt] || 0) + 1 })
 
     return `
 Current Date & Time (Philippines): ${dateLabel}, ${timeLabel}
@@ -91,14 +90,12 @@ Containers (${containers.length} types):
 ${containers.map(i => `  • ${i.name}: ${i.stock} pcs`).join("\n") || "  (none)"}
 
 ⚠ LOW STOCK ALERTS (≤5 units):
-${lowStock.length > 0
-  ? lowStock.map(i => `  ⚠ ${i.name}: only ${i.stock} left`).join("\n")
-  : "  ✓ All items adequately stocked"}
+${lowStock.length > 0 ? lowStock.map(i => `  ⚠ ${i.name}: only ${i.stock} left`).join("\n") : "  ✓ All items adequately stocked"}
 
 ═══ ORDER METRICS ═══
-Total Orders in System: ${orders.length}
+Total Active Orders: ${orders.length}
 Today's Orders: ${todayOrders.length}
-Pending / Active Orders: ${pendingCO.length}
+Pending / Active Customer Orders: ${custOrders.length}
 Paid Orders: ${paidOrders.length}  (Cash: ${cashCount}, GCash: ${gcashCount})
 Unpaid Orders: ${unpaidOrders.length}
 
@@ -113,7 +110,7 @@ Top Ordered Items (all time):
 ${topItems.length > 0 ? topItems.map((t, i) => `  ${i + 1}. ${t}`).join("\n") : "  (no order data yet)"}
 
 Active Pending Orders (latest 10):
-${pendingCO.slice(0, 10).map(o =>
+${custOrders.slice(0, 10).map(o =>
   `  • ${o.customerName} | ${o.orderNumber || o.id} | ${o.mealType || "?"} | ${o.cookTime ? o.cookTime + " delivery" : "no time"} | ₱${o.total || 0}`
 ).join("\n") || "  (none)"}
 `.trim()
@@ -122,62 +119,67 @@ ${pendingCO.slice(0, 10).map(o =>
   }
 }
 
-// ─── Quick-access prompt chips ────────────────────────────────────────────────
 const SUGGESTED = [
-  { label: "📦 Low stock?",           text: "Which items are running low or out of stock? Give me a restock plan." },
-  { label: "📈 Top sellers",          text: "What are our top selling items? Any slow-moving items I should know about?" },
-  { label: "💰 Revenue summary",      text: "Give me a revenue summary — collected, pending, and breakdown by payment method." },
-  { label: "🔮 Demand prediction",    text: "Based on our order history, predict demand for the next 3 days and recommend stock quantities." },
-  { label: "📋 Pending orders",       text: "How many orders are currently pending and what's the total value outstanding?" },
-  { label: "🍗 Meal type trends",     text: "What meal types (breakfast, lunch, dinner) are most popular? Any patterns?" },
-  { label: "⚠️ Urgent issues",        text: "Are there any urgent issues I should address right now — stock, orders, or payments?" },
-  { label: "💡 Business advice",      text: "Based on our current data, what are your top 3 business improvement recommendations?" },
+  { label: "📦 Low stock?",        text: "Which items are running low or out of stock? Give me a restock plan." },
+  { label: "📈 Top sellers",       text: "What are our top selling items? Any slow-moving items I should know about?" },
+  { label: "💰 Revenue summary",   text: "Give me a revenue summary — collected, pending, and breakdown by payment method." },
+  { label: "🔮 Demand prediction", text: "Based on our order history, predict demand for the next 3 days and recommend stock quantities." },
+  { label: "📋 Pending orders",    text: "How many orders are currently pending and what's the total value outstanding?" },
+  { label: "🍗 Meal type trends",  text: "What meal types (breakfast, lunch, dinner) are most popular? Any patterns?" },
+  { label: "⚠️ Urgent issues",     text: "Are there any urgent issues I should address right now — stock, orders, or payments?" },
+  { label: "💡 Business advice",   text: "Based on our current data, what are your top 3 business improvement recommendations?" },
 ]
 
-// ─── Component ────────────────────────────────────────────────────────────────
 export default function AIAssistantPage() {
-  const [messages, setMessages]   = useState<Message[]>([])
-  const [input, setInput]         = useState("")
-  const [loading, setLoading]     = useState(false)
-  const [context, setContext]     = useState("")
+  const [messages, setMessages] = useState<Message[]>([])
+  const [input, setInput]       = useState("")
+  const [loading, setLoading]   = useState(false)
+  const [context, setContext]   = useState("")
   const [statsRefreshed, setStatsRefreshed] = useState(new Date())
   const bottomRef = useRef<HTMLDivElement>(null)
 
-  // Quick stats for the dashboard bar
   const [stats, setStats] = useState({
-    lowStockCount: 0,
-    outOfStockCount: 0,
-    pendingOrders: 0,
-    totalRevenue: 0,
-    todayOrders: 0,
+    lowStockCount: 0, outOfStockCount: 0,
+    pendingOrders: 0, totalRevenue: 0, todayOrders: 0,
   })
 
-  const refreshStats = useCallback(() => {
+  function refreshStats() {
     try {
       const inv  = getInventoryItems()
-      const co   = getCustomerOrders()
-      const ord  = getOrders()
+      const co   = readActiveCustomerOrders()
+      const ord  = readPendingOrders()
       const paid = ord.filter(o => o.paymentStatus === "paid")
       const now  = new Date()
       const phNow = new Date(now.getTime() + now.getTimezoneOffset() * 60000 + 8 * 3600000)
 
       setStats({
-        lowStockCount:  inv.filter(i => i.stock > 0 && i.stock <= 5 && !i.isUtensil && !i.isContainer && i.category !== "raw-stock").length,
+        lowStockCount:   inv.filter(i => i.stock > 0 && i.stock <= 5 && !i.isUtensil && !i.isContainer && i.category !== "raw-stock").length,
         outOfStockCount: inv.filter(i => i.stock === 0 && !i.isUtensil && !i.isContainer && i.category !== "raw-stock").length,
-        pendingOrders:  co.filter(o => !["delivered","served","cancelled","canceled"].includes(o.status)).length,
-        totalRevenue:   paid.reduce((s, o) => s + (o.total || 0), 0),
-        todayOrders:    ord.filter(o => new Date(o.date || o.createdAt || "").toDateString() === phNow.toDateString()).length,
+        pendingOrders:   co.length,
+        totalRevenue:    paid.reduce((s, o) => s + (o.total || 0), 0),
+        todayOrders:     ord.filter(o => new Date(o.date || o.createdAt || "").toDateString() === phNow.toDateString()).length,
       })
       setContext(buildContext())
       setStatsRefreshed(new Date())
     } catch {}
-  }, [])
+  }
 
   useEffect(() => {
     refreshStats()
     const iv = setInterval(refreshStats, 30000)
-    return () => clearInterval(iv)
-  }, [refreshStats])
+    const onUpdate = () => refreshStats()
+    window.addEventListener("firebase-orders-updated", onUpdate)
+    window.addEventListener("customer-orders-updated", onUpdate)
+    window.addEventListener("firebase-inventory-updated", onUpdate)
+    window.addEventListener("orders-updated", onUpdate)
+    return () => {
+      clearInterval(iv)
+      window.removeEventListener("firebase-orders-updated", onUpdate)
+      window.removeEventListener("customer-orders-updated", onUpdate)
+      window.removeEventListener("firebase-inventory-updated", onUpdate)
+      window.removeEventListener("orders-updated", onUpdate)
+    }
+  }, [])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -187,12 +189,10 @@ export default function AIAssistantPage() {
     const userText = (text ?? input).trim()
     if (!userText || loading) return
     setInput("")
-
     const userMsg: Message = { role: "user", content: userText }
     const newMessages = [...messages, userMsg]
     setMessages(newMessages)
     setLoading(true)
-
     try {
       const res = await fetch("/api/ai-assistant", {
         method: "POST",
@@ -202,11 +202,11 @@ export default function AIAssistantPage() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       if (data.error) throw new Error(data.error)
-      setMessages((prev: Message[]) => [...prev, { role: "assistant", content: data.reply }])
+      setMessages(prev => [...prev, { role: "assistant", content: data.reply }])
     } catch (err) {
-      setMessages((prev: Message[]) => [...prev, {
+      setMessages(prev => [...prev, {
         role: "assistant",
-        content: `❌ Could not reach the AI service.\n\n**Reason:** ${err instanceof Error ? err.message : "Unknown error"}\n\n**Fix:** Make sure \`ANTHROPIC_API_KEY\` is set in your \`.env.local\` file, then restart the dev server.`,
+        content: `❌ Could not reach the AI service.\n\n**Reason:** ${err instanceof Error ? err.message : "Unknown error"}\n\n**Fix:** Make sure \`GROQ_API_KEY\` is set in your \`.env.local\` file, then restart the dev server.`,
       }])
     } finally {
       setLoading(false)
@@ -214,20 +214,16 @@ export default function AIAssistantPage() {
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault()
-      sendMessage()
-    }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage() }
   }
 
-  const clearChat = () => setMessages([])
-
   return (
-    <POSLayout>
-      <div className="max-w-3xl mx-auto flex flex-col gap-4 pb-6 h-[calc(100vh-80px)]">
+    <POSLayout fullWidth>
+      {/* h-full works because POSLayout fullWidth sets the wrapper to h-full flex flex-col */}
+      <div className="h-full flex flex-col gap-4 min-h-0">
 
-        {/* ── Header ── */}
-        <div className="flex items-start justify-between gap-4 pt-1">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4 shrink-0">
           <div>
             <div className="flex items-center gap-2 mb-0.5">
               <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
@@ -245,14 +241,14 @@ export default function AIAssistantPage() {
           </Button>
         </div>
 
-        {/* ── Live stats bar ── */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+        {/* Stats bar */}
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 shrink-0">
           {[
-            { label: "Low Stock",     value: stats.lowStockCount,          icon: Package,       color: stats.lowStockCount > 0 ? "text-amber-600" : "text-muted-foreground" },
-            { label: "Out of Stock",  value: stats.outOfStockCount,        icon: AlertTriangle, color: stats.outOfStockCount > 0 ? "text-red-600"   : "text-muted-foreground" },
-            { label: "Pending",       value: stats.pendingOrders,          icon: ShoppingCart,  color: "text-foreground" },
-            { label: "Today's Orders",value: stats.todayOrders,            icon: ChefHat,       color: "text-primary" },
-            { label: "Revenue",       value: `₱${stats.totalRevenue.toLocaleString()}`, icon: TrendingUp, color: "text-green-600" },
+            { label: "Low Stock",      value: stats.lowStockCount,                          icon: Package,       color: stats.lowStockCount > 0  ? "text-amber-600" : "text-muted-foreground" },
+            { label: "Out of Stock",   value: stats.outOfStockCount,                        icon: AlertTriangle, color: stats.outOfStockCount > 0 ? "text-red-600"   : "text-muted-foreground" },
+            { label: "Pending",        value: stats.pendingOrders,                          icon: ShoppingCart,  color: "text-foreground" },
+            { label: "Today's Orders", value: stats.todayOrders,                            icon: ChefHat,       color: "text-primary" },
+            { label: "Revenue",        value: `₱${stats.totalRevenue.toLocaleString()}`,    icon: TrendingUp,    color: "text-green-600" },
           ].map(s => (
             <Card key={s.label} className="border-0 shadow-sm">
               <CardContent className="p-3 flex items-center gap-2">
@@ -266,8 +262,8 @@ export default function AIAssistantPage() {
           ))}
         </div>
 
-        {/* ── Chat window ── */}
-        <Card className="flex-1 border-0 shadow-sm flex flex-col overflow-hidden min-h-0">
+        {/* Chat card — flex-1 + min-h-0 so it fills remaining space and scrolls internally */}
+        <Card className="flex-1 min-h-0 border-0 shadow-sm flex flex-col overflow-hidden">
           <CardHeader className="pb-2 pt-3 px-4 border-b shrink-0">
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm flex items-center gap-2">
@@ -275,15 +271,15 @@ export default function AIAssistantPage() {
                 Chat
               </CardTitle>
               {messages.length > 0 && (
-                <Button variant="ghost" size="sm" onClick={clearChat} className="h-7 text-xs text-muted-foreground">
+                <Button variant="ghost" size="sm" onClick={() => setMessages([])} className="h-7 text-xs text-muted-foreground">
                   Clear
                 </Button>
               )}
             </div>
           </CardHeader>
 
-          {/* Message list */}
-          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 min-h-0">
+          {/* Scrollable message area */}
+          <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4">
             {messages.length === 0 && (
               <div className="flex flex-col items-center justify-center h-full text-center gap-3 py-8">
                 <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center">
@@ -293,15 +289,10 @@ export default function AIAssistantPage() {
                   <p className="font-semibold text-base">How can I help you today?</p>
                   <p className="text-sm text-muted-foreground mt-0.5">Ask about stock, revenue, orders, or predictions</p>
                 </div>
-                {/* Suggested chips */}
-                <div className="flex flex-wrap gap-2 justify-center mt-2 max-w-lg">
+                <div className="flex flex-wrap gap-2 justify-center mt-2 max-w-xl">
                   {SUGGESTED.map(s => (
-                    <button
-                      key={s.label}
-                      onClick={() => sendMessage(s.text)}
-                      disabled={loading}
-                      className="text-xs px-3 py-1.5 rounded-full border border-border bg-card hover:bg-muted transition-colors disabled:opacity-50"
-                    >
+                    <button key={s.label} onClick={() => sendMessage(s.text)} disabled={loading}
+                      className="text-xs px-3 py-1.5 rounded-full border border-border bg-card hover:bg-muted transition-colors disabled:opacity-50">
                       {s.label}
                     </button>
                   ))}
@@ -309,25 +300,18 @@ export default function AIAssistantPage() {
               </div>
             )}
 
-            {messages.map((msg: Message, i: number) => (
-              <div key={i} className={cn("flex gap-3 max-w-full", msg.role === "user" ? "flex-row-reverse" : "")}>
-                {/* Avatar */}
-                <div className={cn(
-                  "w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5",
-                  msg.role === "assistant" ? "bg-primary" : "bg-muted"
-                )}>
+            {messages.map((msg, i) => (
+              <div key={i} className={cn("flex gap-3", msg.role === "user" ? "flex-row-reverse" : "")}>
+                <div className={cn("w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5",
+                  msg.role === "assistant" ? "bg-primary" : "bg-muted")}>
                   {msg.role === "assistant"
                     ? <Bot className="w-3.5 h-3.5 text-white" />
                     : <User className="w-3.5 h-3.5 text-muted-foreground" />}
                 </div>
-
-                {/* Bubble */}
-                <div className={cn(
-                  "rounded-2xl px-4 py-2.5 text-sm max-w-[82%]",
+                <div className={cn("rounded-2xl px-4 py-2.5 text-sm max-w-[82%]",
                   msg.role === "assistant"
                     ? "bg-muted text-foreground rounded-tl-sm"
-                    : "bg-primary text-primary-foreground rounded-tr-sm"
-                )}>
+                    : "bg-primary text-primary-foreground rounded-tr-sm")}>
                   <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
                 </div>
               </div>
@@ -347,7 +331,7 @@ export default function AIAssistantPage() {
             <div ref={bottomRef} />
           </div>
 
-          {/* Input row */}
+          {/* Input */}
           <div className="border-t px-4 py-3 flex gap-2 shrink-0">
             <Textarea
               value={input}
@@ -358,19 +342,13 @@ export default function AIAssistantPage() {
               className="resize-none min-h-[44px] max-h-[120px] text-sm leading-snug"
               rows={1}
             />
-            <Button
-              size="icon"
-              onClick={() => sendMessage()}
-              disabled={loading || !input.trim()}
-              className="h-11 w-11 shrink-0"
-            >
+            <Button size="icon" onClick={() => sendMessage()} disabled={loading || !input.trim()} className="h-11 w-11 shrink-0">
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
             </Button>
           </div>
         </Card>
 
-        {/* Data freshness note */}
-        <p className="text-center text-[10px] text-muted-foreground">
+        <p className="text-center text-[10px] text-muted-foreground shrink-0">
           Data refreshed at {statsRefreshed.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true, timeZone: "Asia/Manila" })} · Updates every 30 seconds
         </p>
       </div>

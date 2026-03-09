@@ -65,8 +65,21 @@ export default function SalesPage() {
 
   useEffect(() => {
     const loadOrders = () => {
-      const allOrders = getOrders()
-      setOrders(allOrders)
+      // Merge localStorage orders with RTDB salesOrders so all devices stay in sync
+      const localOrders = getOrders()
+      try {
+        const rtdbRaw = localStorage.getItem("yellowbell_rtdb_sales_orders")
+        if (rtdbRaw) {
+          const rtdbOrders: Order[] = JSON.parse(rtdbRaw)
+          // Merge: use id as key, RTDB version wins on conflict
+          const merged = new Map<string, Order>()
+          localOrders.forEach(o => merged.set(o.id, o))
+          rtdbOrders.forEach(o => merged.set(o.id, o))
+          setOrders(Array.from(merged.values()))
+          return
+        }
+      } catch {}
+      setOrders(localOrders)
     }
     
     const loadExpenses = () => {
@@ -78,9 +91,11 @@ export default function SalesPage() {
     loadExpenses()
     window.addEventListener("orders-updated", loadOrders)
     window.addEventListener("expenses-updated", loadExpenses)
+    window.addEventListener("firebase-sales-updated", loadOrders)
     return () => {
       window.removeEventListener("orders-updated", loadOrders)
       window.removeEventListener("expenses-updated", loadExpenses)
+      window.removeEventListener("firebase-sales-updated", loadOrders)
     }
   }, [])
 
