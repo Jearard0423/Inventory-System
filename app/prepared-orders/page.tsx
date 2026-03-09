@@ -1,5 +1,6 @@
 "use client"
 
+import React from "react"
 import { POSLayout } from "@/components/pos-layout"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -9,7 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Plus, Minus, X, Check, Clock, Package, ArrowRight, Users, Trash2, BarChart3 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { cn } from "@/lib/utils"
-import { getMenuItems, reduceStock, reduceUtensilsForMeal, reduceContainerForItem, restoreStockForOrder, restoreUtensilsForQuantity, canOrderItem, getOrderLimitMessage, type InventoryItem, RAW_STOCK_DEDUCTION_MAP } from "@/lib/inventory-store"
+import { getMenuItems, reduceStock, reduceUtensilsForMeal, reduceContainerForItem, restoreContainerForItem, restoreStockForOrder, restoreUtensilsForQuantity, canOrderItem, getOrderLimitMessage, type InventoryItem, RAW_STOCK_DEDUCTION_MAP } from "@/lib/inventory-store"
 import { useToast } from '@/hooks/use-toast'
 import { generateOrderNumber, generatePreparedOrderNumber, getOrders } from "@/lib/orders"
 
@@ -1069,7 +1070,7 @@ export default function PreparedOrdersPage() {
                           className="mt-1"
                         />
                       </div>
-                      {amountGiven && Object.values(orderQuantities).some(qty => qty > 0) && (
+                      {amountGiven && Object.values(orderQuantities).some((qty: unknown) => (qty as number) > 0) && (
                         <div className="text-sm text-muted-foreground">
                           Change: ₱{Math.max(0, Number.parseFloat(amountGiven) - (selectedPreparedOrder.items.reduce((sum, item) => sum + item.price * (orderQuantities[item.id] || 0), 0))).toFixed(2)}
                         </div>

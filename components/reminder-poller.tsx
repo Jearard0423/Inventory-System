@@ -5,18 +5,23 @@ import { useEffect } from "react"
 /**
  * ReminderPoller
  *
- * Mounts on the root layout so it runs on EVERY page — including the login page.
- * Every 5 minutes it calls /api/send-reminders which:
- *   1. Fetches all registered user emails from Firebase
- *   2. Fetches pending orders from Firebase
- *   3. Sends 1-hour and 2-hour reminder emails server-side
- *
- * No login required. Works as long as the browser tab is open anywhere in the app.
+ * Polls /api/send-reminders every 5 minutes.
+ * Sends current customer orders from localStorage in the POST body
+ * so the server never needs to read Firebase (fixes the 401 error).
  */
 export function ReminderPoller() {
   const poll = async () => {
     try {
-      const res = await fetch("/api/send-reminders", { method: "POST" })
+      const raw = typeof window !== 'undefined'
+        ? localStorage.getItem('yellowbell_customer_orders')
+        : null
+      const orders = raw ? JSON.parse(raw) : []
+
+      const res = await fetch("/api/send-reminders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orders }),
+      })
       const data = await res.json()
       console.log("[ReminderPoller] ✅ Checked reminders:", data)
     } catch (err) {
@@ -25,13 +30,10 @@ export function ReminderPoller() {
   }
 
   useEffect(() => {
-    // Run immediately on mount
     poll()
-
-    // Then every 5 minutes
     const interval = setInterval(poll, 5 * 60 * 1000)
     return () => clearInterval(interval)
   }, [])
 
-  return null // renders nothing
+  return null
 }

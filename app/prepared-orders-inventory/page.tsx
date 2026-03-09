@@ -69,12 +69,12 @@ export default function PreparedOrdersInventoryPage() {
 
   const foodItems = inventory.filter(i => !i.isUtensil && !i.isContainer && i.category !== 'raw-stock')
 
-  const cartTotal = Object.entries(cart).reduce((sum, [id, qty]) => {
+  const cartTotal = (Object.entries(cart) as [string, number][]).reduce((sum: number, [id, qty]) => {
     const item = inventory.find(i => i.id === id)
     return sum + (item ? item.price * qty : 0)
   }, 0)
 
-  const cartItemCount = Object.values(cart).reduce((s, q) => s + q, 0)
+  const cartItemCount: number = (Object.values(cart) as number[]).reduce((s: number, q: number) => s + q, 0)
 
   const consolidatedInventory = (() => {
     const result: Record<string, { prepared: number; sold: number; remaining: number; price: number }> = {}
@@ -107,12 +107,13 @@ export default function PreparedOrdersInventoryPage() {
       toast({ title: "Customer Name Required", description: "Please enter the customer name", variant: "destructive" })
       return
     }
-    const itemsToAdd = Object.entries(cart)
-      .filter(([, qty]) => qty > 0)
-      .map(([id, qty]) => {
-        const item = inventory.find(i => i.id === id)!
-        return { id, name: item.name, quantity: qty, price: item.price }
-      })
+    const itemsToAdd: Array<{ id: string; name: string; quantity: number; price: number }> =
+      Object.entries(cart)
+        .filter(([, qty]) => (qty as number) > 0)
+        .map(([id, qty]) => {
+          const item = inventory.find(i => i.id === id)!
+          return { id, name: item.name, quantity: qty as number, price: item.price }
+        })
 
     if (!itemsToAdd.length) {
       toast({ title: "Cart is empty", description: "Add at least one item", variant: "destructive" })
@@ -296,7 +297,7 @@ export default function PreparedOrdersInventoryPage() {
                   {cartItemCount} item{cartItemCount !== 1 ? 's' : ''} staged
                 </p>
                 <div className="flex flex-wrap gap-1 mt-1">
-                  {Object.entries(cart).filter(([, q]) => q > 0).map(([id, q]) => {
+                  {(Object.entries(cart) as [string, number][]).filter(([, q]) => q > 0).map(([id, q]) => {
                     const item = inventory.find(i => i.id === id)
                     return item ? (
                       <span key={id} className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
@@ -482,7 +483,7 @@ export default function PreparedOrdersInventoryPage() {
               </div>
               {/* Order summary */}
               <div className="bg-muted/50 rounded-lg p-3 space-y-1">
-                {Object.entries(cart).filter(([, q]) => q > 0).map(([id, q]) => {
+                {(Object.entries(cart) as [string, number][]).filter(([, q]) => q > 0).map(([id, q]) => {
                   const item = inventory.find(i => i.id === id)
                   return item ? (
                     <div key={id} className="flex justify-between text-sm">

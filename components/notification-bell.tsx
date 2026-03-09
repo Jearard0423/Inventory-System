@@ -77,7 +77,7 @@ export function NotificationBell() {
           )}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-80 p-0" align="end" side="top">
+      <PopoverContent className="w-[min(320px,calc(100vw-1rem))] p-0" align="end" side="top">
         <div className="flex items-center justify-between border-b px-4 py-3">
           <div className="flex items-center gap-2">
             <h3 className="text-sm font-medium">Notifications</h3>

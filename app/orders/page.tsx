@@ -1,9 +1,10 @@
 "use client"
 
+import React from "react"
 import { POSLayout } from "@/components/pos-layout"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Calendar, Plus, ChevronLeft, ChevronRight, X, Trash2, RotateCcw, ChevronDown, ChevronUp, Search } from "lucide-react"
+import { Calendar, Plus, ChevronLeft, ChevronRight, X, Trash2, RotateCcw, ChevronDown, ChevronUp, Search, Pencil } from "lucide-react"
 import Link from "next/link"
 import { useState, useEffect } from "react"
 import { cn } from "@/lib/utils"
@@ -11,11 +12,13 @@ import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { getOrders, deleteOrder } from "@/lib/orders"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Textarea } from "@/components/ui/textarea"
+import { getOrders, deleteOrder, updateOrder } from "@/lib/orders"
 import { saveNotification } from "@/lib/notifications-store"
 import { useToast } from '@/hooks/use-toast'
 import { Pagination } from "@/components/pagination"
-import { getCustomerOrders, updateCustomerOrders } from "@/lib/inventory-store"
+import { getCustomerOrders, updateCustomerOrders, getMenuItems, type InventoryItem } from "@/lib/inventory-store"
 
 // Helper function to convert 24-hour time to 12-hour format
 const formatTimeForDisplay = (time24: string): string => {
@@ -116,6 +119,21 @@ export default function OrdersPage() {
   const [selectedOrderForDetails, setSelectedOrderForDetails] = useState<Order | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
   const [showGcashQrModal, setShowGcashQrModal] = useState(false)
+
+  // ── Edit Order ──────────────────────────────────────────────────────────────
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editingOrderId, setEditingOrderId] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState({
+    customerName: "",
+    cookTime: "",
+    mealType: "",
+    specialRequests: "",
+    remarks: "",
+    deliveryPhone: "",
+    deliveryAddress: "",
+  })
+  const [editItems, setEditItems] = useState<Array<{ id: string; name: string; price: number; quantity: number }>>([])
+  const [menuItems, setMenuItems] = useState<InventoryItem[]>([])
 
   useEffect(() => {
     setMounted(true)
@@ -583,6 +601,45 @@ export default function OrdersPage() {
       description: 'The order has been removed and a notification has been logged.',
       variant: 'destructive',
     })
+  }
+
+  // ── Edit handlers ───────────────────────────────────────────────────────────
+  const openEditModal = (e: React.MouseEvent, order: Order) => {
+    e.stopPropagation()
+    const co = customerOrders.find((c: any) => c.id === order.id)
+    setEditingOrderId(order.id)
+    setEditForm({
+      customerName:    order.customerName || "",
+      cookTime:        order.cookTime     || co?.cookTime || "",
+      mealType:        order.mealType     || co?.mealType || "",
+      specialRequests: order.specialRequests || co?.specialRequests || "",
+      remarks:         order.remarks         || co?.remarks         || "",
+      deliveryPhone:   (order as any).deliveryPhone   || co?.deliveryPhone   || "",
+      deliveryAddress: (order as any).deliveryAddress || co?.deliveryAddress || "",
+    })
+    // Load current items from the order
+    setEditItems(order.items.map(i => ({ ...i })))
+    // Load all food items from inventory for the item selector
+    setMenuItems(getMenuItems())
+    setShowEditModal(true)
+  }
+
+  const saveEditOrder = () => {
+    if (!editingOrderId) return
+    if (!editForm.customerName.trim()) {
+      toast({ title: "Name required", description: "Customer name cannot be empty", variant: "destructive" })
+      return
+    }
+    const validItems = editItems.filter(i => i.quantity > 0)
+    if (validItems.length === 0) {
+      toast({ title: "No items", description: "Order must have at least one item", variant: "destructive" })
+      return
+    }
+    const newTotal = validItems.reduce((s, i) => s + i.price * i.quantity, 0)
+    updateOrder(editingOrderId, { ...editForm, items: validItems as any, total: newTotal } as any)
+    toast({ title: "Order updated", description: `Changes saved for ${editForm.customerName}` })
+    setShowEditModal(false)
+    setEditingOrderId(null)
   }
 
   const openDeleteModal = (e: React.MouseEvent, order: Order) => {
@@ -1259,6 +1316,15 @@ export default function OrdersPage() {
                             <Button
                               variant="ghost"
                               size="icon"
+                              onClick={(e) => openEditModal(e, order)}
+                              className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                              title="Edit Order"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
                               onClick={(e) => openDeleteModal(e, order)}
                               className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50"
                               title="Delete Order"
@@ -1840,6 +1906,160 @@ export default function OrdersPage() {
             </div>
           </div>
         )}
+
+        {/* ════════════════════════════════════════════════════════════════════
+            EDIT ORDER MODAL
+            ════════════════════════════════════════════════════════════════ */}
+        <Dialog open={showEditModal} onOpenChange={(open) => { if (!open) setShowEditModal(false) }}>
+          <DialogContent className="w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Pencil className="h-4 w-4 text-primary" />
+                Edit Order
+              </DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-4 py-1">
+              {/* Customer Name */}
+              <div className="space-y-1.5">
+                <Label className="text-sm font-semibold">Customer Name <span className="text-red-500">*</span></Label>
+                <Input
+                  value={editForm.customerName}
+                  onChange={e => setEditForm(p => ({ ...p, customerName: e.target.value }))}
+                  placeholder="Customer name"
+                />
+              </div>
+
+              {/* Meal Type + Cook Time */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-semibold">Meal Type</Label>
+                  <Select
+                    value={editForm.mealType || "other"}
+                    onValueChange={v => setEditForm(p => ({ ...p, mealType: v }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Breakfast">🌅 Breakfast</SelectItem>
+                      <SelectItem value="Lunch">☀️ Lunch</SelectItem>
+                      <SelectItem value="Dinner">🌙 Dinner</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-semibold">Delivery Time</Label>
+                  <Input
+                    type="time"
+                    value={editForm.cookTime}
+                    onChange={e => setEditForm(p => ({ ...p, cookTime: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              {/* ── Order Items Editor ── */}
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">Order Items</Label>
+                {/* Existing items with qty controls */}
+                <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                  {editItems.map((item, idx) => (
+                    <div key={item.id} className="flex items-center gap-2 bg-muted/40 rounded-lg px-3 py-2">
+                      <span className="flex-1 text-sm font-medium truncate">{item.name}</span>
+                      <span className="text-xs text-muted-foreground">₱{item.price}</span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setEditItems(prev => prev.map((it, i) => i === idx ? { ...it, quantity: Math.max(0, it.quantity - 1) } : it).filter(it => it.quantity > 0))}
+                          className="w-6 h-6 rounded-full border flex items-center justify-center text-sm font-bold hover:bg-muted"
+                        >−</button>
+                        <span className="w-6 text-center text-sm font-bold">{item.quantity}</span>
+                        <button
+                          type="button"
+                          onClick={() => setEditItems(prev => prev.map((it, i) => i === idx ? { ...it, quantity: it.quantity + 1 } : it))}
+                          className="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold hover:bg-primary/90"
+                        >+</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {/* Add item from menu */}
+                <div className="border-t pt-2">
+                  <p className="text-xs text-muted-foreground mb-2">Add item:</p>
+                  <div className="grid grid-cols-2 gap-1.5 max-h-36 overflow-y-auto pr-1">
+                    {menuItems.filter(m => !editItems.find(e => e.id === m.id)).map(m => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => setEditItems(prev => [...prev, { id: m.id, name: m.name, price: m.price, quantity: 1 }])}
+                        className="text-left px-2.5 py-1.5 rounded-lg border border-dashed border-border hover:border-primary hover:bg-primary/5 transition-colors"
+                      >
+                        <p className="text-xs font-medium truncate">{m.name}</p>
+                        <p className="text-xs text-muted-foreground">₱{m.price}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {/* Running total */}
+                {editItems.length > 0 && (
+                  <div className="flex justify-between items-center pt-1 border-t text-sm font-bold">
+                    <span>New Total</span>
+                    <span className="text-primary">₱{editItems.reduce((s, i) => s + i.price * i.quantity, 0).toFixed(2)}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Delivery Info */}
+              <div className="space-y-1.5">
+                <Label className="text-sm font-semibold">Delivery Address</Label>
+                <Input
+                  value={editForm.deliveryAddress}
+                  onChange={e => setEditForm(p => ({ ...p, deliveryAddress: e.target.value }))}
+                  placeholder="Street, Barangay, City (leave blank if hand-in)"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm font-semibold">Contact Number</Label>
+                <Input
+                  value={editForm.deliveryPhone}
+                  onChange={e => setEditForm(p => ({ ...p, deliveryPhone: e.target.value }))}
+                  placeholder="09XX-XXX-XXXX"
+                />
+              </div>
+
+              {/* Special Requests */}
+              <div className="space-y-1.5">
+                <Label className="text-sm font-semibold">Special Requests</Label>
+                <Textarea
+                  value={editForm.specialRequests}
+                  onChange={e => setEditForm(p => ({ ...p, specialRequests: e.target.value }))}
+                  placeholder="Allergies, preferences, add-ons…"
+                  className="resize-none min-h-[64px]"
+                />
+              </div>
+
+              {/* Remarks */}
+              <div className="space-y-1.5">
+                <Label className="text-sm font-semibold">Internal Remarks</Label>
+                <Textarea
+                  value={editForm.remarks}
+                  onChange={e => setEditForm(p => ({ ...p, remarks: e.target.value }))}
+                  placeholder="Internal notes for the team…"
+                  className="resize-none min-h-[64px]"
+                />
+              </div>
+            </div>
+
+            <DialogFooter className="mt-2 gap-2">
+              <Button variant="outline" onClick={() => setShowEditModal(false)}>Cancel</Button>
+              <Button onClick={saveEditOrder} className="gap-2">
+                <Pencil className="h-3.5 w-3.5" /> Save Changes
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
       </div>
     </POSLayout>
   )

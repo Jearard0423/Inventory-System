@@ -1175,7 +1175,7 @@ export const sendUpcomingOrdersReminder = async (
       </div>
     `
 
-    const htmlBody = emailWrapper(content, firstOrder.mealType || firstOrder.originalMealType)
+    const htmlBody = emailWrapper(content, (tomorrowOrders[0] as any)?.mealType || (tomorrowOrders[0] as any)?.originalMealType)
     const plainTextBody = `Yellow Roast Co. - Upcoming Orders for ${tomorrowLabel}
 
 You have ${tomorrowOrders.length} order${tomorrowOrders.length > 1 ? 's' : ''} scheduled for tomorrow:

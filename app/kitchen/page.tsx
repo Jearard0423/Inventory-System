@@ -593,7 +593,8 @@ export default function KitchenPage() {
     updateKitchenItems(updated)
 
     // Update customer orders
-    const orders = getActiveOrders()
+    // Use ALL customer orders (not just active) so 'complete' orders can be undone
+    const orders = getCustomerOrders()
     const updatedOrders = orders.map((order) => {
       // Only affect the specific order(s) that correspond to the kitchen items being undone
       const orderItemsToUndo = itemsToUndo.filter(item => item.orderId === order.id)
@@ -1033,7 +1034,7 @@ export default function KitchenPage() {
               }, {} as Record<string, number>)
               
               const missingItemsArray = Object.entries(aggregatedMissing)
-                .map(([name, quantity]) => ({ name, quantity }))
+                .map(([name, quantity]) => ({ name, quantity: quantity as number }))
                 .sort((a, b) => b.quantity - a.quantity)
               
               if (missingItemsArray.length === 0) {

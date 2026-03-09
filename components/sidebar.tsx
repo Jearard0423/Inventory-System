@@ -1,10 +1,11 @@
 "use client"
 
+import React from "react"
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import Image from "next/image"
-import { Home, ShoppingCart, Package, ChefHat, Truck, Bell, TrendingUp, ChevronLeft, Menu, Clock, CheckCircle, X, ArrowLeft, Plus, ClipboardList, BarChart3, LogOut, Calculator } from "lucide-react"
+import { Home, ShoppingCart, Package, ChefHat, Truck, Bell, TrendingUp, ChevronLeft, Menu, Clock, CheckCircle, X, ArrowLeft, Plus, ClipboardList, BarChart3, LogOut, Calculator, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { getUnreadCount } from "@/lib/notifications-store"
@@ -33,6 +34,7 @@ const navItems = [
   { href: "/inventory/pricing", icon: Calculator, label: "Pricing Calculator" },
   { href: "/sales", icon: TrendingUp, label: "Sales Summary" },
   { href: "/notifications", icon: Bell, label: "Notifications" },
+  { href: "/ai-assistant", icon: Sparkles, label: "AI Assistant" },
 ]
 
 export function Sidebar() {

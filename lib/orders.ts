@@ -184,3 +184,30 @@ export const deleteOrder = (orderId: string): void => {
   localStorage.setItem("yellowbell_orders", JSON.stringify(updatedOrders))
   window.dispatchEvent(new Event("orders-updated"))
 }
+/**
+ * Update a specific order's editable fields in localStorage.
+ * Syncs both yellowbell_orders and yellowbell_customer_orders.
+ */
+export const updateOrder = (
+  orderId: string,
+  patch: Partial<Pick<Order,
+    'customerName' | 'cookTime' | 'mealType' | 'originalMealType' |
+    'specialRequests' | 'remarks' | 'gcashPhone' | 'gcashReference' |
+    'items' | 'total'
+  > & { deliveryPhone?: string; deliveryAddress?: string }>
+): void => {
+  if (typeof window === 'undefined') return
+
+  // Update yellowbell_orders
+  const orders: Order[] = JSON.parse(localStorage.getItem('yellowbell_orders') || '[]')
+  const updatedOrders = orders.map(o => o.id === orderId ? { ...o, ...patch } : o)
+  localStorage.setItem('yellowbell_orders', JSON.stringify(updatedOrders))
+
+  // Also update yellowbell_customer_orders so kitchen/delivery stay in sync
+  const custOrders = JSON.parse(localStorage.getItem('yellowbell_customer_orders') || '[]')
+  const updatedCustOrders = custOrders.map((o: any) => o.id === orderId ? { ...o, ...patch } : o)
+  localStorage.setItem('yellowbell_customer_orders', JSON.stringify(updatedCustOrders))
+
+  window.dispatchEvent(new Event('orders-updated'))
+  window.dispatchEvent(new Event('customer-orders-updated'))
+}
