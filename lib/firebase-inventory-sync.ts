@@ -271,10 +271,30 @@ export const initializeFirebaseSync = () => {
       (snapshot) => {
         try {
           const remoteOrders: any[] = snapshot.exists() ? Object.values(snapshot.val()) : []
-          // Replace localStorage so this device matches Firebase exactly
-          localStorage.setItem("yellowbell_orders", JSON.stringify(remoteOrders))
+          // Merge: for each order, keep whichever copy has the newer lastUpdated
+          // This ensures payment/edit changes from any device always win
+          const localOrders: any[] = JSON.parse(localStorage.getItem("yellowbell_orders") || "[]")
+          const localMap = new Map(localOrders.map((o: any) => [o.id, o]))
+          const remoteMap = new Map(remoteOrders.map((o: any) => [o.id, o]))
+          // Start from remote (source of truth), overlay any local orders that are strictly newer
+          const merged: any[] = []
+          remoteMap.forEach((remote, id) => {
+            const local = localMap.get(id)
+            if (local) {
+              const remoteTs = new Date(remote.lastUpdated || remote.createdAt || 0).getTime()
+              const localTs  = new Date(local.lastUpdated  || local.createdAt  || 0).getTime()
+              merged.push(localTs > remoteTs ? local : remote)
+            } else {
+              merged.push(remote)
+            }
+          })
+          // Also keep any local orders not yet in Firebase (just created, not yet synced)
+          localMap.forEach((local, id) => {
+            if (!remoteMap.has(id)) merged.push(local)
+          })
+          localStorage.setItem("yellowbell_orders", JSON.stringify(merged))
           window.dispatchEvent(new Event("orders-updated"))
-          console.log(`[firebase-sync] ordersPage → localStorage: ${remoteOrders.length} orders`)
+          console.log(`[firebase-sync] ordersPage → localStorage: ${merged.length} orders`)
         } catch (e) {
           console.warn("[firebase-sync] ordersPage sync error:", e)
         }
@@ -658,10 +678,16 @@ export const saveOrderToFirebase = async (orderId: string, order: CustomerOrder)
 export const updateOrderInFirebase = async (orderId: string, patch: Record<string, any>) => {
   try {
     const { update } = await import("firebase/database")
-    const orderRef = ref(database, `inventories/orders/${orderId}`)
     const cleanPatch = cleanUndefined({ ...patch, lastUpdated: new Date().toISOString() })
-    await update(orderRef, cleanPatch)
-    console.log(`[firebase-sync] Order ${orderId} patched in RTDB:`, Object.keys(cleanPatch))
+
+    // Patch BOTH nodes in parallel so every listener fires on every device
+    await Promise.all([
+      // /inventories/orders — read by kitchen, delivery, reminders
+      update(ref(database, `inventories/orders/${orderId}`), cleanPatch),
+      // /ordersPage — read by the orders page real-time listener
+      update(ref(database, `ordersPage/${orderId}`), cleanPatch),
+    ])
+    console.log(`[firebase-sync] Order ${orderId} patched in RTDB (both nodes):`, Object.keys(cleanPatch))
   } catch (error: any) {
     if (error.code !== "PERMISSION_DENIED") {
       console.error("Error updating order in Firebase:", error)
@@ -869,14 +895,17 @@ export const syncMenuToInventoryItems = async (
   }
 }
 /**
- * Save the orders-page format order to Firebase RTDB under /ordersPage/{id}
- * This ensures the orders dashboard persists across logouts on any device.
+ * Save the orders-page format order to Firebase RTDB under /ordersPage/{id} AND /inventories/orders/{id}
+ * Writing to both nodes ensures every real-time listener on every device fires immediately.
  */
 export const saveOrdersPageToFirebase = async (orderId: string, order: any) => {
   try {
     const { set, ref: fbRef } = await import("firebase/database")
-    const orderRef = fbRef(database, `ordersPage/${orderId}`)
-    await set(orderRef, cleanUndefined({ ...order, lastUpdated: new Date().toISOString() }))
+    const clean = cleanUndefined({ ...order, lastUpdated: new Date().toISOString() })
+    await Promise.all([
+      set(fbRef(database, `ordersPage/${orderId}`), clean),
+      set(fbRef(database, `inventories/orders/${orderId}`), clean),
+    ])
   } catch (error: any) {
     if (error?.code !== "PERMISSION_DENIED") {
       console.warn("[firebase-sync] saveOrdersPageToFirebase failed:", error)

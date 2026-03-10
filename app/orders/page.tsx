@@ -544,9 +544,10 @@ export default function OrdersPage() {
         ? { 
             ...order, 
             paymentStatus: "paid" as const,
-            paymentMethod: paymentMethod, // Include the payment method
+            paymentMethod: paymentMethod,
             gcashPhone: paymentMethod === "gcash" ? gcashPhone : undefined,
-            gcashReference: paymentMethod === "gcash" ? gcashReference : undefined
+            gcashReference: paymentMethod === "gcash" ? gcashReference : undefined,
+            lastUpdated: new Date().toISOString(),
           } 
         : order,
     )
@@ -678,7 +679,7 @@ export default function OrdersPage() {
     if (!orderToUndoPayment) return
     
     const updatedOrders = orders.map((order) =>
-      order.id === orderToUndoPayment.id ? { ...order, paymentStatus: "not-paid" as const } : order,
+      order.id === orderToUndoPayment.id ? { ...order, paymentStatus: "not-paid" as const, paymentMethod: undefined, lastUpdated: new Date().toISOString() } : order,
     )
 
     localStorage.setItem("yellowbell_orders", JSON.stringify(updatedOrders))

@@ -191,7 +191,7 @@ export function Sidebar() {
             WebkitOverflowScrolling: 'touch',
             scrollbarWidth: 'thin',
             scrollbarColor: 'rgba(255, 255, 255, 0.2) transparent',
-            maxHeight: 'calc(100vh - 64px - 140px)',
+            maxHeight: 'calc(100vh - 64px - 160px)',
             overscrollBehavior: 'contain',
             msOverflowStyle: 'none',
             overflowY: 'auto',
@@ -245,11 +245,11 @@ export function Sidebar() {
           </ul>
         </nav>
 
-        <div className="block border-t border-sidebar-border p-3 sm:p-4 space-y-2 flex-shrink-0 bg-sidebar">
+        <div className="border-t border-sidebar-border p-2 sm:p-4 space-y-1 sm:space-y-2 flex-shrink-0 bg-sidebar">
           {/* User Profile Section */}
           {auth?.user && (
             <div className={cn(
-              "mb-4 pb-4 border-b border-sidebar-border",
+              "mb-2 sm:mb-4 pb-2 sm:pb-4 border-b border-sidebar-border",
               collapsed ? "flex justify-center" : ""
             )}>
               <div className={cn(
@@ -257,8 +257,7 @@ export function Sidebar() {
                 collapsed && "justify-center"
               )}>
                 <div className={cn(
-                  "w-10 h-10 rounded-full bg-gradient-to-br from-yellow-400 to-orange-400 flex items-center justify-center text-white font-semibold text-sm shrink-0",
-                  collapsed && "w-8 h-8"
+                  "w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-yellow-400 to-orange-400 flex items-center justify-center text-white font-semibold text-sm shrink-0",
                 )}>
                   {(auth.user.email || "A").split("@")[0].split(".").slice(0, 2).map((p: string) => p[0].toUpperCase()).join("")}
                 </div>
@@ -276,19 +275,19 @@ export function Sidebar() {
             </div>
           )}
 
-          {/* Logout Button */}
+          {/* Logout Button — always visible on all screen sizes */}
           <Button
             onClick={() => setShowLogoutDialog(true)}
             className={cn(
-              "w-full text-sidebar-foreground hover:bg-red-500/20 hover:text-red-400",
-              "py-3 sm:py-4 px-2 sm:px-3 h-auto rounded-md transition-colors justify-start",
-              collapsed && "px-0 justify-center"
+              "w-full hover:bg-red-500/20 hover:text-red-400 text-red-400",
+              "py-2 sm:py-3 px-2 sm:px-3 h-auto rounded-md transition-colors",
+              collapsed ? "justify-center" : "justify-start"
             )}
             variant="ghost"
             size="sm"
           >
-            <LogOut className="h-3 w-3 sm:h-4 sm:w-4" />
-            {!collapsed && <span className="ml-1 sm:ml-2 text-xs sm:text-sm">Logout</span>}
+            <LogOut className="h-5 w-5 shrink-0" />
+            {!collapsed && <span className="ml-2 text-xs sm:text-sm font-medium">Logout</span>}
           </Button>
 
           {/* Collapse Button */}
@@ -298,12 +297,12 @@ export function Sidebar() {
             onClick={() => setCollapsed(!collapsed)}
             className={cn(
               "w-full text-sidebar-foreground hover:bg-sidebar-accent",
-              "py-3 sm:py-4 px-2 sm:px-3 h-auto rounded-md transition-colors",
-              collapsed && "px-0"
+              "py-2 sm:py-3 px-2 sm:px-3 h-auto rounded-md transition-colors",
+              collapsed ? "justify-center" : "justify-start"
             )}
           >
-            <ChevronLeft className={cn("h-3 w-3 sm:h-4 sm:w-4 transition-transform", collapsed && "rotate-180")} />
-            {!collapsed && <span className="ml-1 sm:ml-2 text-xs sm:text-sm">Collapse</span>}
+            <ChevronLeft className={cn("h-4 w-4 transition-transform", collapsed && "rotate-180")} />
+            {!collapsed && <span className="ml-2 text-xs sm:text-sm">Collapse</span>}
           </Button>
         </div>
 
