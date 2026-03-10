@@ -650,7 +650,13 @@ export default function OrdersPage() {
       return
     }
     const newTotal = validItems.reduce((s, i) => s + i.price * i.quantity, 0)
-    updateOrder(editingOrderId, { ...editForm, items: validItems as any, total: newTotal } as any)
+    // Preserve existing paymentStatus/paymentMethod — never overwrite them from edit modal
+    const existingOrder = orders.find(o => o.id === editingOrderId)
+    const paymentPreserve = existingOrder ? {
+      paymentStatus: existingOrder.paymentStatus,
+      paymentMethod: existingOrder.paymentMethod,
+    } : {}
+    updateOrder(editingOrderId, { ...editForm, ...paymentPreserve, items: validItems as any, total: newTotal } as any)
     toast({ title: "Order updated", description: `Changes saved for ${editForm.customerName}` })
     setShowEditModal(false)
     setEditingOrderId(null)

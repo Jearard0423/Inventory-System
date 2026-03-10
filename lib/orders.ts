@@ -183,6 +183,12 @@ export const deleteOrder = (orderId: string): void => {
   const updatedOrders = orders.filter(order => order.id !== orderId)
   localStorage.setItem("yellowbell_orders", JSON.stringify(updatedOrders))
   window.dispatchEvent(new Event("orders-updated"))
+
+  // Delete from Firebase RTDB so all other admins see the deletion instantly
+  try {
+    const { deleteOrderFromFirebase } = require('./firebase-inventory-sync')
+    deleteOrderFromFirebase(orderId).catch(() => {})
+  } catch { /* non-critical */ }
 }
 /**
  * Update a specific order's editable fields in localStorage AND Firebase RTDB.

@@ -3,6 +3,7 @@
 import { useEffect } from "react"
 import { initializeFirebaseSync, cleanupFirebaseSync, initializeCategoriesInFirebase, getCategoriesFromFirebase, loadOrdersPageFromFirebase, loadOrderHistoryFromFirebase } from "@/lib/firebase-inventory-sync"
 import { initializeFirestoreSync, cleanupFirestoreSync } from "@/lib/firestore-sync"
+import { startNotificationsListener, stopNotificationsListener } from "@/lib/notifications-store"
 
 /**
  * Component to initialize Firebase sync on app startup
@@ -49,6 +50,11 @@ export function FirebaseSyncInitializer() {
     // Load order history from Firebase so completed/delivered orders always appear
     try {
       loadOrderHistoryFromFirebase().catch(() => {})
+    } catch { /* non-critical */ }
+
+    // Start real-time notifications listener so all admins see the same notifications
+    try {
+      startNotificationsListener()
     } catch { /* non-critical */ }
 
     // Initialize categories in Firebase and fetch them
@@ -101,6 +107,7 @@ export function FirebaseSyncInitializer() {
       window.removeEventListener("firebase-kitchen-updated", handleKitchenUpdate)
       cleanupFirebaseSync()
       cleanupFirestoreSync()
+      stopNotificationsListener()
     }
   }, [])
 

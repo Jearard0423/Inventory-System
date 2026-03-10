@@ -191,7 +191,7 @@ export function Sidebar() {
             WebkitOverflowScrolling: 'touch',
             scrollbarWidth: 'thin',
             scrollbarColor: 'rgba(255, 255, 255, 0.2) transparent',
-            maxHeight: 'calc(100vh - 64px)',
+            maxHeight: 'calc(100vh - 64px - 140px)',
             overscrollBehavior: 'contain',
             msOverflowStyle: 'none',
             overflowY: 'auto',
@@ -245,7 +245,7 @@ export function Sidebar() {
           </ul>
         </nav>
 
-        <div className="hidden md:block border-t border-sidebar-border p-3 sm:p-4 space-y-2 flex-shrink-0 bg-sidebar">
+        <div className="block border-t border-sidebar-border p-3 sm:p-4 space-y-2 flex-shrink-0 bg-sidebar">
           {/* User Profile Section */}
           {auth?.user && (
             <div className={cn(

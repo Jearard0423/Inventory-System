@@ -33,6 +33,7 @@ let inventoryListener: Unsubscribe | null = null
 let ordersListener: Unsubscribe | null = null
 let kitchenListener: Unsubscribe | null = null
 let menuListener: Unsubscribe | null = null
+let ordersPageListener: Unsubscribe | null = null
 
 // Track recently updated items to prevent circular sync loops
 // Maps itemId -> timestamp of when it was last updated locally
@@ -262,6 +263,29 @@ export const initializeFirebaseSync = () => {
       }
     )
 
+    // Set up ordersPage listener — syncs yellowbell_orders (orders page) across all admins.
+    // When any admin deletes, edits, or pays an order, all other admins see it instantly.
+    const ordersPageRef = ref(database, "ordersPage")
+    ordersPageListener = onValue(
+      ordersPageRef,
+      (snapshot) => {
+        try {
+          const remoteOrders: any[] = snapshot.exists() ? Object.values(snapshot.val()) : []
+          // Replace localStorage so this device matches Firebase exactly
+          localStorage.setItem("yellowbell_orders", JSON.stringify(remoteOrders))
+          window.dispatchEvent(new Event("orders-updated"))
+          console.log(`[firebase-sync] ordersPage → localStorage: ${remoteOrders.length} orders`)
+        } catch (e) {
+          console.warn("[firebase-sync] ordersPage sync error:", e)
+        }
+      },
+      (error: any) => {
+        if (error.code !== "PERMISSION_DENIED") {
+          console.error("Firebase ordersPage sync error:", error)
+        }
+      }
+    )
+
     // Set up kitchen items listener with error handling
     const kitchenRef = ref(database, "inventories/kitchen")
     kitchenListener = onValue(
@@ -361,6 +385,7 @@ export const cleanupFirebaseSync = () => {
   if (ordersListener) ordersListener()
   if (kitchenListener) kitchenListener()
   if (menuListener) menuListener()
+  if (ordersPageListener) ordersPageListener()
 }
 
 /**
@@ -917,5 +942,23 @@ export const loadOrderHistoryFromFirebase = async (): Promise<void> => {
     console.log(`[firebase-sync] Loaded ${remote.length} history orders from Firebase, ${merged.length - existing.length} new`)
   } catch (err) {
     console.warn("[firebase-sync] loadOrderHistoryFromFirebase failed:", err)
+  }
+}
+/**
+ * Delete an order from all Firebase RTDB nodes so all admins see the deletion instantly.
+ * Removes from /inventories/orders/{id} AND /ordersPage/{id}
+ */
+export const deleteOrderFromFirebase = async (orderId: string): Promise<void> => {
+  try {
+    const { remove } = await import("firebase/database")
+    await Promise.all([
+      remove(ref(database, `inventories/orders/${orderId}`)),
+      remove(ref(database, `ordersPage/${orderId}`)),
+    ])
+    console.log(`[firebase-sync] Deleted order ${orderId} from Firebase`)
+  } catch (err: any) {
+    if (err?.code !== 'PERMISSION_DENIED') {
+      console.warn('[firebase-sync] deleteOrderFromFirebase failed:', err)
+    }
   }
 }
