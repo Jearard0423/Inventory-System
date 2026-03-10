@@ -18,6 +18,12 @@ export const metadata: Metadata = {
     icon: "/yrc-logo.png",
     apple: "/yrc-logo.png",
   },
+  // Prevent in-app browsers (Messenger, etc.) from caching stale versions
+  other: {
+    "cache-control": "no-cache, no-store, must-revalidate",
+    "pragma": "no-cache",
+    "expires": "0",
+  },
 }
 
 export default function RootLayout({
@@ -27,6 +33,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* Force no-cache for in-app browsers (Messenger, Facebook, etc.) */}
+        <meta httpEquiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+        <meta httpEquiv="Pragma" content="no-cache" />
+        <meta httpEquiv="Expires" content="0" />
+      </head>
       <body className={`font-sans antialiased`} suppressHydrationWarning>
         <AuthProvider>
           <FirebaseSyncInitializer />
