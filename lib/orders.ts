@@ -185,8 +185,8 @@ export const deleteOrder = (orderId: string): void => {
   window.dispatchEvent(new Event("orders-updated"))
 }
 /**
- * Update a specific order's editable fields in localStorage.
- * Syncs both yellowbell_orders and yellowbell_customer_orders.
+ * Update a specific order's editable fields in localStorage AND Firebase RTDB.
+ * This ensures edited cookTime/date/mealType are reflected in reminders on all devices.
  */
 export const updateOrder = (
   orderId: string,
@@ -207,6 +207,17 @@ export const updateOrder = (
   const custOrders = JSON.parse(localStorage.getItem('yellowbell_customer_orders') || '[]')
   const updatedCustOrders = custOrders.map((o: any) => o.id === orderId ? { ...o, ...patch } : o)
   localStorage.setItem('yellowbell_customer_orders', JSON.stringify(updatedCustOrders))
+
+  // Push the patch to Firebase RTDB so the edit is reflected on all devices
+  // and reminders use the updated cookTime/date/mealType
+  try {
+    const { updateOrderInFirebase } = require('./firebase-inventory-sync')
+    updateOrderInFirebase(orderId, patch).catch((err: any) =>
+      console.warn('[updateOrder] RTDB sync failed (non-critical):', err)
+    )
+  } catch (err) {
+    console.warn('[updateOrder] Firebase sync not available:', err)
+  }
 
   window.dispatchEvent(new Event('orders-updated'))
   window.dispatchEvent(new Event('customer-orders-updated'))

@@ -176,79 +176,183 @@ const dominantMealType = (orders: any[]) => {
   return Object.entries(counts).sort((a,b)=>b[1]-a[1])[0]?.[0]||'dinner'
 }
 
-const sentReminders = new Set<string>()
+// sentReminders is NOT used for dedup anymore — client sends sentKeys from localStorage.
+// This server-side set is only a per-request safety guard against double-sending
+// within the same serverless invocation.
+const _requestSentGuard = new Set<string>()
 
 // Orders in these statuses are EXCLUDED from reminder emails
 const FINAL_STATUSES = new Set(['delivered','served','cancelled','canceled','complete','ready'])
 
-const processReminders = async (orders: any[], emails: string[]) => {
+/**
+ * Build the delivery datetime for an order.
+ * `order.date` is the DELIVERY DATE (e.g. "2026-03-12", set by cookingDate in new-order).
+ * `order.cookTime` is the delivery time string (e.g. "08:00").
+ * We combine them to get the exact delivery moment.
+ */
+const getDeliveryDT = (order: any): Date | null => {
+  if (!order.cookTime) return null
+  const [h, m] = order.cookTime.split(':').map(Number)
+  if (isNaN(h) || isNaN(m)) return null
+
+  // Prefer order.date (the cooking/delivery date) over createdAt
+  const dateStr = order.date || order.createdAt || ''
+  if (!dateStr) return null
+
+  // parseLocalDate handles both "YYYY-MM-DD" and ISO strings
+  const base = parseLocalDate(dateStr)
+  const dt = new Date(base)
+  dt.setHours(h, m, 0, 0)
+  return dt
+}
+
+const processReminders = async (orders: any[], emails: string[], clientSentKeys: string[]) => {
   const now = getPHTime()
+  const sentKeys = new Set(clientSentKeys)
 
   const pending = orders.filter(o => !FINAL_STATUSES.has((o.status||'').toLowerCase()))
-  console.log(`[send-reminders] ${orders.length} total, ${pending.length} pending (non-final)`)
+  console.log(`[send-reminders] ${orders.length} total, ${pending.length} active, ${sentKeys.size} already-sent keys`)
 
-  const oneHourBucket: any[] = []
-  const twoHourBucket: any[] = []
+  // Buckets keyed by reminder type
+  const dayBeforeBucket: any[] = []  // 18–30 hrs before delivery
+  const oneHourBucket:   any[] = []  // 0–1 hr before delivery
+  const twoHourBucket:   any[] = []  // 1–2 hrs before delivery
 
   pending.forEach(order => {
-    if (!order.cookTime) return
-    const orderDate = parseLocalDate(order.createdAt || order.date || '')
-    const [h, m] = order.cookTime.split(':').map(Number)
-    const deliveryDT = new Date(orderDate)
-    deliveryDT.setHours(h, m, 0, 0)
-    // Handle next-day orders (e.g. placed at night, delivery at 8am)
-    if (deliveryDT < now) deliveryDT.setDate(deliveryDT.getDate() + 1)
+    const deliveryDT = getDeliveryDT(order)
+    if (!deliveryDT) return
     const hoursUntil = (deliveryDT.getTime() - now.getTime()) / 3600000
-    if (hoursUntil > 0 && hoursUntil <= 1) oneHourBucket.push(order)
-    else if (hoursUntil > 1 && hoursUntil <= 2) twoHourBucket.push(order)
+
+    if (hoursUntil > 0  && hoursUntil <= 1)  oneHourBucket.push({ order, deliveryDT, hoursUntil })
+    else if (hoursUntil > 1 && hoursUntil <= 2) twoHourBucket.push({ order, deliveryDT, hoursUntil })
+    else if (hoursUntil > 18 && hoursUntil <= 30) dayBeforeBucket.push({ order, deliveryDT, hoursUntil })
   })
 
   const results: string[] = []
+  const newSentKeys: string[] = []
 
-  if (oneHourBucket.length > 0) {
-    const newOrders = oneHourBucket.filter(o => !sentReminders.has(`1hr:${o.id}`))
-    if (newOrders.length > 0) {
-      const mt = dominantMealType(newOrders)
-      const colors = getMealColors(mt)
-      const delivTime = formatTime12h(newOrders[0].cookTime)
-      const content = `<div style="margin-bottom:24px;"><div style="display:inline-block;background:#fee2e2;border:2px solid #dc2626;border-radius:20px;padding:6px 16px;margin-bottom:16px;"><span style="color:#991b1b;font-weight:800;font-size:12px;">🚨 1-HOUR URGENT REMINDER</span></div><h2 style="margin:0 0 8px;color:#991b1b;font-size:26px;font-weight:900;">${newOrders.length} Order${newOrders.length>1?'s':''} Due in 1 Hour!</h2><p style="margin:0;color:#6b7280;font-size:14px;">Delivery at <strong style="color:#dc2626;font-size:18px;">${delivTime}</strong> — final preparation required NOW</p></div>${buildOrderTable(newOrders,colors)}<div style="margin-top:20px;padding:18px;background:#fee2e2;border:3px solid #dc2626;border-radius:8px;text-align:center;"><p style="color:#7f1d1d;margin:0;font-size:16px;font-weight:800;">⚡ PACK ALL ORDERS NOW — DELIVERY IN 1 HOUR!</p></div>`
-      const html = emailWrapper(content, mt)
-      const text = `URGENT: ${newOrders.length} order(s) due in 1 hour at ${delivTime}\n\n${newOrders.map(o=>`${o.customerName}: ${(o.orderedItems||o.items||[]).map((i:any)=>`${i.quantity}x ${i.name}`).join(', ')}`).join('\n')}`
-      const subject = `🚨 URGENT: ${newOrders.length} Order${newOrders.length>1?'s':''} Due in 1 Hour — ${delivTime}`
-      for (const email of emails) await sendEmail(email, subject, html, text)
-      newOrders.forEach(o => sentReminders.add(`1hr:${o.id}`))
-      results.push(`1hr-reminder: ${newOrders.length} order(s) → ${emails.length} recipient(s)`)
-    }
+  // ── 1-DAY-BEFORE reminder ──────────────────────────────────────────────────
+  const dayBeforeOrders = dayBeforeBucket
+    .filter(({ order }) => !sentKeys.has(`dayBefore:${order.id}`))
+    .map(e => e.order)
+
+  if (dayBeforeOrders.length > 0) {
+    const mt = dominantMealType(dayBeforeOrders)
+    const colors = getMealColors(mt)
+    // Group by delivery date for the subject line
+    const firstDT = getDeliveryDT(dayBeforeOrders[0])!
+    const delivDateLabel = firstDT.toLocaleDateString('en-PH', { weekday:'long', month:'long', day:'numeric', timeZone:'Asia/Manila' })
+    const delivTime = formatTime12h(dayBeforeOrders[0].cookTime)
+    const content = `
+      <div style="margin-bottom:24px;">
+        <div style="display:inline-block;background:${colors.badgeBg};border:2px solid ${colors.badgeBorder};border-radius:20px;padding:6px 16px;margin-bottom:16px;">
+          <span style="color:${colors.badgeText};font-weight:800;font-size:12px;">📆 1-DAY ADVANCE REMINDER</span>
+        </div>
+        <h2 style="margin:0 0 8px;color:#111827;font-size:26px;font-weight:900;">
+          ${dayBeforeOrders.length} Order${dayBeforeOrders.length>1?'s':''} Tomorrow!
+        </h2>
+        <p style="margin:0;color:#6b7280;font-size:14px;">
+          Delivery on <strong style="color:${colors.tableAccent};font-size:16px;">${delivDateLabel}</strong>
+          at <strong style="color:${colors.tableAccent};font-size:18px;">${delivTime}</strong>
+          — prepare ingredients in advance
+        </p>
+      </div>
+      ${buildOrderTable(dayBeforeOrders, colors)}
+      <div style="margin-top:20px;padding:14px 18px;background:${colors.badgeBg};border-left:4px solid ${colors.tableAccent};border-radius:0 8px 8px 0;">
+        <p style="margin:0;color:${colors.badgeText};font-size:13px;font-weight:600;">
+          📋 You will receive another reminder 1–2 hours before delivery time.
+        </p>
+      </div>`
+    const html = emailWrapper(content, mt)
+    const text = `TOMORROW: ${dayBeforeOrders.length} order(s) on ${delivDateLabel} at ${delivTime}\n\n${dayBeforeOrders.map(o=>`${o.customerName}: ${(o.orderedItems||o.items||[]).map((i:any)=>`${i.quantity}x ${i.name}`).join(', ')}`).join('\n')}`
+    const subject = `📆 Tomorrow: ${dayBeforeOrders.length} Order${dayBeforeOrders.length>1?'s':''} on ${delivDateLabel} at ${delivTime}`
+    for (const email of emails) await sendEmail(email, subject, html, text)
+    dayBeforeOrders.forEach(o => { newSentKeys.push(`dayBefore:${o.id}`) })
+    results.push(`dayBefore-reminder: ${dayBeforeOrders.length} order(s) → ${emails.length} recipient(s)`)
   }
 
-  if (twoHourBucket.length > 0) {
-    const newOrders = twoHourBucket.filter(o => !sentReminders.has(`2hr:${o.id}`))
-    if (newOrders.length > 0) {
-      const mt = dominantMealType(newOrders)
-      const colors = getMealColors(mt)
-      const delivTime = formatTime12h(newOrders[0].cookTime)
-      const content = `<div style="margin-bottom:24px;"><div style="display:inline-block;background:${colors.badgeBg};border:1px solid ${colors.badgeBorder};border-radius:20px;padding:6px 16px;margin-bottom:16px;"><span style="color:${colors.badgeText};font-weight:700;font-size:12px;">📅 2-HOUR ADVANCE REMINDER</span></div><h2 style="margin:0 0 8px;color:#111827;font-size:24px;font-weight:800;">${newOrders.length} Order${newOrders.length>1?'s':''} — Delivery in ~2 Hours</h2><p style="margin:0;color:#6b7280;font-size:14px;">Delivery at <strong style="color:${colors.tableAccent};font-size:18px;">${delivTime}</strong> — begin preparation soon</p></div>${buildOrderTable(newOrders,colors)}<div style="margin-top:20px;padding:14px 18px;background:${colors.badgeBg};border-left:4px solid ${colors.tableAccent};border-radius:0 8px 8px 0;"><p style="margin:0;color:${colors.badgeText};font-size:13px;font-weight:600;">✅ Delivery in ~2 hours at ${delivTime} — begin final preparation!</p></div>`
-      const html = emailWrapper(content, mt)
-      const text = `REMINDER: ${newOrders.length} order(s) due in ~2 hours at ${delivTime}\n\n${newOrders.map(o=>`${o.customerName}: ${(o.orderedItems||o.items||[]).map((i:any)=>`${i.quantity}x ${i.name}`).join(', ')}`).join('\n')}`
-      const subject = `📅 2-Hr Alert: ${newOrders.length} Order${newOrders.length>1?'s':''} Due in ~2 Hours — ${delivTime}`
-      for (const email of emails) await sendEmail(email, subject, html, text)
-      newOrders.forEach(o => sentReminders.add(`2hr:${o.id}`))
-      results.push(`2hr-reminder: ${newOrders.length} order(s) → ${emails.length} recipient(s)`)
-    }
+  // ── 1-HOUR-URGENT reminder ─────────────────────────────────────────────────
+  const oneHourOrders = oneHourBucket
+    .filter(({ order }) => !sentKeys.has(`1hr:${order.id}`))
+    .map(e => e.order)
+
+  if (oneHourOrders.length > 0) {
+    const mt = dominantMealType(oneHourOrders)
+    const colors = getMealColors(mt)
+    const delivTime = formatTime12h(oneHourOrders[0].cookTime)
+    const content = `
+      <div style="margin-bottom:24px;">
+        <div style="display:inline-block;background:#fee2e2;border:2px solid #dc2626;border-radius:20px;padding:6px 16px;margin-bottom:16px;">
+          <span style="color:#991b1b;font-weight:800;font-size:12px;">🚨 1-HOUR URGENT REMINDER</span>
+        </div>
+        <h2 style="margin:0 0 8px;color:#991b1b;font-size:26px;font-weight:900;">
+          ${oneHourOrders.length} Order${oneHourOrders.length>1?'s':''} Due in 1 Hour!
+        </h2>
+        <p style="margin:0;color:#6b7280;font-size:14px;">
+          Delivery at <strong style="color:#dc2626;font-size:18px;">${delivTime}</strong> — final preparation required NOW
+        </p>
+      </div>
+      ${buildOrderTable(oneHourOrders, colors)}
+      <div style="margin-top:20px;padding:18px;background:#fee2e2;border:3px solid #dc2626;border-radius:8px;text-align:center;">
+        <p style="color:#7f1d1d;margin:0;font-size:16px;font-weight:800;">⚡ PACK ALL ORDERS NOW — DELIVERY IN 1 HOUR!</p>
+      </div>`
+    const html = emailWrapper(content, mt)
+    const text = `URGENT: ${oneHourOrders.length} order(s) due in 1 hour at ${delivTime}\n\n${oneHourOrders.map(o=>`${o.customerName}: ${(o.orderedItems||o.items||[]).map((i:any)=>`${i.quantity}x ${i.name}`).join(', ')}`).join('\n')}`
+    const subject = `🚨 URGENT: ${oneHourOrders.length} Order${oneHourOrders.length>1?'s':''} Due in 1 Hour — ${delivTime}`
+    for (const email of emails) await sendEmail(email, subject, html, text)
+    oneHourOrders.forEach(o => { newSentKeys.push(`1hr:${o.id}`) })
+    results.push(`1hr-reminder: ${oneHourOrders.length} order(s) → ${emails.length} recipient(s)`)
+  }
+
+  // ── 2-HOUR reminder ────────────────────────────────────────────────────────
+  const twoHourOrders = twoHourBucket
+    .filter(({ order }) => !sentKeys.has(`2hr:${order.id}`))
+    .map(e => e.order)
+
+  if (twoHourOrders.length > 0) {
+    const mt = dominantMealType(twoHourOrders)
+    const colors = getMealColors(mt)
+    const delivTime = formatTime12h(twoHourOrders[0].cookTime)
+    const content = `
+      <div style="margin-bottom:24px;">
+        <div style="display:inline-block;background:${colors.badgeBg};border:1px solid ${colors.badgeBorder};border-radius:20px;padding:6px 16px;margin-bottom:16px;">
+          <span style="color:${colors.badgeText};font-weight:700;font-size:12px;">📅 2-HOUR ADVANCE REMINDER</span>
+        </div>
+        <h2 style="margin:0 0 8px;color:#111827;font-size:24px;font-weight:800;">
+          ${twoHourOrders.length} Order${twoHourOrders.length>1?'s':''} — Delivery in ~2 Hours
+        </h2>
+        <p style="margin:0;color:#6b7280;font-size:14px;">
+          Delivery at <strong style="color:${colors.tableAccent};font-size:18px;">${delivTime}</strong> — begin preparation soon
+        </p>
+      </div>
+      ${buildOrderTable(twoHourOrders, colors)}
+      <div style="margin-top:20px;padding:14px 18px;background:${colors.badgeBg};border-left:4px solid ${colors.tableAccent};border-radius:0 8px 8px 0;">
+        <p style="margin:0;color:${colors.badgeText};font-size:13px;font-weight:600;">
+          ✅ Delivery in ~2 hours at ${delivTime} — begin final preparation!
+        </p>
+      </div>`
+    const html = emailWrapper(content, mt)
+    const text = `REMINDER: ${twoHourOrders.length} order(s) due in ~2 hours at ${delivTime}\n\n${twoHourOrders.map(o=>`${o.customerName}: ${(o.orderedItems||o.items||[]).map((i:any)=>`${i.quantity}x ${i.name}`).join(', ')}`).join('\n')}`
+    const subject = `📅 2-Hr Alert: ${twoHourOrders.length} Order${twoHourOrders.length>1?'s':''} Due in ~2 Hours — ${delivTime}`
+    for (const email of emails) await sendEmail(email, subject, html, text)
+    twoHourOrders.forEach(o => { newSentKeys.push(`2hr:${o.id}`) })
+    results.push(`2hr-reminder: ${twoHourOrders.length} order(s) → ${emails.length} recipient(s)`)
   }
 
   if (results.length === 0) results.push('no reminders needed at this time')
-  return results
+  return { results, newSentKeys }
 }
 
 export async function POST(request: NextRequest) {
   try {
     let overrideEmails: string[] | null = null
     let clientOrders: any[] | null = null
+    let clientSentKeys: string[] = []
     try {
       const body = await request.json()
       if (Array.isArray(body?.emails)) overrideEmails = body.emails
       if (Array.isArray(body?.orders)) clientOrders = body.orders
+      if (Array.isArray(body?.sentKeys)) clientSentKeys = body.sentKeys
     } catch { /* no body */ }
 
     const emails = overrideEmails || await fetchAllUserEmails()
@@ -257,12 +361,13 @@ export async function POST(request: NextRequest) {
     }
 
     const orders = clientOrders || []
-    console.log(`[send-reminders] Processing ${orders.length} orders for ${emails.length} recipient(s)`)
-    const results = await processReminders(orders, emails)
+    console.log(`[send-reminders] Processing ${orders.length} orders, ${clientSentKeys.length} already-sent keys, ${emails.length} recipient(s)`)
+    const { results, newSentKeys } = await processReminders(orders, emails, clientSentKeys)
 
     return NextResponse.json({
       success:true, timestamp:nowPHLabel(),
       recipients:emails.length, ordersChecked:orders.length, actions:results,
+      newSentKeys,
     }, { headers:corsHeaders })
   } catch (err) {
     console.error('[send-reminders] Unexpected error:', err)

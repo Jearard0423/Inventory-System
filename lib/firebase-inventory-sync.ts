@@ -129,13 +129,23 @@ export const initializeFirebaseSync = () => {
   if (typeof window === "undefined") return
 
   try {
-    // First, force refresh from Firebase to ensure we have fresh data
     console.log('[firebase-inventory-sync] Initializing Firebase sync...')
+
+    // ─── IMMEDIATE STALE-ORDER NUKE ───────────────────────────────────────────
+    // Wipe yellowbell_customer_orders from localStorage RIGHT NOW, synchronously,
+    // before the async RTDB listener fires. This prevents any component that reads
+    // localStorage during the RTDB round-trip from seeing the 60+ ghost orders.
+    // RTDB onValue will repopulate with fresh active orders within milliseconds.
+    localStorage.setItem("yellowbell_customer_orders", "[]")
+    window.dispatchEvent(new CustomEvent("firebase-orders-updated", { detail: { orders: [] } }))
+    window.dispatchEvent(new Event("customer-orders-updated"))
+    console.log("[firebase-inventory-sync] Cleared stale customer orders from localStorage — awaiting RTDB...")
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // Force refresh inventory from Firebase
     forceRefreshInventoryFromFirebase().catch(err => {
       console.warn('[firebase-inventory-sync] Initial Firebase refresh failed, will use real-time listener:', err)
     })
-
-    // Set up inventory items listener with error handling
     const inventoryRef = ref(database, "inventories/items")
     inventoryListener = onValue(
       inventoryRef,
@@ -170,42 +180,66 @@ export const initializeFirebaseSync = () => {
       }
     )
 
-    // Set up orders listener with error handling
-    // IMPORTANT: Only merge ACTIVE orders from RTDB — never overwrite localStorage
-    // with completed/delivered/cancelled orders (that caused the stale 68-pending bug)
-    const ACTIVE_STATUSES = new Set(["incomplete", "cooking", "ready", "pending"])
+    // RTDB is the single source of truth for orders.
+    // On every push, fully replace localStorage with ONLY non-finished orders from RTDB.
+    // This permanently clears any stale orders (e.g. the 68-order ghost problem).
+    const DONE_STATUSES_SYNC = new Set(["delivered","served","cancelled","canceled","complete","completed"])
+
+    // An order is considered stale/done if:
+    // 1. Its status is explicitly a done status, OR
+    // 2. Its status is "incomplete" AND it was created more than 24 hours ago
+    //    (today's incomplete orders are legitimately active, old ones are ghosts)
+    const isStaleOrder = (o: any): boolean => {
+      const status = (o.status || "").toLowerCase()
+      if (DONE_STATUSES_SYNC.has(status)) return true
+      if (status === "incomplete") {
+        const created = new Date(o.createdAt || o.lastUpdated || 0).getTime()
+        const hoursOld = (Date.now() - created) / 3600000
+        return hoursOld > 24
+      }
+      return false
+    }
     const ordersRef = ref(database, "inventories/orders")
     ordersListener = onValue(
       ordersRef,
       (snapshot) => {
-        if (snapshot.exists()) {
-          const rtdbOrders: Record<string, any> = snapshot.val()
-          const activeRtdbOrders = Object.values(rtdbOrders).filter((o: any) =>
-            ACTIVE_STATUSES.has((o.status || "").toLowerCase())
-          )
-          try {
-            const localRaw = localStorage.getItem("yellowbell_customer_orders")
-            const localOrders: any[] = localRaw ? JSON.parse(localRaw) : []
-            const rtdbById = new Map(activeRtdbOrders.map((o: any) => [o.id, o]))
-            const localById = new Map(localOrders.map((o: any) => [o.id, o]))
-            // RTDB active orders take precedence; keep local-only active orders too
-            const merged = new Map([...localById, ...rtdbById])
-            const mergedArray = Array.from(merged.values()).filter((o: any) =>
-              ACTIVE_STATUSES.has((o.status || "").toLowerCase())
-            )
-            localStorage.setItem("yellowbell_customer_orders", JSON.stringify(mergedArray))
-            window.dispatchEvent(new CustomEvent("firebase-orders-updated", { detail: rtdbOrders }))
-            console.log(`[firebase-sync] Orders merged: ${mergedArray.length} active orders`)
-          } catch (e) {
-            console.warn("[firebase-sync] Orders merge failed, skipping overwrite:", e)
+        try {
+          let activeOrders: any[] = []
+          if (snapshot.exists()) {
+            const rtdbOrders: Record<string, any> = snapshot.val()
+            const staleIds: string[] = []
+            activeOrders = Object.values(rtdbOrders).filter((o: any) => {
+              if (isStaleOrder(o)) {
+                staleIds.push(o.id || o.orderId)
+                return false
+              }
+              return true
+            })
+            console.log(`[firebase-sync] RTDB → localStorage: ${activeOrders.length} active orders, ${staleIds.length} stale removed`)
+            // Asynchronously delete stale orders from RTDB so they never come back
+            if (staleIds.length > 0) {
+              const cleanupUpdates: Record<string, null> = {}
+              staleIds.forEach(id => { if (id) cleanupUpdates[id] = null })
+              update(ordersRef, cleanupUpdates).then(() => {
+                console.log(`[firebase-sync] Deleted ${staleIds.length} stale orders from RTDB:`, staleIds.slice(0,5))
+              }).catch(err => console.warn("[firebase-sync] RTDB stale order cleanup failed:", err))
+            }
+          } else {
+            console.log("[firebase-sync] RTDB has no orders — cleared localStorage")
           }
+          // Write to localStorage
+          localStorage.setItem("yellowbell_customer_orders", JSON.stringify(activeOrders))
+          // Pass activeOrders as event detail so inventory-store.ts in-memory
+          // customerOrders array also gets replaced (prevents stale array overwriting localStorage)
+          window.dispatchEvent(new CustomEvent("firebase-orders-updated", { detail: { orders: activeOrders } }))
+          window.dispatchEvent(new Event("customer-orders-updated"))
+        } catch (e) {
+          console.warn("[firebase-sync] Orders sync error:", e)
         }
       },
       (error: any) => {
         if (error.code === "PERMISSION_DENIED") {
-          console.warn(
-            "Firebase permission denied for inventories/orders. Using localStorage only."
-          )
+          console.warn("Firebase permission denied for inventories/orders. Using localStorage only.")
         } else {
           console.error("Firebase orders sync error:", error)
         }
@@ -572,6 +606,25 @@ export const saveOrderToFirebase = async (orderId: string, order: CustomerOrder)
       console.error("Error saving order to Firebase:", error)
     }
     // Silently fail for permission denied (app continues with localStorage)
+  }
+}
+
+/**
+ * Patch specific fields of an existing order in Firebase RTDB.
+ * Used when admin edits cookTime, mealType, date, customerName etc.
+ * so the updated delivery time is used by reminders on all devices.
+ */
+export const updateOrderInFirebase = async (orderId: string, patch: Record<string, any>) => {
+  try {
+    const { update } = await import("firebase/database")
+    const orderRef = ref(database, `inventories/orders/${orderId}`)
+    const cleanPatch = cleanUndefined({ ...patch, lastUpdated: new Date().toISOString() })
+    await update(orderRef, cleanPatch)
+    console.log(`[firebase-sync] Order ${orderId} patched in RTDB:`, Object.keys(cleanPatch))
+  } catch (error: any) {
+    if (error.code !== "PERMISSION_DENIED") {
+      console.error("Error updating order in Firebase:", error)
+    }
   }
 }
 

@@ -53,11 +53,20 @@ export function POSLayout({ children, fullWidth = false }: { children: ReactNode
         >
           <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12h18M3 6h18M3 18h18" /></svg>
         </button>
-        <main className={`flex-1 transition-all duration-300 ${sidebarCollapsed ? "lg:pl-20" : "lg:pl-64"} ${fullWidth ? "overflow-hidden flex flex-col" : "overflow-y-auto"}`}>
-          <div className={fullWidth ? "flex-1 min-h-0 p-4 lg:p-6 pt-16 lg:pt-6 flex flex-col overflow-hidden" : "container mx-auto p-4 lg:p-8 pt-16 lg:pt-6"}>
-            {children}
-          </div>
-        </main>
+        {fullWidth ? (
+          /* fullWidth: sidebar is fixed so we margin-left past it, children fill remaining height */
+          <main className={`flex-1 overflow-hidden flex flex-col transition-all duration-300 pt-14 lg:pt-0 ${sidebarCollapsed ? "lg:ml-20" : "lg:ml-64"}`}>
+            <div className="flex-1 overflow-hidden flex flex-col p-4 lg:p-6">
+              {children}
+            </div>
+          </main>
+        ) : (
+          <main className={`flex-1 overflow-y-auto transition-all duration-300 ${sidebarCollapsed ? "lg:ml-20" : "lg:ml-64"}`}>
+            <div className="container mx-auto p-4 lg:p-8 pt-16 lg:pt-6">
+              {children}
+            </div>
+          </main>
+        )}
       </div>
     </div>
   )

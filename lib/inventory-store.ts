@@ -67,6 +67,7 @@ export interface CustomerOrder {
   cookedItems: OrderItem[]
   status: "incomplete" | "complete" | "delivered" | "cooking" | "ready" | "served"
   createdAt: string
+  date?: string          // delivery/cooking date (YYYY-MM-DD), set by date picker in new-order
   deliveryPhone?: string
   deliveryAddress?: string
   mealType?: string
@@ -291,8 +292,11 @@ if (initialData) {
 // In-memory storage for kitchen items (loaded from localStorage)
 let kitchenItems: KitchenItem[] = initialData.kitchenItems;
 
-// In-memory storage for customer orders (loaded from localStorage)
-let customerOrders: CustomerOrder[] = initialData.customerOrders;
+// Customer orders are NOT seeded from localStorage.
+// RTDB is the single source of truth — the firebase-orders-updated event
+// from firebase-inventory-sync.ts will populate this array within seconds of page load.
+// Seeding from localStorage caused the ghost-order bug (stale orders written back over RTDB data).
+let customerOrders: CustomerOrder[] = [];
 
 // In-memory storage for delivery orders (loaded from localStorage)
 let deliveryOrders: CustomerOrder[] = initialData.deliveryOrders;
@@ -585,22 +589,17 @@ if (typeof window !== 'undefined') {
     window.addEventListener('firebase-orders-updated', (ev: Event) => {
       if (ev instanceof CustomEvent && ev.detail) {
         try {
-          const incomingOrders = Object.values(ev.detail as any) as CustomerOrder[]
-          const finalStatuses = new Set(['delivered', 'served', 'cancelled', 'canceled'])
-          // Merge: keep local final-status orders, update the rest from Firebase
-          const localFinalIds = new Map(
-            customerOrders
-              .filter(o => finalStatuses.has((o.status || '').toLowerCase()))
-              .map(o => [o.id, o])
-          )
-          customerOrders = incomingOrders.map(o => {
-            const localFinal = localFinalIds.get(o.id)
-            // If we have a local final status for this order, keep the local version
-            return localFinal || o
-          })
-          // Also add any local final orders not present in Firebase at all
-          incomingOrders.forEach(o => localFinalIds.delete(o.id))
-          localFinalIds.forEach(o => customerOrders.push(o))
+          // New format: { orders: CustomerOrder[] } — RTDB active orders replace in-memory array entirely
+          const activeOrders: CustomerOrder[] = Array.isArray(ev.detail?.orders)
+            ? ev.detail.orders
+            : Array.isArray(Object.values(ev.detail))
+              ? Object.values(ev.detail as any) as CustomerOrder[]
+              : []
+
+          // Replace in-memory array with RTDB truth — no merge, no stale data
+          customerOrders = activeOrders
+          console.log(`[inventory-store] in-memory customerOrders replaced: ${customerOrders.length} active orders`)
+
           try {
             localStorage.setItem(CUSTOMER_ORDERS_KEY, JSON.stringify(customerOrders))
           } catch (err) {

@@ -19,32 +19,30 @@ interface Message {
   content: string
 }
 
-const ACTIVE_STATUSES = new Set(["incomplete", "cooking", "ready", "pending"])
-const DONE_STATUSES   = new Set(["delivered", "served", "cancelled", "canceled", "complete", "completed"])
+const DONE_STATUSES = new Set(["delivered", "served", "cancelled", "canceled", "complete", "completed"])
 
-/** Read only active (non-finished) customer orders from localStorage */
-function readActiveCustomerOrders(): any[] {
+function readActiveOrders(): any[] {
   try {
     const raw = typeof window !== "undefined" ? localStorage.getItem("yellowbell_customer_orders") : null
     if (!raw) return []
-    return (JSON.parse(raw) as any[]).filter(o => !DONE_STATUSES.has((o.status || "").toLowerCase()))
-  } catch { return [] }
-}
-
-/** Read only pending orders from yellowbell_orders */
-function readPendingOrders(): any[] {
-  try {
-    const raw = typeof window !== "undefined" ? localStorage.getItem("yellowbell_orders") : null
-    if (!raw) return []
-    return (JSON.parse(raw) as any[]).filter(o => (o.status || "").toLowerCase() === "pending")
+    return (JSON.parse(raw) as any[]).filter(o => {
+      const status = (o.status || "").toLowerCase()
+      if (DONE_STATUSES.has(status)) return false
+      // Filter out "incomplete" orders older than 24 hours — those are ghosts
+      if (status === "incomplete") {
+        const created = new Date(o.createdAt || o.lastUpdated || 0).getTime()
+        const hoursOld = (Date.now() - created) / 3600000
+        return hoursOld <= 24
+      }
+      return true
+    })
   } catch { return [] }
 }
 
 function buildContext(): string {
   try {
     const inventory  = getInventoryItems()
-    const custOrders = readActiveCustomerOrders()
-    const orders     = readPendingOrders()
+    const orders     = readActiveOrders()   // from RTDB via yellowbell_customer_orders
     const lowStock   = getLowStockItems()
 
     const now    = new Date()
@@ -95,7 +93,7 @@ ${lowStock.length > 0 ? lowStock.map(i => `  ⚠ ${i.name}: only ${i.stock} left
 ═══ ORDER METRICS ═══
 Total Active Orders: ${orders.length}
 Today's Orders: ${todayOrders.length}
-Pending / Active Customer Orders: ${custOrders.length}
+Pending / Active Customer Orders: ${orders.length}
 Paid Orders: ${paidOrders.length}  (Cash: ${cashCount}, GCash: ${gcashCount})
 Unpaid Orders: ${unpaidOrders.length}
 
@@ -110,7 +108,7 @@ Top Ordered Items (all time):
 ${topItems.length > 0 ? topItems.map((t, i) => `  ${i + 1}. ${t}`).join("\n") : "  (no order data yet)"}
 
 Active Pending Orders (latest 10):
-${custOrders.slice(0, 10).map(o =>
+${orders.slice(0, 10).map(o =>
   `  • ${o.customerName} | ${o.orderNumber || o.id} | ${o.mealType || "?"} | ${o.cookTime ? o.cookTime + " delivery" : "no time"} | ₱${o.total || 0}`
 ).join("\n") || "  (none)"}
 `.trim()
@@ -130,6 +128,44 @@ const SUGGESTED = [
   { label: "💡 Business advice",   text: "Based on our current data, what are your top 3 business improvement recommendations?" },
 ]
 
+/** Returns 3–4 contextual follow-up suggestions based on what the AI just replied about */
+function getFollowUpSuggestions(replyContent: string): { label: string; text: string }[] {
+  const r = replyContent.toLowerCase()
+  const all: { label: string; text: string }[] = []
+
+  if (r.includes("stock") || r.includes("restock") || r.includes("inventory"))
+    all.push({ label: "📈 Top sellers next", text: "Which items sell the most? Should I reorder anything now?" })
+  if (r.includes("revenue") || r.includes("paid") || r.includes("unpaid") || r.includes("₱"))
+    all.push({ label: "💸 Unpaid breakdown", text: "List all unpaid orders with their totals and customer names." })
+  if (r.includes("order") || r.includes("pending") || r.includes("customer"))
+    all.push({ label: "⏱ Delivery times", text: "Are any orders overdue or approaching their delivery time?" })
+  if (r.includes("breakfast") || r.includes("lunch") || r.includes("dinner") || r.includes("meal"))
+    all.push({ label: "🍗 Best meal type", text: "Which meal type generates the most revenue — breakfast, lunch, or dinner?" })
+  if (r.includes("recommend") || r.includes("suggest") || r.includes("should"))
+    all.push({ label: "📊 Show me data", text: "Give me the raw numbers behind that recommendation." })
+  if (r.includes("low") || r.includes("out of stock") || r.includes("only") || r.includes("unit"))
+    all.push({ label: "🛒 Restock plan", text: "Create a restock shopping list based on current stock and recent demand." })
+  if (r.includes("chicken") || r.includes("liempo") || r.includes("sisig") || r.includes("roast"))
+    all.push({ label: "🥩 Raw stock check", text: "How much raw stock (whole chicken, liempo) do we have vs what we need?" })
+  if (r.includes("payment") || r.includes("cash") || r.includes("gcash"))
+    all.push({ label: "💳 Payment split", text: "What percentage of orders are paid via cash vs GCash?" })
+
+  // Always add a couple of general fallbacks to fill up to 4
+  const fallbacks = [
+    { label: "⚠️ Any urgent issues?", text: "Are there any urgent issues I should address right now?" },
+    { label: "💡 Quick wins",         text: "What are 3 quick actions I can take right now to improve operations?" },
+    { label: "📅 Today's summary",    text: "Give me a full summary of today — orders, revenue, and stock status." },
+    { label: "🔮 Predict demand",     text: "Predict what I'll need to stock for the next 3 days based on trends." },
+  ]
+
+  const result = all.slice(0, 3)
+  for (const fb of fallbacks) {
+    if (result.length >= 4) break
+    if (!result.find(x => x.text === fb.text)) result.push(fb)
+  }
+  return result
+}
+
 export default function AIAssistantPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput]       = useState("")
@@ -145,19 +181,18 @@ export default function AIAssistantPage() {
 
   function refreshStats() {
     try {
-      const inv  = getInventoryItems()
-      const co   = readActiveCustomerOrders()
-      const ord  = readPendingOrders()
-      const paid = ord.filter(o => o.paymentStatus === "paid")
-      const now  = new Date()
-      const phNow = new Date(now.getTime() + now.getTimezoneOffset() * 60000 + 8 * 3600000)
+      const inv    = getInventoryItems()
+      const orders = readActiveOrders()   // RTDB-backed, already filtered
+      const paid   = orders.filter(o => o.paymentStatus === "paid")
+      const now    = new Date()
+      const phNow  = new Date(now.getTime() + now.getTimezoneOffset() * 60000 + 8 * 3600000)
 
       setStats({
         lowStockCount:   inv.filter(i => i.stock > 0 && i.stock <= 5 && !i.isUtensil && !i.isContainer && i.category !== "raw-stock").length,
         outOfStockCount: inv.filter(i => i.stock === 0 && !i.isUtensil && !i.isContainer && i.category !== "raw-stock").length,
-        pendingOrders:   co.length,
+        pendingOrders:   orders.length,
         totalRevenue:    paid.reduce((s, o) => s + (o.total || 0), 0),
-        todayOrders:     ord.filter(o => new Date(o.date || o.createdAt || "").toDateString() === phNow.toDateString()).length,
+        todayOrders:     orders.filter(o => new Date(o.date || o.createdAt || "").toDateString() === phNow.toDateString()).length,
       })
       setContext(buildContext())
       setStatsRefreshed(new Date())
@@ -301,19 +336,32 @@ export default function AIAssistantPage() {
             )}
 
             {messages.map((msg, i) => (
-              <div key={i} className={cn("flex gap-3", msg.role === "user" ? "flex-row-reverse" : "")}>
-                <div className={cn("w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5",
-                  msg.role === "assistant" ? "bg-primary" : "bg-muted")}>
-                  {msg.role === "assistant"
-                    ? <Bot className="w-3.5 h-3.5 text-white" />
-                    : <User className="w-3.5 h-3.5 text-muted-foreground" />}
+              <div key={i}>
+                <div className={cn("flex gap-3", msg.role === "user" ? "flex-row-reverse" : "")}>
+                  <div className={cn("w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5",
+                    msg.role === "assistant" ? "bg-primary" : "bg-muted")}>
+                    {msg.role === "assistant"
+                      ? <Bot className="w-3.5 h-3.5 text-white" />
+                      : <User className="w-3.5 h-3.5 text-muted-foreground" />}
+                  </div>
+                  <div className={cn("rounded-2xl px-4 py-2.5 text-sm max-w-[82%]",
+                    msg.role === "assistant"
+                      ? "bg-muted text-foreground rounded-tl-sm"
+                      : "bg-primary text-primary-foreground rounded-tr-sm")}>
+                    <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                  </div>
                 </div>
-                <div className={cn("rounded-2xl px-4 py-2.5 text-sm max-w-[82%]",
-                  msg.role === "assistant"
-                    ? "bg-muted text-foreground rounded-tl-sm"
-                    : "bg-primary text-primary-foreground rounded-tr-sm")}>
-                  <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
-                </div>
+                {/* Follow-up suggestions after the last assistant message */}
+                {msg.role === "assistant" && i === messages.length - 1 && !loading && (
+                  <div className="ml-10 mt-2 flex flex-wrap gap-1.5">
+                    {getFollowUpSuggestions(msg.content).map(s => (
+                      <button key={s.text} onClick={() => sendMessage(s.text)} disabled={loading}
+                        className="text-[11px] px-2.5 py-1 rounded-full border border-border bg-background hover:bg-muted transition-colors disabled:opacity-50 text-muted-foreground">
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
 

@@ -338,7 +338,7 @@ const groupOrdersByDeliveryTime = (orders: CustomerOrder[]): string => {
       return
     }
 
-    const deliveryDate = parseLocalDate(order.createdAt)
+    const deliveryDate = parseLocalDate(order.date || order.createdAt)
     const [hours, minutes] = order.cookTime.split(':').map(Number)
     deliveryDate.setHours(hours, minutes, 0, 0)
 
@@ -1335,7 +1335,7 @@ export const checkAndSendAdvancedOrderNotifications = async (
       let earliestDeliveryTime = 0
       bucketOrders.forEach(order => {
         if (order.cookTime) {
-          const deliveryDate = parseLocalDate(order.createdAt)
+          const deliveryDate = parseLocalDate(order.date || order.createdAt)
           const [hours, minutes] = order.cookTime.split(':').map(Number)
           deliveryDate.setHours(hours, minutes, 0, 0)
           const deliveryTime = deliveryDate.getTime()
@@ -1399,7 +1399,7 @@ const sendOneDayBeforeNotification = async (
 
   try {
     const firstOrder = orders[0]
-    const deliveryDate = parseLocalDate(firstOrder.createdAt)
+    const deliveryDate = parseLocalDate(firstOrder.date || firstOrder.createdAt)
     if (firstOrder.cookTime) {
       const [hours, minutes] = firstOrder.cookTime.split(':').map(Number)
       deliveryDate.setHours(hours, minutes, 0, 0)
@@ -1479,7 +1479,7 @@ const sendOneHourBeforeNotification = async (
 
   try {
     const firstOrder = orders[0]
-    const deliveryDate = parseLocalDate(firstOrder.createdAt)
+    const deliveryDate = parseLocalDate(firstOrder.date || firstOrder.createdAt)
     if (firstOrder.cookTime) {
       const [hours, minutes] = firstOrder.cookTime.split(':').map(Number)
       deliveryDate.setHours(hours, minutes, 0, 0)
@@ -1564,7 +1564,7 @@ const sendThirtyMinuteNotification = async (
 
   try {
     const firstOrder = orders[0]
-    const deliveryDate = parseLocalDate(firstOrder.createdAt)
+    const deliveryDate = parseLocalDate(firstOrder.date || firstOrder.createdAt)
     if (firstOrder.cookTime) {
       const [hours, minutes] = firstOrder.cookTime.split(':').map(Number)
       deliveryDate.setHours(hours, minutes, 0, 0)
