@@ -42,7 +42,8 @@ export default function OrderHistoryPage() {
   }
 
   const loadOrders = () => {
-    const finalStatuses = new Set(['delivered', 'cancelled', 'canceled'])
+    // Include 'complete' — orders fully cooked but not yet physically delivered
+    const finalStatuses = new Set(['delivered', 'complete', 'cancelled', 'canceled'])
 
     const liveOrders = getCustomerOrders().filter(o =>
       finalStatuses.has((o.status || '').toLowerCase())

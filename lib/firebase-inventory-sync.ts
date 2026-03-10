@@ -186,16 +186,32 @@ export const initializeFirebaseSync = () => {
     const DONE_STATUSES_SYNC = new Set(["delivered","served","cancelled","canceled","complete","completed"])
 
     // An order is considered stale/done if:
-    // 1. Its status is explicitly a done status, OR
-    // 2. Its status is "incomplete" AND it was created more than 24 hours ago
-    //    (today's incomplete orders are legitimately active, old ones are ghosts)
+    // 1. Its status is explicitly a done status (delivered, served, cancelled, etc.), OR
+    // 2. Its status is "incomplete" AND its DELIVERY DATE has passed by more than 24 hours
+    //
+    // IMPORTANT: We use the delivery date (o.date / cookTime date), NOT createdAt.
+    // Orders placed today for 3 days from now must NOT be purged just because
+    // createdAt is >24hrs old. We only purge if the scheduled delivery day has passed.
     const isStaleOrder = (o: any): boolean => {
       const status = (o.status || "").toLowerCase()
       if (DONE_STATUSES_SYNC.has(status)) return true
-      if (status === "incomplete") {
-        const created = new Date(o.createdAt || o.lastUpdated || 0).getTime()
-        const hoursOld = (Date.now() - created) / 3600000
-        return hoursOld > 24
+      if (status === "incomplete" || status === "cooking" || status === "ready") {
+        // Use scheduled delivery date (o.date = YYYY-MM-DD set by date picker)
+        // Fall back to createdAt only if no delivery date is set
+        let deliveryDate: Date | null = null
+        if (o.date) {
+          // o.date is "YYYY-MM-DD" — parse as local date (no timezone shift)
+          const [y, m, d] = o.date.split("-").map(Number)
+          deliveryDate = new Date(y, m - 1, d)
+          deliveryDate.setHours(23, 59, 59, 999) // end of delivery day
+        } else if (o.createdAt) {
+          // No delivery date — fall back to createdAt + generous 7-day window
+          deliveryDate = new Date(new Date(o.createdAt).getTime() + 7 * 24 * 3600000)
+        }
+        if (!deliveryDate) return false
+        // Only stale if the delivery date has passed by more than 24 hours
+        const hoursPassedSinceDelivery = (Date.now() - deliveryDate.getTime()) / 3600000
+        return hoursPassedSinceDelivery > 24
       }
       return false
     }
@@ -825,5 +841,81 @@ export const syncMenuToInventoryItems = async (
     if (error.code !== "PERMISSION_DENIED") {
       console.error("Error syncing menu to inventory items:", error)
     }
+  }
+}
+/**
+ * Save the orders-page format order to Firebase RTDB under /ordersPage/{id}
+ * This ensures the orders dashboard persists across logouts on any device.
+ */
+export const saveOrdersPageToFirebase = async (orderId: string, order: any) => {
+  try {
+    const { set, ref: fbRef } = await import("firebase/database")
+    const orderRef = fbRef(database, `ordersPage/${orderId}`)
+    await set(orderRef, cleanUndefined({ ...order, lastUpdated: new Date().toISOString() }))
+  } catch (error: any) {
+    if (error?.code !== "PERMISSION_DENIED") {
+      console.warn("[firebase-sync] saveOrdersPageToFirebase failed:", error)
+    }
+  }
+}
+
+/**
+ * Load all orders-page orders from Firebase RTDB and merge into localStorage.
+ * Called once on app init so yellowbell_orders is always populated from Firebase.
+ */
+export const loadOrdersPageFromFirebase = async (): Promise<void> => {
+  try {
+    const { get, ref: fbRef } = await import("firebase/database")
+    const snap = await get(fbRef(database, "ordersPage"))
+    if (!snap.exists()) return
+    const remote: any[] = Object.values(snap.val())
+    // Merge with existing localStorage orders (local takes precedence on same id)
+    const existing: any[] = (() => {
+      try { return JSON.parse(localStorage.getItem("yellowbell_orders") || "[]") } catch { return [] }
+    })()
+    const existingIds = new Set(existing.map((o: any) => o.id))
+    const merged = [...existing]
+    remote.forEach(o => { if (o?.id && !existingIds.has(o.id)) merged.push(o) })
+    localStorage.setItem("yellowbell_orders", JSON.stringify(merged))
+    window.dispatchEvent(new Event("orders-updated"))
+    console.log(`[firebase-sync] Loaded ${remote.length} orders from Firebase ordersPage, merged ${merged.length - existing.length} new`)
+  } catch (err) {
+    console.warn("[firebase-sync] loadOrdersPageFromFirebase failed:", err)
+  }
+}
+
+/**
+ * Load order history from Firebase RTDB /orderHistory node and merge into localStorage.
+ * Called on app startup so completed/delivered orders always appear in history
+ * even after logging out for hours or switching devices.
+ */
+export const loadOrderHistoryFromFirebase = async (): Promise<void> => {
+  try {
+    const { get, ref: fbRef } = await import("firebase/database")
+    const snap = await get(fbRef(database, "orderHistory"))
+    if (!snap.exists()) return
+
+    const remote: any[] = Object.values(snap.val())
+    const HISTORY_KEY = 'yellowbell_order_history'
+
+    // Merge with existing localStorage history (local takes precedence on same id)
+    const existing: any[] = (() => {
+      try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]") } catch { return [] }
+    })()
+
+    const existingIds = new Set(existing.map((o: any) => o.id))
+    const merged = [...existing]
+    remote.forEach(o => {
+      if (o?.id && !existingIds.has(o.id)) merged.push(o)
+    })
+
+    // Sort newest first
+    merged.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(merged))
+    window.dispatchEvent(new Event("orders-updated"))
+    console.log(`[firebase-sync] Loaded ${remote.length} history orders from Firebase, ${merged.length - existing.length} new`)
+  } catch (err) {
+    console.warn("[firebase-sync] loadOrderHistoryFromFirebase failed:", err)
   }
 }

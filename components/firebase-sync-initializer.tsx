@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
-import { initializeFirebaseSync, cleanupFirebaseSync, initializeCategoriesInFirebase, getCategoriesFromFirebase } from "@/lib/firebase-inventory-sync"
+import { initializeFirebaseSync, cleanupFirebaseSync, initializeCategoriesInFirebase, getCategoriesFromFirebase, loadOrdersPageFromFirebase, loadOrderHistoryFromFirebase } from "@/lib/firebase-inventory-sync"
 import { initializeFirestoreSync, cleanupFirestoreSync } from "@/lib/firestore-sync"
 
 /**
@@ -40,6 +40,16 @@ export function FirebaseSyncInitializer() {
     } catch (err) {
       console.warn("Firebase RTDB sync initialization encountered an error. App will use localStorage.")
     }
+
+    // Load orders-page orders from Firebase so they survive logout / device switch
+    try {
+      loadOrdersPageFromFirebase().catch(() => {})
+    } catch { /* non-critical */ }
+
+    // Load order history from Firebase so completed/delivered orders always appear
+    try {
+      loadOrderHistoryFromFirebase().catch(() => {})
+    } catch { /* non-critical */ }
 
     // Initialize categories in Firebase and fetch them
     const initCategories = async () => {

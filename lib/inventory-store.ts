@@ -292,11 +292,25 @@ if (initialData) {
 // In-memory storage for kitchen items (loaded from localStorage)
 let kitchenItems: KitchenItem[] = initialData.kitchenItems;
 
-// Customer orders are NOT seeded from localStorage.
-// RTDB is the single source of truth — the firebase-orders-updated event
-// from firebase-inventory-sync.ts will populate this array within seconds of page load.
-// Seeding from localStorage caused the ghost-order bug (stale orders written back over RTDB data).
-let customerOrders: CustomerOrder[] = [];
+// Customer orders: seed from localStorage immediately so the UI is never blank on load.
+// Firebase RTDB will overwrite this within seconds via the firebase-orders-updated event.
+// This means future-dated orders are always visible, even before Firebase responds.
+let customerOrders: CustomerOrder[] = (() => {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(CUSTOMER_ORDERS_KEY);
+    if (!raw) return [];
+    const parsed: CustomerOrder[] = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    // Only exclude hardcoded bad orders — keep everything else including future orders
+    return parsed.filter(o => {
+      if (!o) return false;
+      const onum = (o.orderNumber || '').toString().trim();
+      const oid  = (o.id || '').toString().trim();
+      return !ORDERS_TO_REMOVE.includes(onum) && !ORDERS_TO_REMOVE.includes(oid);
+    });
+  } catch { return []; }
+})();
 
 // In-memory storage for delivery orders (loaded from localStorage)
 let deliveryOrders: CustomerOrder[] = initialData.deliveryOrders;
@@ -694,6 +708,13 @@ export const markItemAsCooked = (itemId: string, quantity?: number, orderId?: st
 
       if (allCooked) {
         order.status = 'complete';
+        // Archive to permanent history immediately so it survives logout
+        archiveOrderToHistory(order);
+        // Sync to Firebase RTDB history so it persists across devices
+        try {
+          const { syncOrderToRTDB } = require('./rtdb-sync');
+          syncOrderToRTDB(order).catch(() => {});
+        } catch { /* non-critical */ }
       } else {
         order.status = 'cooking';
       }
@@ -828,6 +849,11 @@ export const markOrderAsDelivered = (orderId: string): boolean => {
       const updatedOrders = existingOrders.map((o: any) => o.id === orderId ? { ...o, status: 'complete' } : o)
       localStorage.setItem("yellowbell_orders", JSON.stringify(updatedOrders))
       window.dispatchEvent(new Event('orders-updated'))
+      // Sync status change to Firebase ordersPage node
+      try {
+        const { updateOrderInFirebase } = require('./firebase-inventory-sync')
+        updateOrderInFirebase(orderId, { status: 'complete' }).catch(() => {})
+      } catch { /* non-critical */ }
     } catch (e) {
       // ignore
     }
@@ -1233,6 +1259,7 @@ export const saveOrder = (order: Omit<Order, 'id' | 'orderNumber' | 'createdAt'>
     cookedItems: [],
     status: (newOrder.status === 'completed' ? 'complete' : 'incomplete') as "incomplete" | "complete" | "delivered" | "cooking" | "ready" | "served",
     createdAt: newOrder.createdAt || new Date().toISOString(),
+    date: (newOrder as any).date,          // delivery/cooking date (YYYY-MM-DD) — required by reminder engine
     deliveryPhone: newOrder.deliveryPhone,
     deliveryAddress: newOrder.deliveryAddress,
     mealType: newOrder.mealType,
@@ -1381,6 +1408,12 @@ export const saveOrder = (order: Omit<Order, 'id' | 'orderNumber' | 'createdAt'>
       existingOrders.unshift(orderForOrdersPage);
       localStorage.setItem("yellowbell_orders", JSON.stringify(existingOrders));
       window.dispatchEvent(new Event("orders-updated"));
+
+      // Sync to Firebase so orders survive logout / device switch
+      try {
+        const { saveOrdersPageToFirebase } = require('./firebase-inventory-sync');
+        saveOrdersPageToFirebase(orderForOrdersPage.id, orderForOrdersPage).catch(() => {});
+      } catch { /* non-critical */ }
       
       // Create notification for new order
       const { saveNotification } = require("./notifications-store");

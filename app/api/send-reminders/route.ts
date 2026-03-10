@@ -181,6 +181,43 @@ const dominantMealType = (orders: any[]) => {
 // within the same serverless invocation.
 const _requestSentGuard = new Set<string>()
 
+// ─── Firebase-backed sent-key store for cron dedup ────────────────────────────
+// When the cron calls GET, it reads previously-sent keys from Firebase RTDB
+// so a server restart / redeploy doesn't cause duplicate emails.
+// Keys auto-expire after 48 hours to prevent unbounded growth.
+
+const fetchCronSentKeys = async (): Promise<string[]> => {
+  if (!FIREBASE_DB_SECRET) return []
+  try {
+    const url = `${FIREBASE_DB_URL}/reminderSentKeys.json?auth=${FIREBASE_DB_SECRET}`
+    const res = await fetch(url)
+    if (!res.ok) return []
+    const data = await res.json()
+    if (!data) return []
+    const now = Date.now()
+    // Filter out keys older than 48 hours
+    return Object.entries(data)
+      .filter(([, v]: any) => now - (v?.ts || 0) < 48 * 3600000)
+      .map(([k]) => k)
+  } catch { return [] }
+}
+
+const saveCronSentKeys = async (keys: string[]): Promise<void> => {
+  if (!FIREBASE_DB_SECRET || keys.length === 0) return
+  try {
+    const now = Date.now()
+    const payload: Record<string, any> = {}
+    // Firebase key can't contain . / [ ] # $  — replace with _
+    keys.forEach(k => { payload[k.replace(/[./#[\]$]/g, '_')] = { ts: now, key: k } })
+    const url = `${FIREBASE_DB_URL}/reminderSentKeys.json?auth=${FIREBASE_DB_SECRET}`
+    await fetch(url, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+  } catch { /* non-critical */ }
+}
+
 // Orders in these statuses are EXCLUDED from reminder emails
 const FINAL_STATUSES = new Set(['delivered','served','cancelled','canceled','complete','ready'])
 
@@ -215,16 +252,16 @@ const processReminders = async (orders: any[], emails: string[], clientSentKeys:
 
   // Buckets keyed by reminder type
   const dayBeforeBucket: any[] = []  // 18–30 hrs before delivery
-  const oneHourBucket:   any[] = []  // 0–1 hr before delivery
-  const twoHourBucket:   any[] = []  // 1–2 hrs before delivery
+  const oneHourBucket:   any[] = []  // 0–1.1 hr before delivery (slight buffer for poll timing)
+  const twoHourBucket:   any[] = []  // 1.1–2.1 hrs before delivery (slight buffer for poll timing)
 
   pending.forEach(order => {
     const deliveryDT = getDeliveryDT(order)
     if (!deliveryDT) return
     const hoursUntil = (deliveryDT.getTime() - now.getTime()) / 3600000
 
-    if (hoursUntil > 0  && hoursUntil <= 1)  oneHourBucket.push({ order, deliveryDT, hoursUntil })
-    else if (hoursUntil > 1 && hoursUntil <= 2) twoHourBucket.push({ order, deliveryDT, hoursUntil })
+    if (hoursUntil > 0  && hoursUntil <= 1.1)  oneHourBucket.push({ order, deliveryDT, hoursUntil })
+    else if (hoursUntil > 1.1 && hoursUntil <= 2.1) twoHourBucket.push({ order, deliveryDT, hoursUntil })
     else if (hoursUntil > 18 && hoursUntil <= 30) dayBeforeBucket.push({ order, deliveryDT, hoursUntil })
   })
 
@@ -343,6 +380,29 @@ const processReminders = async (orders: any[], emails: string[], clientSentKeys:
   return { results, newSentKeys }
 }
 
+// ─── Fetch orders from Firebase RTDB (server-side, no browser needed) ─────────
+// Used by the Vercel cron job GET handler so reminders fire even when logged out.
+const fetchOrdersFromFirebase = async (): Promise<any[]> => {
+  if (!FIREBASE_DB_SECRET) {
+    console.warn('[send-reminders] No FIREBASE_DB_SECRET — cannot fetch orders server-side')
+    return []
+  }
+  try {
+    const url = `${FIREBASE_DB_URL}/inventories/orders.json?auth=${FIREBASE_DB_SECRET}`
+    const res = await fetch(url)
+    if (!res.ok) {
+      console.warn(`[send-reminders] Firebase orders fetch returned ${res.status}`)
+      return []
+    }
+    const data = await res.json()
+    if (!data) return []
+    return Object.values(data)
+  } catch (err) {
+    console.warn('[send-reminders] fetchOrdersFromFirebase failed:', err)
+    return []
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     let overrideEmails: string[] | null = null
@@ -360,7 +420,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success:false, message:'No recipient emails found' }, { headers:corsHeaders })
     }
 
-    const orders = clientOrders || []
+    // Use orders from client (browser) if provided, otherwise fetch from Firebase
+    const orders = clientOrders ?? await fetchOrdersFromFirebase()
     console.log(`[send-reminders] Processing ${orders.length} orders, ${clientSentKeys.length} already-sent keys, ${emails.length} recipient(s)`)
     const { results, newSentKeys } = await processReminders(orders, emails, clientSentKeys)
 
@@ -375,14 +436,48 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET() {
-  const emails = await fetchAllUserEmails()
+// GET is called by the Vercel cron job every 5 minutes — no browser needed.
+// It fetches orders directly from Firebase RTDB and sends reminder emails server-side.
+// This means emails fire even when no one is logged in or has the app open.
+export async function GET(request: NextRequest) {
+  // Verify cron secret if set (protects the endpoint from random GET requests)
+  const cronSecret = process.env.CRON_SECRET
+  if (cronSecret) {
+    const authHeader = request.headers.get('authorization')
+    if (authHeader !== `Bearer ${cronSecret}`) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: corsHeaders })
+    }
+  }
+
+  const [emails, orders] = await Promise.all([
+    fetchAllUserEmails(),
+    fetchOrdersFromFirebase(),
+  ])
+
+  if (emails.length === 0) {
+    return NextResponse.json({
+      success: false, message: 'No recipient emails configured',
+      smtpConfigured: !!(SMTP_USER && SMTP_PASSWORD),
+      firebaseSecretConfigured: !!FIREBASE_DB_SECRET,
+      timestamp: nowPHLabel(),
+    }, { headers: corsHeaders })
+  }
+
+  console.log(`[send-reminders/cron] ${orders.length} orders, ${emails.length} recipient(s)`)
+  // Load persisted sent keys from Firebase so we don't re-send after server restart
+  const persistedSentKeys = await fetchCronSentKeys()
+  const { results, newSentKeys } = await processReminders(orders, emails, persistedSentKeys)
+  // Save any newly sent keys back to Firebase for future cron runs
+  if (newSentKeys.length > 0) await saveCronSentKeys(newSentKeys)
+
   return NextResponse.json({
-    status:'ok', smtpConfigured:!!(SMTP_USER&&SMTP_PASSWORD),
-    firebaseSecretConfigured:!!FIREBASE_DB_SECRET,
-    registeredEmails:emails.length, timestamp:nowPHLabel(),
-    note:'Orders are sent from the frontend via POST body',
-  }, { headers:corsHeaders })
+    success: true, source: 'cron',
+    timestamp: nowPHLabel(),
+    recipients: emails.length,
+    ordersChecked: orders.length,
+    actions: results,
+    newSentKeys,
+  }, { headers: corsHeaders })
 }
 
 export async function OPTIONS() {

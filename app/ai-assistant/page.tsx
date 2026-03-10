@@ -11,7 +11,7 @@ import {
   Bot, Send, User, Loader2, Sparkles, TrendingUp,
   Package, ShoppingCart, AlertTriangle, RefreshCw, BarChart3, ChefHat,
 } from "lucide-react"
-import { getInventoryItems, getLowStockItems } from "@/lib/inventory-store"
+import { getInventoryItems, getLowStockItems, getCustomerOrders } from "@/lib/inventory-store"
 import { cn } from "@/lib/utils"
 
 interface Message {
@@ -23,18 +23,9 @@ const DONE_STATUSES = new Set(["delivered", "served", "cancelled", "canceled", "
 
 function readActiveOrders(): any[] {
   try {
-    const raw = typeof window !== "undefined" ? localStorage.getItem("yellowbell_customer_orders") : null
-    if (!raw) return []
-    return (JSON.parse(raw) as any[]).filter(o => {
+    return getCustomerOrders().filter(o => {
       const status = (o.status || "").toLowerCase()
-      if (DONE_STATUSES.has(status)) return false
-      // Filter out "incomplete" orders older than 24 hours — those are ghosts
-      if (status === "incomplete") {
-        const created = new Date(o.createdAt || o.lastUpdated || 0).getTime()
-        const hoursOld = (Date.now() - created) / 3600000
-        return hoursOld <= 24
-      }
-      return true
+      return !DONE_STATUSES.has(status)
     })
   } catch { return [] }
 }
@@ -190,9 +181,9 @@ export default function AIAssistantPage() {
       setStats({
         lowStockCount:   inv.filter(i => i.stock > 0 && i.stock <= 5 && !i.isUtensil && !i.isContainer && i.category !== "raw-stock").length,
         outOfStockCount: inv.filter(i => i.stock === 0 && !i.isUtensil && !i.isContainer && i.category !== "raw-stock").length,
-        pendingOrders:   orders.length,
+        pendingOrders:   new Set(orders.map((o: any) => o.id).filter(Boolean)).size,
         totalRevenue:    paid.reduce((s, o) => s + (o.total || 0), 0),
-        todayOrders:     orders.filter(o => new Date(o.date || o.createdAt || "").toDateString() === phNow.toDateString()).length,
+        todayOrders:     new Set(orders.filter(o => new Date(o.date || o.createdAt || "").toDateString() === phNow.toDateString()).map((o: any) => o.id).filter(Boolean)).size,
       })
       setContext(buildContext())
       setStatsRefreshed(new Date())
