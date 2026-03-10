@@ -119,11 +119,18 @@ export default function DeliveryPage() {
     const handleUpdate = () => loadData()
     window.addEventListener("customer-orders-updated", handleUpdate)
     window.addEventListener("kitchen-updated", handleUpdate)
+    window.addEventListener("orders-updated", handleUpdate)
+    // Firebase real-time: fires when ANY admin changes orders or kitchen items
+    window.addEventListener("firebase-orders-updated", handleUpdate)
+    window.addEventListener("firebase-kitchen-updated", handleUpdate)
 
     return () => {
       clearInterval(mealTypeInterval)
       window.removeEventListener("customer-orders-updated", handleUpdate)
       window.removeEventListener("kitchen-updated", handleUpdate)
+      window.removeEventListener("orders-updated", handleUpdate)
+      window.removeEventListener("firebase-orders-updated", handleUpdate)
+      window.removeEventListener("firebase-kitchen-updated", handleUpdate)
     }
   }, [filterMealType])
 

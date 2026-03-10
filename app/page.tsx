@@ -171,6 +171,9 @@ export default function DashboardPage() {
       window.addEventListener("inventory-updated", loadData)
       window.addEventListener("orders-updated", loadData)
       window.addEventListener("storage", loadData)
+      window.addEventListener("firebase-orders-updated", loadData)
+      window.addEventListener("firebase-kitchen-updated", loadData)
+      window.addEventListener("customer-orders-updated", loadData)
     } else {
       console.warn('[dashboard-page] window.addEventListener not available')
     }
@@ -182,6 +185,9 @@ export default function DashboardPage() {
         window.removeEventListener("inventory-updated", loadData)
         window.removeEventListener("orders-updated", loadData)
         window.removeEventListener("storage", loadData)
+        window.removeEventListener("firebase-orders-updated", loadData)
+        window.removeEventListener("firebase-kitchen-updated", loadData)
+        window.removeEventListener("customer-orders-updated", loadData)
       }
       clearInterval(interval)
     }

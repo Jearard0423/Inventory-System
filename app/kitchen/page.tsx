@@ -262,8 +262,10 @@ export default function KitchenPage() {
       window.addEventListener("customer-orders-updated", handleUpdate)
       window.addEventListener("inventory-updated", handleUpdate)
       window.addEventListener("delivery-updated", handleUpdate)
-      // watch for localStorage changes from other tabs (deletions, status updates, etc.)
       window.addEventListener("storage", handleUpdate)
+      // Firebase real-time: fires when ANY admin changes orders or kitchen items
+      window.addEventListener("firebase-orders-updated", handleUpdate)
+      window.addEventListener("firebase-kitchen-updated", handleUpdate)
     } else {
       console.warn('[kitchen-page] window.addEventListener is not available in this environment')
     }
@@ -356,6 +358,8 @@ export default function KitchenPage() {
         window.removeEventListener("inventory-updated", handleUpdate)
         window.removeEventListener("delivery-updated", handleUpdate)
         window.removeEventListener("storage", handleUpdate)
+        window.removeEventListener("firebase-orders-updated", handleUpdate)
+        window.removeEventListener("firebase-kitchen-updated", handleUpdate)
       }
     }
   }, [filterMealType])

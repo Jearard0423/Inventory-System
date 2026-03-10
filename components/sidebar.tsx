@@ -186,12 +186,11 @@ export function Sidebar() {
 
         {/* Navigation */}
         <nav 
-          className="flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4" 
+          className="flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4 min-h-0" 
           style={{
             WebkitOverflowScrolling: 'touch',
             scrollbarWidth: 'thin',
             scrollbarColor: 'rgba(255, 255, 255, 0.2) transparent',
-            maxHeight: 'calc(100vh - 64px - 160px)',
             overscrollBehavior: 'contain',
             msOverflowStyle: 'none',
             overflowY: 'auto',

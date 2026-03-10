@@ -529,12 +529,18 @@ export const getKitchenItems = (): KitchenItem[] => {
 
 export const updateKitchenItems = (items: KitchenItem[]): void => {
   kitchenItems = [...items];
-  // Persist kitchen items so UI stays in sync across views
   saveToLocalStorage(KITCHEN_ITEMS_KEY, kitchenItems);
-  // Notify kitchen page so toCookItems/cookedItems re-render immediately
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event('kitchen-updated'));
   }
+  // Sync to Firebase RTDB so ALL admins see kitchen changes in real-time
+  try {
+    const { database } = require('./firebase');
+    const { ref, set } = require('firebase/database');
+    const kitchenMap: Record<string, any> = {};
+    kitchenItems.forEach((item: KitchenItem) => { if (item.id) kitchenMap[item.id] = item; });
+    set(ref(database, 'inventories/kitchen'), kitchenMap).catch(() => {});
+  } catch { /* non-critical */ }
 };
 
 export const getCustomerOrders = (): CustomerOrder[] => {
@@ -543,8 +549,18 @@ export const getCustomerOrders = (): CustomerOrder[] => {
 
 export const updateCustomerOrders = (orders: CustomerOrder[]): void => {
   customerOrders = [...orders];
-  // Persist customer orders to localStorage so other views see the change
   saveToLocalStorage(CUSTOMER_ORDERS_KEY, customerOrders);
+  // Sync every order to Firebase RTDB so all admins see status changes in real-time
+  try {
+    const { updateOrderInFirebase } = require('./firebase-inventory-sync');
+    customerOrders.forEach((order: CustomerOrder) => {
+      updateOrderInFirebase(order.id, {
+        status: order.status,
+        cookedItems: order.cookedItems || [],
+        paymentStatus: order.paymentStatus,
+      }).catch(() => {});
+    });
+  } catch { /* non-critical */ }
 };
 
 /**
