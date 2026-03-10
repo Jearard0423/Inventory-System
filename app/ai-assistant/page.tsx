@@ -246,29 +246,29 @@ export default function AIAssistantPage() {
   return (
     <POSLayout fullWidth>
       {/* h-full works because POSLayout fullWidth sets the wrapper to h-full flex flex-col */}
-      <div className="h-full flex flex-col gap-4 min-h-0">
+      <div className="h-full flex flex-col gap-2 sm:gap-4 min-h-0">
 
         {/* Header */}
-        <div className="flex items-start justify-between gap-4 shrink-0">
+        <div className="flex items-start justify-between gap-2 shrink-0">
           <div>
             <div className="flex items-center gap-2 mb-0.5">
-              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
-                <Sparkles className="w-4 h-4 text-white" />
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
+                <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
               </div>
-              <h1 className="text-2xl font-bold tracking-tight">YRC Insight</h1>
+              <h1 className="text-lg sm:text-2xl font-bold tracking-tight">YRC Insight</h1>
               <Badge variant="secondary" className="text-xs">AI</Badge>
             </div>
-            <p className="text-sm text-muted-foreground pl-10">
+            <p className="text-xs sm:text-sm text-muted-foreground pl-9 sm:pl-10">
               Business intelligence assistant — reads live inventory, orders &amp; revenue
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={refreshStats} className="gap-1.5 shrink-0">
-            <RefreshCw className="h-3.5 w-3.5" /> Refresh
+          <Button variant="outline" size="sm" onClick={refreshStats} className="gap-1.5 shrink-0 text-xs sm:text-sm">
+            <RefreshCw className="h-3 w-3 sm:h-3.5 sm:w-3.5" /> Refresh
           </Button>
         </div>
 
         {/* Stats bar */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 shrink-0">
+        <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5 sm:gap-2 shrink-0">
           {[
             { label: "Low Stock",      value: stats.lowStockCount,                          icon: Package,       color: stats.lowStockCount > 0  ? "text-amber-600" : "text-muted-foreground" },
             { label: "Out of Stock",   value: stats.outOfStockCount,                        icon: AlertTriangle, color: stats.outOfStockCount > 0 ? "text-red-600"   : "text-muted-foreground" },
@@ -277,11 +277,11 @@ export default function AIAssistantPage() {
             { label: "Revenue",        value: `₱${stats.totalRevenue.toLocaleString()}`,    icon: TrendingUp,    color: "text-green-600" },
           ].map(s => (
             <Card key={s.label} className="border-0 shadow-sm">
-              <CardContent className="p-3 flex items-center gap-2">
-                <s.icon className={cn("w-4 h-4 shrink-0", s.color)} />
+              <CardContent className="p-2 sm:p-3 flex items-center gap-1.5 sm:gap-2">
+                <s.icon className={cn("w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0", s.color)} />
                 <div className="min-w-0">
-                  <p className="text-[10px] text-muted-foreground leading-none truncate">{s.label}</p>
-                  <p className={cn("font-bold text-sm leading-tight", s.color)}>{s.value}</p>
+                  <p className="text-[9px] sm:text-[10px] text-muted-foreground leading-none truncate">{s.label}</p>
+                  <p className={cn("font-bold text-xs sm:text-sm leading-tight", s.color)}>{s.value}</p>
                 </div>
               </CardContent>
             </Card>

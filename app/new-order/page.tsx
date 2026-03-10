@@ -24,7 +24,7 @@ import { generateOrderNumber } from "@/lib/orders"
 import { useRouter } from "next/navigation"
 import { useIsMobile } from "@/hooks/use-mobile"
 
-const categories = ["All", "Chicken", "Liempo", "Sisig", "Rice", "Meals", "Utensils"]
+const categories = ["All", "Chicken", "Liempo", "Sisig", "Rice", "Meals"]
 const mealTypes = ["Breakfast", "Lunch", "Dinner", "Other"]
 const menuCategories = ["chicken", "liempo", "sisig", "rice", "meals"]
 
@@ -184,8 +184,7 @@ export default function NewOrderPage() {
       // exclude containers and raw stock since those are not ordered directly
       const all = getInventory()
       const inventory = all.filter((item) => {
-        if (item.isContainer || item.category === 'raw-stock') return false
-        // keep utensils even though getMenuItems would drop them
+        if (item.isContainer || item.isUtensil || item.category === 'raw-stock') return false
         return item.stock > 0
       })
       setMenuItems(inventory)
@@ -365,10 +364,6 @@ export default function NewOrderPage() {
 
     if (!cookingDate) {
       newErrors.cookingDate = "Cooking date is required"
-    }
-
-    if (!cookTime) {
-      newErrors.cookTime = "Cook time is required"
     }
 
     if (orderItems.length === 0) {

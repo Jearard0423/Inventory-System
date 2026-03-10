@@ -27,7 +27,6 @@ const navItems = [
   { href: "/orders", icon: ShoppingCart, label: "Orders" },
   { href: "/order-history", icon: Clock, label: "Order History" },
   { href: "/prepared-orders", icon: ClipboardList, label: "Prepared Orders" },
-  { href: "/prepared-orders-inventory", icon: BarChart3, label: "Prepared Orders Inventory" },
   { href: "/kitchen", icon: ChefHat, label: "Kitchen View" },
   { href: "/delivery", icon: Truck, label: "Delivery" },
   { href: "/inventory", icon: Package, label: "Inventory" },

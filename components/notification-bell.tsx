@@ -50,6 +50,7 @@ export function NotificationBell() {
   }, [])
 
   const unreadCount = notifications.filter(n => !n.read).length
+  const totalBadgeCount = unreadCount + outOfStockItems.length
 
   const handleNotificationClick = (notification: Notification) => {
     markAsRead(notification.id)
@@ -70,9 +71,9 @@ export function NotificationBell() {
           suppressHydrationWarning
         >
           <Bell className="h-6 w-6 text-amber-600" />
-          {unreadCount > 0 && (
+          {totalBadgeCount > 0 && (
             <span className="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full bg-red-600 text-xs font-bold text-white ring-2 ring-white">
-              {unreadCount}
+              {totalBadgeCount}
             </span>
           )}
         </Button>

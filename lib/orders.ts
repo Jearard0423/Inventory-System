@@ -193,7 +193,7 @@ export const updateOrder = (
   patch: Partial<Pick<Order,
     'customerName' | 'cookTime' | 'mealType' | 'originalMealType' |
     'specialRequests' | 'remarks' | 'gcashPhone' | 'gcashReference' |
-    'items' | 'total'
+    'items' | 'total' | 'paymentStatus' | 'paymentMethod'
   > & { deliveryPhone?: string; deliveryAddress?: string }>
 ): void => {
   if (typeof window === 'undefined') return

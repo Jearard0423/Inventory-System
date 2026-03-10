@@ -250,10 +250,13 @@ export default function OrdersPage() {
     window.addEventListener("orders-updated", loadOrders)
     window.addEventListener("prepared-orders-updated", loadOrders)
     window.addEventListener("customer-orders-updated", loadOrders)
+    // Listen to Firebase real-time updates so changes by other admins appear instantly
+    window.addEventListener("firebase-orders-updated", loadOrders)
     return () => {
       window.removeEventListener("orders-updated", loadOrders)
       window.removeEventListener("prepared-orders-updated", loadOrders)
       window.removeEventListener("customer-orders-updated", loadOrders)
+      window.removeEventListener("firebase-orders-updated", loadOrders)
     }
   }, [mounted])
 
@@ -551,6 +554,17 @@ export default function OrdersPage() {
     localStorage.setItem("yellowbell_orders", JSON.stringify(updatedOrders))
     window.dispatchEvent(new Event("orders-updated"))
 
+    // Sync payment to Firebase RTDB so all admins see it instantly
+    try {
+      const { updateOrderInFirebase } = require('@/lib/firebase-inventory-sync')
+      updateOrderInFirebase(selectedOrder.id, {
+        paymentStatus: 'paid',
+        paymentMethod: paymentMethod,
+        gcashPhone: paymentMethod === 'gcash' ? gcashPhone : null,
+        gcashReference: paymentMethod === 'gcash' ? gcashReference : null,
+      }).catch(() => {})
+    } catch { /* non-critical */ }
+
     // Also sync payment status to customer orders (inventory-store) so delivery/kitchen views reflect payment
     try {
       const cust = getCustomerOrders()
@@ -663,7 +677,16 @@ export default function OrdersPage() {
 
     localStorage.setItem("yellowbell_orders", JSON.stringify(updatedOrders))
     window.dispatchEvent(new Event("orders-updated"))
-    
+
+    // Sync undo-payment to Firebase RTDB so all admins see it instantly
+    try {
+      const { updateOrderInFirebase } = require('@/lib/firebase-inventory-sync')
+      updateOrderInFirebase(orderToUndoPayment.id, {
+        paymentStatus: 'not-paid',
+        paymentMethod: null,
+      }).catch(() => {})
+    } catch { /* non-critical */ }
+
     // Also sync undo to customer orders
     try {
       const cust = getCustomerOrders()
@@ -1977,7 +2000,11 @@ export default function OrdersPage() {
                         <span className="w-6 text-center text-sm font-bold">{item.quantity}</span>
                         <button
                           type="button"
-                          onClick={() => setEditItems(prev => prev.map((it, i) => i === idx ? { ...it, quantity: it.quantity + 1 } : it))}
+                          onClick={() => {
+                            const stockItem = menuItems.find(m => m.id === item.id)
+                            const maxStock = stockItem ? stockItem.stock : 999
+                            setEditItems(prev => prev.map((it, i) => i === idx ? { ...it, quantity: Math.min(maxStock, it.quantity + 1) } : it))
+                          }}
                           className="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold hover:bg-primary/90"
                         >+</button>
                       </div>
@@ -1993,10 +2020,11 @@ export default function OrdersPage() {
                         key={m.id}
                         type="button"
                         onClick={() => setEditItems(prev => [...prev, { id: m.id, name: m.name, price: m.price, quantity: 1 }])}
-                        className="text-left px-2.5 py-1.5 rounded-lg border border-dashed border-border hover:border-primary hover:bg-primary/5 transition-colors"
+                        disabled={m.stock <= 0}
+                        className="text-left px-2.5 py-1.5 rounded-lg border border-dashed border-border hover:border-primary hover:bg-primary/5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         <p className="text-xs font-medium truncate">{m.name}</p>
-                        <p className="text-xs text-muted-foreground">₱{m.price}</p>
+                        <p className="text-xs text-muted-foreground">₱{m.price} · {m.stock} left</p>
                       </button>
                     ))}
                   </div>
