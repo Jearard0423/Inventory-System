@@ -252,7 +252,17 @@ export default function KitchenPage() {
     // also refresh order data periodically (ensures overnight/day‑change cleanup and delivered orders disappear)
     const dataInterval = setInterval(loadData, 60000)
 
-    const handleUpdate = () => {
+    const handleUpdate = () => { loadData() }
+    // firebase-orders-updated: RTDB pushed fresh data — reload immediately
+    // This ensures deleted orders disappear on all clients as soon as Firebase fires
+    const handleFirebaseOrders = (ev: Event) => {
+      const detail = (ev as CustomEvent).detail
+      if (detail?.orders) {
+        // Directly invalidate in-memory cache so next loadData() reads fresh array
+        if (typeof window !== 'undefined') {
+          try { localStorage.setItem("yellowbell_customer_orders", JSON.stringify(detail.orders)) } catch {}
+        }
+      }
       loadData()
     }
 
@@ -263,8 +273,7 @@ export default function KitchenPage() {
       window.addEventListener("inventory-updated", handleUpdate)
       window.addEventListener("delivery-updated", handleUpdate)
       window.addEventListener("storage", handleUpdate)
-      // Firebase real-time: fires when ANY admin changes orders or kitchen items
-      window.addEventListener("firebase-orders-updated", handleUpdate)
+      window.addEventListener("firebase-orders-updated", handleFirebaseOrders)
       window.addEventListener("firebase-kitchen-updated", handleUpdate)
     } else {
       console.warn('[kitchen-page] window.addEventListener is not available in this environment')

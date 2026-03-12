@@ -117,11 +117,17 @@ export default function DeliveryPage() {
     const mealTypeInterval = setInterval(updateMealType, 60000)
 
     const handleUpdate = () => loadData()
+    const handleFirebaseOrders = (ev: Event) => {
+      const detail = (ev as CustomEvent).detail
+      if (detail?.orders && typeof window !== "undefined") {
+        try { localStorage.setItem("yellowbell_customer_orders", JSON.stringify(detail.orders)) } catch {}
+      }
+      loadData()
+    }
     window.addEventListener("customer-orders-updated", handleUpdate)
     window.addEventListener("kitchen-updated", handleUpdate)
     window.addEventListener("orders-updated", handleUpdate)
-    // Firebase real-time: fires when ANY admin changes orders or kitchen items
-    window.addEventListener("firebase-orders-updated", handleUpdate)
+    window.addEventListener("firebase-orders-updated", handleFirebaseOrders)
     window.addEventListener("firebase-kitchen-updated", handleUpdate)
 
     return () => {
@@ -129,7 +135,7 @@ export default function DeliveryPage() {
       window.removeEventListener("customer-orders-updated", handleUpdate)
       window.removeEventListener("kitchen-updated", handleUpdate)
       window.removeEventListener("orders-updated", handleUpdate)
-      window.removeEventListener("firebase-orders-updated", handleUpdate)
+      window.removeEventListener("firebase-orders-updated", handleFirebaseOrders)
       window.removeEventListener("firebase-kitchen-updated", handleUpdate)
     }
   }, [filterMealType])

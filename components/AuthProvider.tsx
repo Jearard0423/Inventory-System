@@ -24,13 +24,36 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
 
+  const IDLE_TIMEOUT_MS = 10 * 60 * 1000 // 10 minutes
+  const idleTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const resetIdleTimer = React.useCallback(() => {
+    if (idleTimer.current) clearTimeout(idleTimer.current)
+    idleTimer.current = setTimeout(async () => {
+      await firebaseSignOut(auth)
+    }, IDLE_TIMEOUT_MS)
+  }, [])
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u)
       setLoading(false)
+      if (u) resetIdleTimer()
     })
     return () => unsubscribe()
   }, [])
+
+  // Auto-logout after 10 min of inactivity
+  useEffect(() => {
+    if (!user) return
+    const events = ["mousemove", "mousedown", "keydown", "touchstart", "scroll", "click"]
+    events.forEach(e => window.addEventListener(e, resetIdleTimer, { passive: true }))
+    resetIdleTimer()
+    return () => {
+      events.forEach(e => window.removeEventListener(e, resetIdleTimer))
+      if (idleTimer.current) clearTimeout(idleTimer.current)
+    }
+  }, [user, resetIdleTimer])
 
   async function signIn(email: string, password: string) {
     await signInWithEmailAndPassword(auth, email, password)

@@ -837,6 +837,30 @@ export default function NewOrderPage() {
     setShowConfirmation(false)
     setShowReceipt(true)
 
+    // Deduct ordered quantities from active prepared batches
+    try {
+      const preparedRaw = localStorage.getItem("yellowbell_prepared_orders")
+      if (preparedRaw) {
+        const batches: any[] = JSON.parse(preparedRaw)
+        let changed = false
+        const updated = batches.map(batch => {
+          if (batch.status !== "prepared") return batch
+          const newItems = batch.items.map((bItem: any) => {
+            const ordered = orderItems.find(o => o.id === bItem.id || o.name === bItem.name)
+            if (!ordered) return bItem
+            const remaining = Math.max(0, (bItem.remainingQuantity ?? bItem.quantity) - ordered.quantity)
+            changed = true
+            return { ...bItem, remainingQuantity: remaining }
+          })
+          return { ...batch, items: newItems }
+        })
+        if (changed) {
+          localStorage.setItem("yellowbell_prepared_orders", JSON.stringify(updated))
+          window.dispatchEvent(new Event("prepared-orders-updated"))
+        }
+      }
+    } catch { /* non-critical */ }
+
     setOrderItems([])
     setCustomerName("")
     setCookingDate("")
