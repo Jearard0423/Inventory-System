@@ -278,7 +278,11 @@ export const initializeFirebaseSync = () => {
           const localOrders: any[] = JSON.parse(localStorage.getItem("yellowbell_orders") || "[]")
           const localMap = new Map(localOrders.map((o: any) => [o.id, o]))
           const remoteMap = new Map(remoteOrders.map((o: any) => [o.id, o]))
-          // Start from remote (source of truth), overlay any local orders that are strictly newer
+          // Remote (Firebase) is the source of truth.
+          // Only keep local orders that ALSO exist in Firebase.
+          // This means: if another admin deletes an order, it disappears from every client.
+          // The only exception: orders created in the last 10 seconds that haven't synced yet.
+          const now = Date.now()
           const merged: any[] = []
           remoteMap.forEach((remote, id) => {
             const local = localMap.get(id)
@@ -290,9 +294,13 @@ export const initializeFirebaseSync = () => {
               merged.push(remote)
             }
           })
-          // Also keep any local orders not yet in Firebase (just created, not yet synced)
+          // Only keep local-only orders if they were just created (within 10s) — not yet synced to Firebase.
+          // This prevents ghost orders from re-appearing after another admin deletes them.
           localMap.forEach((local, id) => {
-            if (!remoteMap.has(id)) merged.push(local)
+            if (!remoteMap.has(id)) {
+              const createdTs = new Date(local.createdAt || 0).getTime()
+              if (now - createdTs < 10000) merged.push(local) // brand new, not synced yet
+            }
           })
           localStorage.setItem("yellowbell_orders", JSON.stringify(merged))
           window.dispatchEvent(new Event("orders-updated"))

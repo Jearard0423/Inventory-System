@@ -89,8 +89,14 @@ export function FirebaseSyncInitializer() {
     }
 
     const handleOrdersUpdate = (event: Event) => {
-      if (event instanceof CustomEvent) {
-        console.debug("Firebase orders update received")
+      if (event instanceof CustomEvent && Array.isArray(event.detail?.orders)) {
+        // Keep the in-memory customerOrders array in sync with RTDB
+        // This is the missing link — without this, kitchen/delivery/dashboard
+        // read stale in-memory data even after Firebase fires a deletion/update
+        try {
+          const { setCustomerOrdersFromRTDB } = require('@/lib/inventory-store')
+          setCustomerOrdersFromRTDB(event.detail.orders)
+        } catch { /* non-critical */ }
       }
     }
 

@@ -140,23 +140,47 @@ const sendEmail = async (to: string, subject: string, html: string, text: string
   }
 }
 
-// Fetch emails — uses FIREBASE_DB_SECRET if available, graceful fallback to SMTP_USER
+// Fetch emails — reads ALL admin accounts from Firebase RTDB /users node.
+// Tries with FIREBASE_DB_SECRET first, then without auth (for open read rules),
+// then falls back to SMTP_USER. This ensures ALL admins get reminder emails,
+// not just the one whose browser is open.
 const fetchAllUserEmails = async (): Promise<string[]> => {
+  const triedUrls: string[] = []
   try {
-    const authParam = FIREBASE_DB_SECRET ? `?auth=${FIREBASE_DB_SECRET}` : ''
-    const res = await fetch(`${FIREBASE_DB_URL}/users.json${authParam}`)
-    if (!res.ok) {
-      console.warn(`[send-reminders] Firebase /users.json → ${res.status}, using SMTP_USER fallback`)
-      return SMTP_USER ? [SMTP_USER] : []
+    // Attempt 1: with secret
+    if (FIREBASE_DB_SECRET) {
+      const url = `${FIREBASE_DB_URL}/users.json?auth=${FIREBASE_DB_SECRET}`
+      triedUrls.push('with-secret')
+      const res = await fetch(url)
+      if (res.ok) {
+        const users = await res.json()
+        if (users) {
+          const emails: string[] = []
+          Object.values(users).forEach((u: any) => { if (u?.email?.trim()) emails.push(u.email.trim()) })
+          if (SMTP_USER && !emails.includes(SMTP_USER)) emails.push(SMTP_USER)
+          const unique = Array.from(new Set(emails))
+          console.log(`[send-reminders] ${unique.length} admin email(s) from RTDB (secret):`, unique)
+          return unique
+        }
+      }
+      console.warn(`[send-reminders] RTDB /users (secret) → ${res.status}`)
     }
-    const users = await res.json()
-    if (!users) return SMTP_USER ? [SMTP_USER] : []
-    const emails: string[] = []
-    Object.values(users).forEach((u: any) => { if (u?.email?.trim()) emails.push(u.email.trim()) })
-    if (SMTP_USER) emails.push(SMTP_USER)
-    const unique = Array.from(new Set(emails))
-    console.log(`[send-reminders] ${unique.length} email(s):`, unique)
-    return unique
+    // Attempt 2: without auth (works if Firebase rules allow public read on /users)
+    triedUrls.push('no-auth')
+    const res2 = await fetch(`${FIREBASE_DB_URL}/users.json`)
+    if (res2.ok) {
+      const users2 = await res2.json()
+      if (users2) {
+        const emails: string[] = []
+        Object.values(users2).forEach((u: any) => { if (u?.email?.trim()) emails.push(u.email.trim()) })
+        if (SMTP_USER && !emails.includes(SMTP_USER)) emails.push(SMTP_USER)
+        const unique = Array.from(new Set(emails))
+        console.log(`[send-reminders] ${unique.length} admin email(s) from RTDB (no-auth):`, unique)
+        return unique
+      }
+    }
+    console.warn(`[send-reminders] RTDB /users (no-auth) → ${res2.status}, using SMTP_USER fallback`)
+    return SMTP_USER ? [SMTP_USER] : []
   } catch (err) {
     console.warn('[send-reminders] Firebase unreachable, fallback to SMTP_USER:', err)
     return SMTP_USER ? [SMTP_USER] : []
@@ -420,10 +444,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success:false, message:'No recipient emails found' }, { headers:corsHeaders })
     }
 
+    // Merge client sentKeys with Firebase-persisted sentKeys so dedup is shared across ALL browsers.
+    // Without this, admin A's browser marks a key sent, but admin B's browser never sees it —
+    // causing admin B to get a duplicate email, OR admin A's key prevents admin B from getting ANY email.
+    // With Firebase dedup: one browser sending = all browsers know it was sent.
+    const firebaseSentKeys = await fetchCronSentKeys()
+    const mergedSentKeys = Array.from(new Set([...clientSentKeys, ...firebaseSentKeys]))
+
     // Use orders from client (browser) if provided, otherwise fetch from Firebase
     const orders = clientOrders ?? await fetchOrdersFromFirebase()
-    console.log(`[send-reminders] Processing ${orders.length} orders, ${clientSentKeys.length} already-sent keys, ${emails.length} recipient(s)`)
-    const { results, newSentKeys } = await processReminders(orders, emails, clientSentKeys)
+    console.log(`[send-reminders] Processing ${orders.length} orders, ${mergedSentKeys.length} dedup keys (${clientSentKeys.length} client + ${firebaseSentKeys.length} firebase), ${emails.length} recipient(s)`)
+    const { results, newSentKeys } = await processReminders(orders, emails, mergedSentKeys)
+
+    // Persist newly-sent keys to Firebase so ALL admin browsers share the dedup state
+    if (newSentKeys.length > 0) await saveCronSentKeys(newSentKeys)
 
     return NextResponse.json({
       success:true, timestamp:nowPHLabel(),
