@@ -544,7 +544,20 @@ export const updateKitchenItems = (items: KitchenItem[]): void => {
 };
 
 export const getCustomerOrders = (): CustomerOrder[] => {
+  // Always return from in-memory array which is kept in sync with Firebase RTDB.
+  // This avoids ghost orders that persist in localStorage after deletion.
   return [...customerOrders];
+};
+
+// Expose a way for Firebase listener to directly replace the in-memory array
+// without going through localStorage — prevents stale/ghost orders.
+export const setCustomerOrdersFromRTDB = (orders: CustomerOrder[]): void => {
+  customerOrders = [...orders];
+  // Also update localStorage so offline fallback is current
+  saveToLocalStorage(CUSTOMER_ORDERS_KEY, customerOrders);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('customer-orders-updated'));
+  }
 };
 
 export const updateCustomerOrders = (orders: CustomerOrder[]): void => {

@@ -41,8 +41,11 @@ export function getCustomerAnalytics(): CustomerData[] {
     // Get favorite items (most ordered)
     const itemCounts = new Map<string, number>()
     customerOrders.forEach((order) => {
-      order.items.forEach((item) => {
-        itemCounts.set(item.name, (itemCounts.get(item.name) || 0) + item.quantity)
+      // orders from RTDB use `orderedItems`, orders page uses `items` — handle both
+      const items = (order.items || (order as any).orderedItems || [])
+      items.forEach((item: any) => {
+        const itemName = item.name || item.itemName || "Unknown"
+        itemCounts.set(itemName, (itemCounts.get(itemName) || 0) + (item.quantity || 1))
       })
     })
 

@@ -54,7 +54,7 @@ export function FirebaseSyncInitializer() {
 
     // Start real-time notifications listener so all admins see the same notifications
     try {
-      startNotificationsListener()
+      startNotificationsListener().catch(() => {})
     } catch { /* non-critical */ }
 
     // Initialize categories in Firebase and fetch them
@@ -107,7 +107,7 @@ export function FirebaseSyncInitializer() {
       window.removeEventListener("firebase-kitchen-updated", handleKitchenUpdate)
       cleanupFirebaseSync()
       cleanupFirestoreSync()
-      stopNotificationsListener()
+      stopNotificationsListener().catch(() => {})
     }
   }, [])
 

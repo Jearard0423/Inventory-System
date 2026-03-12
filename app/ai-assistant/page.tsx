@@ -3,393 +3,324 @@
 import React from "react"
 import { useState, useEffect, useRef } from "react"
 import { POSLayout } from "@/components/pos-layout"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
-import { Badge } from "@/components/ui/badge"
-import {
-  Bot, Send, User, Loader2, Sparkles, TrendingUp,
-  Package, ShoppingCart, AlertTriangle, RefreshCw, BarChart3, ChefHat,
-} from "lucide-react"
+import { Bot, Send, User, Loader2, Sparkles, TrendingUp, Package, ShoppingCart, AlertTriangle, RefreshCw, ChefHat } from "lucide-react"
 import { getInventoryItems, getLowStockItems, getCustomerOrders } from "@/lib/inventory-store"
 import { cn } from "@/lib/utils"
 
-interface Message {
-  role: "user" | "assistant"
-  content: string
-}
+interface Message { role: "user" | "assistant"; content: string }
 
-const DONE_STATUSES = new Set(["delivered", "served", "cancelled", "canceled", "complete", "completed"])
+const DONE = new Set(["delivered","served","cancelled","canceled","complete","completed"])
+const readActive = () => { try { return getCustomerOrders().filter(o => !DONE.has((o.status||"").toLowerCase())) } catch { return [] } }
 
-function readActiveOrders(): any[] {
+function buildContext() {
   try {
-    return getCustomerOrders().filter(o => {
-      const status = (o.status || "").toLowerCase()
-      return !DONE_STATUSES.has(status)
-    })
-  } catch { return [] }
-}
-
-function buildContext(): string {
-  try {
-    const inventory  = getInventoryItems()
-    const orders     = readActiveOrders()   // from RTDB via yellowbell_customer_orders
-    const lowStock   = getLowStockItems()
-
-    const now    = new Date()
-    const phTime = new Date(now.getTime() + now.getTimezoneOffset() * 60000 + 8 * 3600000)
-    const dateLabel = phTime.toLocaleDateString("en-PH", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "Asia/Manila" })
-    const timeLabel = phTime.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Manila" })
-
-    const food       = inventory.filter(i => !i.isUtensil && !i.isContainer && i.category !== "raw-stock")
-    const rawStock   = inventory.filter(i => i.category === "raw-stock")
-    const utensils   = inventory.filter(i => i.isUtensil)
-    const containers = inventory.filter(i => i.isContainer)
-
-    const todayStr    = phTime.toDateString()
-    const todayOrders = orders.filter(o => new Date(o.date || o.createdAt || "").toDateString() === todayStr)
-    const paidOrders  = orders.filter(o => o.paymentStatus === "paid")
-    const unpaidOrders = orders.filter(o => o.paymentStatus !== "paid")
-    const totalRevenue   = paidOrders.reduce((s, o) => s + (o.total || 0), 0)
-    const pendingRevenue = unpaidOrders.reduce((s, o) => s + (o.total || 0), 0)
-    const cashCount  = paidOrders.filter(o => o.paymentMethod === "cash").length
-    const gcashCount = paidOrders.filter(o => o.paymentMethod === "gcash").length
-
-    const freq: Record<string, number> = {}
-    orders.forEach(o => (o.items || []).forEach((it: any) => { freq[it.name] = (freq[it.name] || 0) + (it.quantity || 1) }))
-    const topItems = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, qty]) => `${name} (${qty} pcs)`)
-
-    const mealBreak: Record<string, number> = {}
-    orders.forEach(o => { const mt = (o.mealType || o.originalMealType || "other").toLowerCase(); mealBreak[mt] = (mealBreak[mt] || 0) + 1 })
-
-    return `
-Current Date & Time (Philippines): ${dateLabel}, ${timeLabel}
-
-═══ INVENTORY STATUS ═══
-Food Items (${food.length} types):
-${food.map(i => `  • ${i.name}: ${i.stock} units @ ₱${i.price} [${i.status}]`).join("\n") || "  (none)"}
-
-Raw Stock (${rawStock.length} types):
-${rawStock.map(i => `  • ${i.name}: ${i.stock} units [${i.status}]`).join("\n") || "  (none)"}
-
-Utensils (${utensils.length} types):
-${utensils.map(i => `  • ${i.name}: ${i.stock} pcs`).join("\n") || "  (none)"}
-
-Containers (${containers.length} types):
-${containers.map(i => `  • ${i.name}: ${i.stock} pcs`).join("\n") || "  (none)"}
-
-⚠ LOW STOCK ALERTS (≤5 units):
-${lowStock.length > 0 ? lowStock.map(i => `  ⚠ ${i.name}: only ${i.stock} left`).join("\n") : "  ✓ All items adequately stocked"}
-
-═══ ORDER METRICS ═══
-Total Active Orders: ${orders.length}
-Today's Orders: ${todayOrders.length}
-Pending / Active Customer Orders: ${orders.length}
-Paid Orders: ${paidOrders.length}  (Cash: ${cashCount}, GCash: ${gcashCount})
-Unpaid Orders: ${unpaidOrders.length}
-
-Revenue:
-  • Collected: ₱${totalRevenue.toLocaleString()}
-  • Pending collection: ₱${pendingRevenue.toLocaleString()}
-
-Meal Type Breakdown:
-${Object.entries(mealBreak).map(([mt, cnt]) => `  • ${mt}: ${cnt} orders`).join("\n") || "  (no data)"}
-
-Top Ordered Items (all time):
-${topItems.length > 0 ? topItems.map((t, i) => `  ${i + 1}. ${t}`).join("\n") : "  (no order data yet)"}
-
-Active Pending Orders (latest 10):
-${orders.slice(0, 10).map(o =>
-  `  • ${o.customerName} | ${o.orderNumber || o.id} | ${o.mealType || "?"} | ${o.cookTime ? o.cookTime + " delivery" : "no time"} | ₱${o.total || 0}`
-).join("\n") || "  (none)"}
-`.trim()
-  } catch (err) {
-    return `Error reading live data: ${err instanceof Error ? err.message : "unknown error"}`
-  }
+    const inv = getInventoryItems(), orders = readActive(), low = getLowStockItems()
+    const now = new Date(), ph = new Date(now.getTime()+now.getTimezoneOffset()*60000+8*3600000)
+    const dl = ph.toLocaleDateString("en-PH",{weekday:"long",year:"numeric",month:"long",day:"numeric",timeZone:"Asia/Manila"})
+    const tl = ph.toLocaleTimeString("en-PH",{hour:"2-digit",minute:"2-digit",hour12:true,timeZone:"Asia/Manila"})
+    const food=inv.filter(i=>!i.isUtensil&&!i.isContainer&&i.category!=="raw-stock")
+    const raw=inv.filter(i=>i.category==="raw-stock"), ut=inv.filter(i=>i.isUtensil), ct=inv.filter(i=>i.isContainer)
+    const paid=orders.filter(o=>o.paymentStatus==="paid"), unpaid=orders.filter(o=>o.paymentStatus!=="paid")
+    const rev=paid.reduce((s,o)=>s+(o.total||0),0), pend=unpaid.reduce((s,o)=>s+(o.total||0),0)
+    const freq:Record<string,number>={};orders.forEach(o=>(o.items||o.orderedItems||[]).forEach((it:any)=>{freq[it.name]=(freq[it.name]||0)+(it.quantity||1)}))
+    const top=Object.entries(freq).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([n,q])=>`${n} (${q})`)
+    const mb:Record<string,number>={};orders.forEach(o=>{const mt=(o.mealType||o.originalMealType||"other").toLowerCase();mb[mt]=(mb[mt]||0)+1})
+    const today=ph.toDateString();const tod=orders.filter(o=>new Date(o.date||o.createdAt||"").toDateString()===today)
+    return `Date/Time PH: ${dl}, ${tl}\nFood: ${food.map(i=>`${i.name}:${i.stock}@₱${i.price}[${i.status}]`).join(", ")}\nRaw: ${raw.map(i=>`${i.name}:${i.stock}`).join(", ")}\nLow stock: ${low.map(i=>`${i.name}(${i.stock})`).join(", ")||"none"}\nOrders: ${orders.length} active, today:${tod.length}, paid:${paid.length}, unpaid:${unpaid.length}\nRevenue: collected ₱${rev.toLocaleString()}, pending ₱${pend.toLocaleString()}\nMeal types: ${Object.entries(mb).map(([m,c])=>`${m}:${c}`).join(", ")}\nTop items: ${top.join(", ")}\nLatest orders: ${orders.slice(0,10).map(o=>`${o.customerName}|${o.orderNumber||o.id}|₱${o.total||0}`).join("; ")||"none"}`
+  } catch(e) { return `Error: ${e}` }
 }
 
 const SUGGESTED = [
   { label: "📦 Low stock?",        text: "Which items are running low or out of stock? Give me a restock plan." },
   { label: "📈 Top sellers",       text: "What are our top selling items? Any slow-moving items I should know about?" },
   { label: "💰 Revenue summary",   text: "Give me a revenue summary — collected, pending, and breakdown by payment method." },
-  { label: "🔮 Demand prediction", text: "Based on our order history, predict demand for the next 3 days and recommend stock quantities." },
+  { label: "🔮 Demand prediction", text: "Based on our order history, predict demand for the next 3 days." },
   { label: "📋 Pending orders",    text: "How many orders are currently pending and what's the total value outstanding?" },
-  { label: "🍗 Meal type trends",  text: "What meal types (breakfast, lunch, dinner) are most popular? Any patterns?" },
   { label: "⚠️ Urgent issues",     text: "Are there any urgent issues I should address right now — stock, orders, or payments?" },
-  { label: "💡 Business advice",   text: "Based on our current data, what are your top 3 business improvement recommendations?" },
 ]
 
-/** Returns 3–4 contextual follow-up suggestions based on what the AI just replied about */
-function getFollowUpSuggestions(replyContent: string): { label: string; text: string }[] {
-  const r = replyContent.toLowerCase()
-  const all: { label: string; text: string }[] = []
-
-  if (r.includes("stock") || r.includes("restock") || r.includes("inventory"))
-    all.push({ label: "📈 Top sellers next", text: "Which items sell the most? Should I reorder anything now?" })
-  if (r.includes("revenue") || r.includes("paid") || r.includes("unpaid") || r.includes("₱"))
-    all.push({ label: "💸 Unpaid breakdown", text: "List all unpaid orders with their totals and customer names." })
-  if (r.includes("order") || r.includes("pending") || r.includes("customer"))
-    all.push({ label: "⏱ Delivery times", text: "Are any orders overdue or approaching their delivery time?" })
-  if (r.includes("breakfast") || r.includes("lunch") || r.includes("dinner") || r.includes("meal"))
-    all.push({ label: "🍗 Best meal type", text: "Which meal type generates the most revenue — breakfast, lunch, or dinner?" })
-  if (r.includes("recommend") || r.includes("suggest") || r.includes("should"))
-    all.push({ label: "📊 Show me data", text: "Give me the raw numbers behind that recommendation." })
-  if (r.includes("low") || r.includes("out of stock") || r.includes("only") || r.includes("unit"))
-    all.push({ label: "🛒 Restock plan", text: "Create a restock shopping list based on current stock and recent demand." })
-  if (r.includes("chicken") || r.includes("liempo") || r.includes("sisig") || r.includes("roast"))
-    all.push({ label: "🥩 Raw stock check", text: "How much raw stock (whole chicken, liempo) do we have vs what we need?" })
-  if (r.includes("payment") || r.includes("cash") || r.includes("gcash"))
-    all.push({ label: "💳 Payment split", text: "What percentage of orders are paid via cash vs GCash?" })
-
-  // Always add a couple of general fallbacks to fill up to 4
-  const fallbacks = [
-    { label: "⚠️ Any urgent issues?", text: "Are there any urgent issues I should address right now?" },
-    { label: "💡 Quick wins",         text: "What are 3 quick actions I can take right now to improve operations?" },
-    { label: "📅 Today's summary",    text: "Give me a full summary of today — orders, revenue, and stock status." },
-    { label: "🔮 Predict demand",     text: "Predict what I'll need to stock for the next 3 days based on trends." },
-  ]
-
-  const result = all.slice(0, 3)
-  for (const fb of fallbacks) {
-    if (result.length >= 4) break
-    if (!result.find(x => x.text === fb.text)) result.push(fb)
-  }
-  return result
+function followUps(reply: string) {
+  const r = reply.toLowerCase(), all: {label:string;text:string}[] = []
+  if(r.includes("stock")||r.includes("inventory")) all.push({label:"📈 Top sellers",text:"Which items sell the most?"})
+  if(r.includes("revenue")||r.includes("₱")) all.push({label:"💸 Unpaid list",text:"List all unpaid orders with totals."})
+  if(r.includes("order")||r.includes("pending")) all.push({label:"⏱ Overdue?",text:"Are any orders overdue or approaching delivery time?"})
+  if(r.includes("meal")||r.includes("breakfast")||r.includes("lunch")) all.push({label:"🍗 Best meal type",text:"Which meal type generates the most revenue?"})
+  const fb=[{label:"⚠️ Urgent?",text:"Any urgent issues right now?"},{label:"💡 Quick wins",text:"Top 3 quick actions to improve operations."},{label:"📅 Today's summary",text:"Full summary of today — orders, revenue, stock."}]
+  const res=all.slice(0,3); for(const f of fb){if(res.length>=4)break;if(!res.find(x=>x.text===f.text))res.push(f)}
+  return res
 }
 
 export default function AIAssistantPage() {
   const [messages, setMessages] = useState<Message[]>([])
-  const [input, setInput]       = useState("")
-  const [loading, setLoading]   = useState(false)
-  const [context, setContext]   = useState("")
-  const [statsRefreshed, setStatsRefreshed] = useState(new Date())
+  const [input, setInput] = useState("")
+  const [loading, setLoading] = useState(false)
+  const [context, setContext] = useState("")
+  const [refreshed, setRefreshed] = useState(new Date())
+  const [stats, setStats] = useState({low:0,out:0,orders:0,rev:0,today:0})
   const bottomRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
 
-  const [stats, setStats] = useState({
-    lowStockCount: 0, outOfStockCount: 0,
-    pendingOrders: 0, totalRevenue: 0, todayOrders: 0,
-  })
-
-  function refreshStats() {
+  function refresh() {
     try {
-      const inv    = getInventoryItems()
-      const orders = readActiveOrders()   // RTDB-backed, already filtered
-      const paid   = orders.filter(o => o.paymentStatus === "paid")
-      const now    = new Date()
-      const phNow  = new Date(now.getTime() + now.getTimezoneOffset() * 60000 + 8 * 3600000)
-
+      const inv=getInventoryItems(), orders=readActive(), paid=orders.filter(o=>o.paymentStatus==="paid")
+      const now=new Date(), ph=new Date(now.getTime()+now.getTimezoneOffset()*60000+8*3600000)
       setStats({
-        lowStockCount:   inv.filter(i => i.stock > 0 && i.stock <= 5 && !i.isUtensil && !i.isContainer && i.category !== "raw-stock").length,
-        outOfStockCount: inv.filter(i => i.stock === 0 && !i.isUtensil && !i.isContainer && i.category !== "raw-stock").length,
-        pendingOrders:   new Set(orders.map((o: any) => o.id).filter(Boolean)).size,
-        totalRevenue:    paid.reduce((s, o) => s + (o.total || 0), 0),
-        todayOrders:     new Set(orders.filter(o => new Date(o.date || o.createdAt || "").toDateString() === phNow.toDateString()).map((o: any) => o.id).filter(Boolean)).size,
+        low: inv.filter(i=>i.stock>0&&i.stock<=5&&!i.isUtensil&&!i.isContainer&&i.category!=="raw-stock").length,
+        out: inv.filter(i=>i.stock===0&&!i.isUtensil&&!i.isContainer&&i.category!=="raw-stock").length,
+        orders: new Set(orders.map((o:any)=>o.id).filter(Boolean)).size,
+        rev: paid.reduce((s,o)=>s+(o.total||0),0),
+        today: new Set(orders.filter(o=>new Date(o.date||o.createdAt||"").toDateString()===ph.toDateString()).map((o:any)=>o.id).filter(Boolean)).size,
       })
       setContext(buildContext())
-      setStatsRefreshed(new Date())
+      setRefreshed(new Date())
     } catch {}
   }
 
-  useEffect(() => {
-    refreshStats()
-    const iv = setInterval(refreshStats, 30000)
-    const onUpdate = () => refreshStats()
-    window.addEventListener("firebase-orders-updated", onUpdate)
-    window.addEventListener("customer-orders-updated", onUpdate)
-    window.addEventListener("firebase-inventory-updated", onUpdate)
-    window.addEventListener("orders-updated", onUpdate)
-    return () => {
-      clearInterval(iv)
-      window.removeEventListener("firebase-orders-updated", onUpdate)
-      window.removeEventListener("customer-orders-updated", onUpdate)
-      window.removeEventListener("firebase-inventory-updated", onUpdate)
-      window.removeEventListener("orders-updated", onUpdate)
-    }
-  }, [])
+  useEffect(()=>{
+    refresh()
+    const iv=setInterval(refresh,30000)
+    const fn=()=>refresh()
+    window.addEventListener("firebase-orders-updated",fn)
+    window.addEventListener("customer-orders-updated",fn)
+    window.addEventListener("firebase-inventory-updated",fn)
+    return()=>{clearInterval(iv);window.removeEventListener("firebase-orders-updated",fn);window.removeEventListener("customer-orders-updated",fn);window.removeEventListener("firebase-inventory-updated",fn)}
+  },[])
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages, loading])
+  useEffect(()=>{ bottomRef.current?.scrollIntoView({behavior:"smooth"}) },[messages,loading])
 
-  const sendMessage = async (text?: string) => {
-    const userText = (text ?? input).trim()
-    if (!userText || loading) return
-    setInput("")
-    const userMsg: Message = { role: "user", content: userText }
-    const newMessages = [...messages, userMsg]
-    setMessages(newMessages)
-    setLoading(true)
-    try {
-      const res = await fetch("/api/ai-assistant", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: newMessages, context }),
-      })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json()
-      if (data.error) throw new Error(data.error)
-      setMessages(prev => [...prev, { role: "assistant", content: data.reply }])
-    } catch (err) {
-      setMessages(prev => [...prev, {
-        role: "assistant",
-        content: `❌ Could not reach the AI service.\n\n**Reason:** ${err instanceof Error ? err.message : "Unknown error"}\n\n**Fix:** Make sure \`GROQ_API_KEY\` is set in your \`.env.local\` file, then restart the dev server.`,
-      }])
-    } finally {
-      setLoading(false)
-    }
+  const grow = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value)
+    e.target.style.height="auto"
+    e.target.style.height=Math.min(e.target.scrollHeight,120)+"px"
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage() }
+  const send = async (text?: string) => {
+    const t=(text??input).trim(); if(!t||loading) return
+    setInput(""); if(inputRef.current)inputRef.current.style.height="auto"
+    const um:Message={role:"user",content:t}
+    const msgs=[...messages,um]; setMessages(msgs); setLoading(true)
+    try {
+      const res=await fetch("/api/ai-assistant",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:msgs,context})})
+      if(!res.ok)throw new Error(`HTTP ${res.status}`)
+      const d=await res.json(); if(d.error)throw new Error(d.error)
+      setMessages(p=>[...p,{role:"assistant",content:d.reply}])
+    } catch(err) {
+      setMessages(p=>[...p,{role:"assistant",content:`❌ Could not reach AI service. Check GROQ_API_KEY in Vercel.`}])
+    } finally { setLoading(false) }
+  }
+
+  const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send()}
   }
 
   return (
     <POSLayout fullWidth>
-      {/* h-full works because POSLayout fullWidth sets the wrapper to h-full flex flex-col */}
-      <div className="h-full flex flex-col gap-2 sm:gap-4 min-h-0">
+      <div className="h-full flex flex-col min-h-0" style={{background:"var(--background)"}}>
 
-        {/* Header */}
-        <div className="flex items-start justify-between gap-2 shrink-0">
-          <div>
-            <div className="flex items-center gap-2 mb-0.5">
-              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
-                <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
-              </div>
-              <h1 className="text-lg sm:text-2xl font-bold tracking-tight">YRC Insight</h1>
-              <Badge variant="secondary" className="text-xs">AI</Badge>
-            </div>
-            <p className="text-xs sm:text-sm text-muted-foreground pl-9 sm:pl-10">
-              Business intelligence assistant — reads live inventory, orders &amp; revenue
-            </p>
-          </div>
-          <Button variant="outline" size="sm" onClick={refreshStats} className="gap-1.5 shrink-0 text-xs sm:text-sm">
-            <RefreshCw className="h-3 w-3 sm:h-3.5 sm:w-3.5" /> Refresh
-          </Button>
-        </div>
+        {/* ── Gradient hero header ── */}
+        <div className="shrink-0 relative overflow-hidden"
+          style={{background:"linear-gradient(135deg, #1a0a00 0%, #2d1500 40%, #1a0a00 100%)"}}>
+          {/* Subtle noise grain overlay */}
+          <div className="absolute inset-0 opacity-[0.03]"
+            style={{backgroundImage:"url(\"data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E\")",backgroundSize:"128px"}} />
+          {/* Amber glow blob */}
+          <div className="absolute -top-8 -left-8 w-48 h-48 rounded-full opacity-20 blur-3xl"
+            style={{background:"radial-gradient(circle, #f59e0b, transparent)"}} />
+          <div className="absolute -top-4 right-8 w-32 h-32 rounded-full opacity-10 blur-2xl"
+            style={{background:"radial-gradient(circle, #fb923c, transparent)"}} />
 
-        {/* Stats bar */}
-        <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5 sm:gap-2 shrink-0">
-          {[
-            { label: "Low Stock",      value: stats.lowStockCount,                          icon: Package,       color: stats.lowStockCount > 0  ? "text-amber-600" : "text-muted-foreground" },
-            { label: "Out of Stock",   value: stats.outOfStockCount,                        icon: AlertTriangle, color: stats.outOfStockCount > 0 ? "text-red-600"   : "text-muted-foreground" },
-            { label: "Pending",        value: stats.pendingOrders,                          icon: ShoppingCart,  color: "text-foreground" },
-            { label: "Today's Orders", value: stats.todayOrders,                            icon: ChefHat,       color: "text-primary" },
-            { label: "Revenue",        value: `₱${stats.totalRevenue.toLocaleString()}`,    icon: TrendingUp,    color: "text-green-600" },
-          ].map(s => (
-            <Card key={s.label} className="border-0 shadow-sm">
-              <CardContent className="p-2 sm:p-3 flex items-center gap-1.5 sm:gap-2">
-                <s.icon className={cn("w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0", s.color)} />
-                <div className="min-w-0">
-                  <p className="text-[9px] sm:text-[10px] text-muted-foreground leading-none truncate">{s.label}</p>
-                  <p className={cn("font-bold text-xs sm:text-sm leading-tight", s.color)}>{s.value}</p>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
-        {/* Chat card — flex-1 + min-h-0 so it fills remaining space and scrolls internally */}
-        <Card className="flex-1 min-h-0 border-0 shadow-sm flex flex-col overflow-hidden">
-          <CardHeader className="pb-2 pt-3 px-4 border-b shrink-0">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm flex items-center gap-2">
-                <BarChart3 className="w-4 h-4 text-primary" />
-                Chat
-              </CardTitle>
-              {messages.length > 0 && (
-                <Button variant="ghost" size="sm" onClick={() => setMessages([])} className="h-7 text-xs text-muted-foreground">
-                  Clear
-                </Button>
-              )}
-            </div>
-          </CardHeader>
-
-          {/* Scrollable message area */}
-          <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4">
-            {messages.length === 0 && (
-              <div className="flex flex-col items-center justify-center h-full text-center gap-3 py-8">
-                <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center">
-                  <Bot className="w-7 h-7 text-primary" />
+          <div className="relative px-4 sm:px-6 pt-4 pb-3">
+            {/* Top row */}
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
+                  style={{background:"linear-gradient(135deg,#f59e0b,#ea580c)",boxShadow:"0 2px 12px rgba(245,158,11,0.4)"}}>
+                  <Sparkles className="w-4 h-4 text-white" />
                 </div>
                 <div>
-                  <p className="font-semibold text-base">How can I help you today?</p>
-                  <p className="text-sm text-muted-foreground mt-0.5">Ask about stock, revenue, orders, or predictions</p>
-                </div>
-                <div className="flex flex-wrap gap-2 justify-center mt-2 max-w-xl">
-                  {SUGGESTED.map(s => (
-                    <button key={s.label} onClick={() => sendMessage(s.text)} disabled={loading}
-                      className="text-xs px-3 py-1.5 rounded-full border border-border bg-card hover:bg-muted transition-colors disabled:opacity-50">
-                      {s.label}
-                    </button>
-                  ))}
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-white text-sm sm:text-base tracking-tight">YRC Insight</span>
+                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+                      style={{background:"rgba(245,158,11,0.2)",color:"#fbbf24",border:"1px solid rgba(245,158,11,0.3)"}}>AI</span>
+                  </div>
+                  <p className="text-[10px] sm:text-xs mt-0.5" style={{color:"rgba(255,255,255,0.45)"}}>
+                    Live business intelligence · updates every 30s
+                  </p>
                 </div>
               </div>
-            )}
+              <div className="flex items-center gap-1">
+                {messages.length>0&&(
+                  <button onClick={()=>setMessages([])}
+                    className="text-[11px] px-2.5 py-1 rounded-lg transition-all"
+                    style={{color:"rgba(255,255,255,0.5)",background:"rgba(255,255,255,0.06)"}}>
+                    Clear
+                  </button>
+                )}
+                <button onClick={refresh} title="Refresh"
+                  className="p-1.5 rounded-lg transition-all hover:rotate-180"
+                  style={{color:"rgba(255,255,255,0.5)",background:"rgba(255,255,255,0.06)",transition:"all 0.4s"}}>
+                  <RefreshCw className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
 
-            {messages.map((msg, i) => (
-              <div key={i}>
-                <div className={cn("flex gap-3", msg.role === "user" ? "flex-row-reverse" : "")}>
-                  <div className={cn("w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5",
-                    msg.role === "assistant" ? "bg-primary" : "bg-muted")}>
-                    {msg.role === "assistant"
-                      ? <Bot className="w-3.5 h-3.5 text-white" />
-                      : <User className="w-3.5 h-3.5 text-muted-foreground" />}
-                  </div>
-                  <div className={cn("rounded-2xl px-4 py-2.5 text-sm max-w-[82%]",
-                    msg.role === "assistant"
-                      ? "bg-muted text-foreground rounded-tl-sm"
-                      : "bg-primary text-primary-foreground rounded-tr-sm")}>
-                    <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
-                  </div>
+            {/* Stat pills */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5" style={{scrollbarWidth:"none"}}>
+              {[
+                {icon:Package,    label:"Low stock", val:stats.low,   warn:stats.low>0},
+                {icon:AlertTriangle,label:"Out",     val:stats.out,   warn:stats.out>0},
+                {icon:ShoppingCart, label:"Orders",  val:stats.orders,warn:false},
+                {icon:ChefHat,    label:"Today",     val:stats.today, warn:false},
+                {icon:TrendingUp, label:`₱${stats.rev.toLocaleString()}`, val:null, warn:false},
+              ].map((s,i)=>(
+                <div key={i} className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap shrink-0"
+                  style={s.warn
+                    ? {background:"rgba(239,68,68,0.2)",color:"#fca5a5",border:"1px solid rgba(239,68,68,0.3)"}
+                    : {background:"rgba(255,255,255,0.07)",color:"rgba(255,255,255,0.6)",border:"1px solid rgba(255,255,255,0.1)"}
+                  }>
+                  <s.icon className="w-3 h-3" />
+                  {s.val!==null&&<span>{s.val}</span>}
+                  <span>{s.label}</span>
                 </div>
-                {/* Follow-up suggestions after the last assistant message */}
-                {msg.role === "assistant" && i === messages.length - 1 && !loading && (
-                  <div className="ml-10 mt-2 flex flex-wrap gap-1.5">
-                    {getFollowUpSuggestions(msg.content).map(s => (
-                      <button key={s.text} onClick={() => sendMessage(s.text)} disabled={loading}
-                        className="text-[11px] px-2.5 py-1 rounded-full border border-border bg-background hover:bg-muted transition-colors disabled:opacity-50 text-muted-foreground">
+              ))}
+              <span className="ml-auto shrink-0 text-[10px] hidden sm:block" style={{color:"rgba(255,255,255,0.3)"}}>
+                {refreshed.toLocaleTimeString("en-PH",{hour:"2-digit",minute:"2-digit",hour12:true,timeZone:"Asia/Manila"})}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Messages ── */}
+        <div className="flex-1 min-h-0 overflow-y-auto px-3 sm:px-6 py-5 space-y-5"
+          style={{background:"linear-gradient(180deg,var(--background) 0%,var(--background) 100%)"}}>
+
+          {/* Empty state */}
+          {messages.length===0&&(
+            <div className="flex flex-col items-center justify-center h-full text-center gap-5 pb-6">
+              {/* Glowing icon */}
+              <div className="relative">
+                <div className="absolute inset-0 rounded-full blur-xl opacity-40"
+                  style={{background:"radial-gradient(circle,#f59e0b,transparent)",transform:"scale(1.5)"}} />
+                <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-2xl flex items-center justify-center"
+                  style={{background:"linear-gradient(135deg,#1a0a00,#2d1500)",border:"1px solid rgba(245,158,11,0.3)",boxShadow:"0 8px 32px rgba(245,158,11,0.15),inset 0 1px 0 rgba(255,255,255,0.05)"}}>
+                  <Sparkles className="w-6 h-6 sm:w-7 sm:h-7" style={{color:"#f59e0b"}} />
+                </div>
+              </div>
+              <div>
+                <h2 className="text-2xl sm:text-3xl font-bold tracking-tight" style={{color:"var(--foreground)"}}>
+                  What can I help with?
+                </h2>
+                <p className="text-sm mt-1.5" style={{color:"var(--muted-foreground)"}}>
+                  Ask about stock, orders, revenue, or predictions
+                </p>
+              </div>
+              {/* Suggestion chips in 2-col on mobile */}
+              <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 justify-center max-w-xs sm:max-w-lg w-full">
+                {SUGGESTED.map(s=>(
+                  <button key={s.label} onClick={()=>send(s.text)} disabled={loading}
+                    className="text-xs sm:text-sm px-3 sm:px-4 py-2.5 rounded-xl text-left sm:text-center transition-all disabled:opacity-40"
+                    style={{
+                      background:"var(--card)",
+                      border:"1px solid var(--border)",
+                      color:"var(--foreground)",
+                      boxShadow:"0 1px 4px rgba(0,0,0,0.06)",
+                    }}
+                    onMouseEnter={e=>(e.currentTarget.style.borderColor="rgba(245,158,11,0.5)")}
+                    onMouseLeave={e=>(e.currentTarget.style.borderColor="var(--border)")}>
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Message bubbles */}
+          {messages.map((msg,i)=>(
+            <div key={i} className={cn("flex gap-2.5 sm:gap-3",msg.role==="user"?"justify-end":"justify-start")}>
+              {msg.role==="assistant"&&(
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5"
+                  style={{background:"linear-gradient(135deg,#f59e0b,#ea580c)",boxShadow:"0 2px 8px rgba(245,158,11,0.35)"}}>
+                  <Bot className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
+                </div>
+              )}
+              <div className="flex flex-col gap-2 max-w-[86%] sm:max-w-[76%]">
+                <div className={cn("rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed")}
+                  style={msg.role==="assistant"
+                    ? {background:"var(--muted)",color:"var(--foreground)",borderRadius:"4px 18px 18px 18px",boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}
+                    : {background:"linear-gradient(135deg,#f59e0b,#ea580c)",color:"#fff",borderRadius:"18px 4px 18px 18px",boxShadow:"0 2px 12px rgba(245,158,11,0.3)"}}>
+                  <p className="whitespace-pre-wrap">{msg.content}</p>
+                </div>
+                {msg.role==="assistant"&&i===messages.length-1&&!loading&&(
+                  <div className="flex flex-wrap gap-1.5 pl-1">
+                    {followUps(msg.content).map(s=>(
+                      <button key={s.text} onClick={()=>send(s.text)} disabled={loading}
+                        className="text-[11px] px-2.5 py-1 rounded-full transition-all disabled:opacity-50"
+                        style={{border:"1px solid var(--border)",background:"var(--background)",color:"var(--muted-foreground)"}}
+                        onMouseEnter={e=>(e.currentTarget.style.borderColor="rgba(245,158,11,0.5)")}
+                        onMouseLeave={e=>(e.currentTarget.style.borderColor="var(--border)")}>
                         {s.label}
                       </button>
                     ))}
                   </div>
                 )}
               </div>
-            ))}
+              {msg.role==="user"&&(
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5"
+                  style={{background:"var(--muted)",border:"1px solid var(--border)"}}>
+                  <User className="w-3.5 h-3.5 sm:w-4 sm:h-4" style={{color:"var(--muted-foreground)"}} />
+                </div>
+              )}
+            </div>
+          ))}
 
-            {loading && (
-              <div className="flex gap-3">
-                <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center shrink-0">
-                  <Bot className="w-3.5 h-3.5 text-white" />
-                </div>
-                <div className="bg-muted rounded-2xl rounded-tl-sm px-4 py-2.5 flex items-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">Analyzing your data…</span>
-                </div>
+          {/* Typing dots */}
+          {loading&&(
+            <div className="flex gap-2.5 justify-start">
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center shrink-0"
+                style={{background:"linear-gradient(135deg,#f59e0b,#ea580c)",boxShadow:"0 2px 8px rgba(245,158,11,0.35)"}}>
+                <Bot className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
               </div>
-            )}
-            <div ref={bottomRef} />
-          </div>
+              <div className="flex items-center gap-1.5 px-4 py-3 rounded-2xl" style={{background:"var(--muted)",borderRadius:"4px 18px 18px 18px"}}>
+                {[0,150,300].map(d=>(
+                  <span key={d} className="w-1.5 h-1.5 rounded-full animate-bounce"
+                    style={{background:"var(--muted-foreground)",opacity:0.5,animationDelay:`${d}ms`}} />
+                ))}
+              </div>
+            </div>
+          )}
+          <div ref={bottomRef} />
+        </div>
 
-          {/* Input */}
-          <div className="border-t px-4 py-3 flex gap-2 shrink-0">
-            <Textarea
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Ask about inventory, orders, revenue, predictions… (Enter to send)"
-              disabled={loading}
-              className="resize-none min-h-[44px] max-h-[120px] text-sm leading-snug"
-              rows={1}
-            />
-            <Button size="icon" onClick={() => sendMessage()} disabled={loading || !input.trim()} className="h-11 w-11 shrink-0">
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-            </Button>
+        {/* ── Input bar ── */}
+        <div className="shrink-0 px-3 sm:px-6 pb-3 sm:pb-4 pt-2">
+          <div className="flex items-end gap-2 rounded-2xl px-3 sm:px-4 py-2.5 transition-all"
+            style={{
+              background:"var(--card)",
+              border:"1px solid var(--border)",
+              boxShadow:"0 4px 24px rgba(0,0,0,0.07)",
+            }}
+            onFocusCapture={e=>((e.currentTarget as HTMLElement).style.borderColor="rgba(245,158,11,0.5)")}
+            onBlurCapture={e=>((e.currentTarget as HTMLElement).style.borderColor="var(--border)")}>
+            <textarea ref={inputRef} value={input} onChange={grow} onKeyDown={onKey}
+              placeholder="Ask anything…"
+              disabled={loading} rows={1}
+              className="flex-1 resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:opacity-50 py-0.5 min-h-[24px] max-h-[120px] leading-relaxed"
+              style={{height:"auto"}} />
+            <button onClick={()=>send()} disabled={loading||!input.trim()}
+              className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mb-0.5 transition-all disabled:opacity-40"
+              style={input.trim()&&!loading
+                ? {background:"linear-gradient(135deg,#f59e0b,#ea580c)",boxShadow:"0 2px 10px rgba(245,158,11,0.4)"}
+                : {background:"var(--muted)"}}>
+              {loading
+                ? <Loader2 className="w-3.5 h-3.5 animate-spin" style={{color:input.trim()?"white":"var(--muted-foreground)"}} />
+                : <Send className="w-3.5 h-3.5" style={{color:input.trim()&&!loading?"white":"var(--muted-foreground)"}} />
+              }
+            </button>
           </div>
-        </Card>
-
-        <p className="text-center text-[10px] text-muted-foreground shrink-0">
-          Data refreshed at {statsRefreshed.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true, timeZone: "Asia/Manila" })} · Updates every 30 seconds
-        </p>
+          <p className="text-center text-[10px] mt-1.5" style={{color:"var(--muted-foreground)",opacity:0.5}}>
+            YRC Insight can make mistakes — verify critical decisions
+          </p>
+        </div>
       </div>
     </POSLayout>
   )

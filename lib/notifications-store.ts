@@ -1,5 +1,4 @@
-import { database } from "./firebase"
-import { ref, onValue, set, update, remove, off } from "firebase/database"
+// NOTE: No top-level Firebase import — lazy-loaded to avoid SSR crash in Messenger/in-app browsers
 
 export interface Notification {
   id: string
@@ -14,6 +13,16 @@ export interface Notification {
 
 const NOTIF_LOCAL_KEY = "yellowbell_notifications"
 const FIREBASE_PATH = "notifications"
+
+// ── Lazy Firebase helpers (safe for SSR + in-app browsers) ───────────────────
+
+const getDB = async () => {
+  try {
+    const { database } = await import("./firebase")
+    const { ref, set, update, remove, onValue, off } = await import("firebase/database")
+    return { database, ref, set, update, remove, onValue, off }
+  } catch { return null }
+}
 
 // ── Local helpers ─────────────────────────────────────────────────────────────
 
@@ -36,49 +45,62 @@ const saveLocal = (notifications: Notification[]) => {
 
 const pushNotifToFirebase = async (notif: Notification) => {
   try {
+    const fb = await getDB()
+    if (!fb) return
     const { data: _data, ...firebaseSafe } = notif
-    await set(ref(database, `${FIREBASE_PATH}/${notif.id}`), firebaseSafe)
+    await fb.set(fb.ref(fb.database, `${FIREBASE_PATH}/${notif.id}`), firebaseSafe)
   } catch { /* non-critical */ }
 }
 
 const patchNotifInFirebase = async (notifId: string, patch: Partial<Notification>) => {
   try {
-    await update(ref(database, `${FIREBASE_PATH}/${notifId}`), patch)
+    const fb = await getDB()
+    if (!fb) return
+    await fb.update(fb.ref(fb.database, `${FIREBASE_PATH}/${notifId}`), patch)
   } catch { /* non-critical */ }
 }
 
 const removeNotifFromFirebase = async (notifId: string) => {
   try {
-    await remove(ref(database, `${FIREBASE_PATH}/${notifId}`))
+    const fb = await getDB()
+    if (!fb) return
+    await fb.remove(fb.ref(fb.database, `${FIREBASE_PATH}/${notifId}`))
   } catch { /* non-critical */ }
 }
 
 // ── Real-time listener ────────────────────────────────────────────────────────
-// Keeps all admins in sync — new notifications from any admin appear instantly.
 
 let _listenerActive = false
 
-export const startNotificationsListener = () => {
+export const startNotificationsListener = async () => {
   if (typeof window === "undefined" || _listenerActive) return
   _listenerActive = true
 
-  onValue(ref(database, FIREBASE_PATH), (snap) => {
-    try {
-      if (!snap.exists()) return
-      const remote: Notification[] = Object.values(snap.val())
-      remote.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-      // Keep local read state if already read
-      const localMap = new Map(getNotifications().map(n => [n.id, n]))
-      const merged = remote.map(r => localMap.get(r.id)?.read ? { ...r, read: true } : r)
-      saveLocal(merged)
-    } catch { /* ignore */ }
-  })
+  try {
+    const fb = await getDB()
+    if (!fb) return
+
+    fb.onValue(fb.ref(fb.database, FIREBASE_PATH), (snap: any) => {
+      try {
+        if (!snap.exists()) return
+        const remote: Notification[] = Object.values(snap.val())
+        remote.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        const localMap = new Map(getNotifications().map(n => [n.id, n]))
+        const merged = remote.map(r => localMap.get(r.id)?.read ? { ...r, read: true } : r)
+        saveLocal(merged)
+      } catch { /* ignore */ }
+    })
+  } catch { _listenerActive = false }
 }
 
-export const stopNotificationsListener = () => {
+export const stopNotificationsListener = async () => {
   if (typeof window === "undefined") return
-  off(ref(database, FIREBASE_PATH))
-  _listenerActive = false
+  try {
+    const fb = await getDB()
+    if (!fb) return
+    fb.off(fb.ref(fb.database, FIREBASE_PATH))
+    _listenerActive = false
+  } catch { /* ignore */ }
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -101,25 +123,25 @@ export const saveNotification = (notification: Omit<Notification, "id" | "timest
 
 export const markAsRead = (notificationId: string) => {
   if (typeof window === "undefined") return
-  const updated = getNotifications().map((n) => n.id === notificationId ? { ...n, read: true } : n)
+  const updated = getNotifications().map(n => n.id === notificationId ? { ...n, read: true } : n)
   saveLocal(updated)
   patchNotifInFirebase(notificationId, { read: true })
 }
 
 export const markAllAsRead = () => {
   if (typeof window === "undefined") return
-  const updated = getNotifications().map((n) => ({ ...n, read: true }))
+  const updated = getNotifications().map(n => ({ ...n, read: true }))
   saveLocal(updated)
   updated.forEach(n => patchNotifInFirebase(n.id, { read: true }))
 }
 
 export const deleteNotification = (notificationId: string) => {
   if (typeof window === "undefined") return
-  const updated = getNotifications().filter((n) => n.id !== notificationId)
+  const updated = getNotifications().filter(n => n.id !== notificationId)
   saveLocal(updated)
   removeNotifFromFirebase(notificationId)
 }
 
 export const getUnreadCount = (): number => {
-  return getNotifications().filter((n) => !n.read).length
+  return getNotifications().filter(n => !n.read).length
 }
