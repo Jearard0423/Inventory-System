@@ -44,9 +44,14 @@ const getTransporter = () => {
 }
 
 const getPHTime = () => {
+  // Returns current time as a Date object adjusted to PHT (UTC+8) for DISPLAY only.
+  // Do NOT use this for time arithmetic — use Date.now() / new Date() directly.
   const now = new Date()
   return new Date(now.getTime() + now.getTimezoneOffset() * 60000 + 8 * 3600000)
 }
+
+// Returns current UTC timestamp in milliseconds — use this for all time math.
+const nowUTC = () => Date.now()
 const formatTime12h = (t: string) => {
   try {
     const [h, m] = t.split(':').map(Number)
@@ -260,15 +265,18 @@ const getDeliveryDT = (order: any): Date | null => {
   const dateStr = order.date || order.createdAt || ''
   if (!dateStr) return null
 
-  // parseLocalDate handles both "YYYY-MM-DD" and ISO strings
+  // cookTime is entered by admins in Philippine time (UTC+8).
+  // We must convert to UTC so time math works correctly on the server (which runs in UTC).
+  // e.g. 23:00 PHT = 15:00 UTC
   const base = parseLocalDate(dateStr)
+  // Set the time as PHT then subtract 8 hours to get UTC
   const dt = new Date(base)
-  dt.setHours(h, m, 0, 0)
+  dt.setHours(h - 8, m, 0, 0)  // convert PHT → UTC
   return dt
 }
 
 const processReminders = async (orders: any[], emails: string[], clientSentKeys: string[]) => {
-  const now = getPHTime()
+  const now = new Date()  // UTC — consistent with getDeliveryDT which also returns UTC
   const sentKeys = new Set(clientSentKeys)
 
   const pending = orders.filter(o => !FINAL_STATUSES.has((o.status||'').toLowerCase()))
