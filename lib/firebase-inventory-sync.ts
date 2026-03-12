@@ -210,9 +210,11 @@ export const initializeFirebaseSync = () => {
           deliveryDate = new Date(new Date(o.createdAt).getTime() + 7 * 24 * 3600000)
         }
         if (!deliveryDate) return false
-        // Only stale if the delivery date has passed by more than 24 hours
-        const hoursPassedSinceDelivery = (Date.now() - deliveryDate.getTime()) / 3600000
-        return hoursPassedSinceDelivery > 24
+        // Stale if the delivery date has passed by more than 28 hours (gives same-day buffer)
+        const phOffset = new Date().getTimezoneOffset() * 60000 + 8 * 3600000
+        const phNow = Date.now() + phOffset
+        const hoursPassedSinceDelivery = (phNow - deliveryDate.getTime()) / 3600000
+        return hoursPassedSinceDelivery > 28
       }
       return false
     }
@@ -939,36 +941,46 @@ export const loadOrdersPageFromFirebase = async (): Promise<void> => {
 }
 
 /**
- * Load order history from Firebase RTDB /orderHistory node and merge into localStorage.
- * Called on app startup so completed/delivered orders always appear in history
- * even after logging out for hours or switching devices.
+ * Load order history from Firebase RTDB /orderHistory node.
+ * RTDB is the single source of truth — localStorage history is REPLACED, not merged.
+ * This eliminates ghost orders that accumulated in localStorage from old sessions.
  */
 export const loadOrderHistoryFromFirebase = async (): Promise<void> => {
   try {
     const { get, ref: fbRef } = await import("firebase/database")
-    const snap = await get(fbRef(database, "orderHistory"))
-    if (!snap.exists()) return
-
-    const remote: any[] = Object.values(snap.val())
     const HISTORY_KEY = 'yellowbell_order_history'
 
-    // Merge with existing localStorage history (local takes precedence on same id)
-    const existing: any[] = (() => {
-      try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]") } catch { return [] }
-    })()
+    // Fetch both history and active orders in parallel
+    const [histSnap, activeSnap] = await Promise.all([
+      get(fbRef(database, "orderHistory")),
+      get(fbRef(database, "inventories/orders")),
+    ])
 
-    const existingIds = new Set(existing.map((o: any) => o.id))
-    const merged = [...existing]
-    remote.forEach(o => {
-      if (o?.id && !existingIds.has(o.id)) merged.push(o)
-    })
+    // Active order IDs — these should NOT appear in history
+    const activeIds = new Set<string>()
+    if (activeSnap.exists()) {
+      Object.values(activeSnap.val() as Record<string, any>).forEach((o: any) => {
+        if (o?.id) activeIds.add(o.id)
+      })
+    }
 
-    // Sort newest first
-    merged.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+    if (!histSnap.exists()) {
+      // No RTDB history at all — wipe localStorage history to remove ghosts
+      localStorage.setItem(HISTORY_KEY, JSON.stringify([]))
+      window.dispatchEvent(new Event("orders-updated"))
+      return
+    }
 
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(merged))
+    // Use RTDB as the ONLY source — filter out anything still active
+    const remote: any[] = Object.values(histSnap.val() as Record<string, any>)
+      .filter((o: any) => o?.id && !activeIds.has(o.id))
+
+    remote.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+
+    // REPLACE localStorage entirely — no merging, no ghost accumulation
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(remote))
     window.dispatchEvent(new Event("orders-updated"))
-    console.log(`[firebase-sync] Loaded ${remote.length} history orders from Firebase, ${merged.length - existing.length} new`)
+    console.log(`[firebase-sync] Order history replaced: ${remote.length} orders from RTDB (active IDs excluded: ${activeIds.size})`)
   } catch (err) {
     console.warn("[firebase-sync] loadOrderHistoryFromFirebase failed:", err)
   }

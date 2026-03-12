@@ -272,7 +272,7 @@ export default function DashboardPage() {
                             <div className="flex-1">
                               <p className="font-semibold text-sm">{customer.name}</p>
                               <p className="text-xs text-muted-foreground">
-                                {customer.totalOrders} orders • ₱{customer.totalSpent.toLocaleString()}
+                                {customer.totalOrders} orders • ₱{(Number(customer.totalSpent)||0).toLocaleString()}
                               </p>
                             </div>
                           </div>

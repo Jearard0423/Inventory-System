@@ -47,8 +47,12 @@ export function FirebaseSyncInitializer() {
       loadOrdersPageFromFirebase().catch(() => {})
     } catch { /* non-critical */ }
 
-    // Load order history from Firebase so completed/delivered orders always appear
+    // Load order history from Firebase — RTDB REPLACES localStorage (no merge)
+    // Pre-wipe the local history so ghosts can never survive a session restart
     try {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('yellowbell_order_history')
+      }
       loadOrderHistoryFromFirebase().catch(() => {})
     } catch { /* non-critical */ }
 

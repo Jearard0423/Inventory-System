@@ -36,7 +36,7 @@ export function getCustomerAnalytics(): CustomerData[] {
     const sortedOrders = customerOrders.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 
     // Calculate total spent
-    const totalSpent = customerOrders.reduce((sum, order) => sum + order.total, 0)
+    const totalSpent = customerOrders.reduce((sum, order) => sum + (Number(order.total) || 0), 0)
 
     // Get favorite items (most ordered)
     const itemCounts = new Map<string, number>()

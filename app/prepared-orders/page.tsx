@@ -542,331 +542,238 @@ export default function PreparedOrdersPage() {
     window.dispatchEvent(new Event("prepared-orders-updated"))
   }
 
+  const [activeTab, setActiveTab] = useState<"build" | "batches" | "summary">("build")
+  const inventory = calculateConsolidatedInventory()
+
   return (
     <POSLayout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div>
-          <h1 className="text-3xl font-bold">Prepared Orders</h1>
-          <p className="text-muted-foreground">Pre-set cooked food quantities for future orders</p>
+      <div className="h-full flex flex-col min-h-0 gap-3">
+
+        {/* ── Header ── */}
+        <div className="shrink-0 flex items-center justify-between">
+          <div>
+            <h1 className="text-lg sm:text-2xl font-bold">Prepared Orders</h1>
+            <p className="text-xs text-muted-foreground">Pre-set batch quantities · tap a batch to assign to a customer</p>
+          </div>
+          {preparedItems.length>0&&(
+            <button onClick={()=>setShowConfirmModal(true)}
+              className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-white"
+              style={{background:"linear-gradient(135deg,#C8333A,#A0240B)"}}>
+              <Check className="w-3.5 h-3.5"/>
+              Confirm ({preparedItems.reduce((s,i)=>s+i.quantity,0)})
+            </button>
+          )}
         </div>
 
-        {/* Inventory Summary Section - MOVED TO TOP */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <BarChart3 className="w-5 h-5" />
-              Prepared Orders Inventory Summary
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="h-[300px] overflow-y-auto">
-            {Object.keys(calculateConsolidatedInventory()).length === 0 ? (
-              <p className="text-muted-foreground text-center py-8">No prepared items found</p>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {Object.entries(calculateConsolidatedInventory()).map(([itemId, data]) => {
-                  const percentageSold = data.prepared > 0 ? (data.sold / data.prepared) * 100 : 0
-                  const statusColor = data.remaining === 0 ? "bg-red-500" : data.remaining <= data.prepared * 0.2 ? "bg-orange-500" : "bg-green-500"
-                  
-                  return (
-                    <div key={itemId} className="border rounded-lg p-3">
-                      <div className="flex justify-between items-center mb-2">
-                        <h3 className="font-semibold text-base">{data.name}</h3>
-                        <Badge variant="secondary" className="text-sm">
-                          {data.remaining} left
-                        </Badge>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden mb-2">
-                        <div className="flex h-full">
-                          <div 
-                            className="bg-blue-500 transition-all duration-300"
-                            style={{ width: `${percentageSold}%` }}
-                          />
-                          <div 
-                            className={cn("transition-all duration-300", statusColor)}
-                            style={{ width: `${100 - percentageSold}%` }}
-                          />
-                        </div>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-blue-600">{data.sold} sold</span>
-                        <span className={cn(
-                          "font-medium",
-                          data.remaining === 0 ? "text-red-600" : 
-                          data.remaining <= data.prepared * 0.2 ? "text-orange-600" : 
-                          "text-green-600"
-                        )}>
-                          {data.remaining} available
-                        </span>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        {/* ── Mobile tabs ── */}
+        <div className="shrink-0 flex lg:hidden gap-1 p-1 rounded-xl bg-muted">
+          {([
+            {key:"build",   label:"Build Batch", icon:Plus},
+            {key:"batches", label:`Batches${filteredPreparedOrders.length>0?" ("+filteredPreparedOrders.length+")":""}`, icon:Package},
+            {key:"summary", label:"Summary",     icon:BarChart3},
+          ] as const).map(t=>(
+            <button key={t.key} onClick={()=>setActiveTab(t.key)}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-all",
+                activeTab===t.key ? "bg-white shadow-sm text-foreground" : "text-muted-foreground"
+              )}>
+              <t.icon className="w-3.5 h-3.5"/>
+              <span>{t.label}</span>
+            </button>
+          ))}
+        </div>
 
-        <div className="grid grid-cols-1 gap-4 lg:gap-6">
-          {/* Menu Items Selection */}
-          <Card>
-            <CardHeader className="pb-3 sm:pb-6">
-              <CardTitle className="flex items-center gap-2">
-                <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
-                <span className="text-sm sm:text-base">Select Menu Items</span>
-              </CardTitle>
-              {/* Category Filter */}
-              <div className="flex gap-1 sm:gap-2 overflow-x-auto whitespace-nowrap pb-2">
-                {categories.map((category) => (
-                  <Button
-                    key={category}
-                    variant={selectedCategory === category ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setSelectedCategory(category)}
-                    className="text-xs sm:text-sm min-w-[60px] sm:min-w-[80px] flex-shrink-0"
-                  >
-                    {category}
-                  </Button>
-                ))}
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 h-[400px] overflow-y-auto">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                {filteredItems.map((item) => {
-                  const preparedItem = preparedItems.find(i => i.id === item.id)
-                  return (
-                    <div 
-                      key={item.id} 
-                      className="border rounded-lg p-3 cursor-pointer hover:bg-gray-50 transition-colors"
-                      onClick={() => addToPrepared(item)}
-                    >
-                      <div className="flex justify-between items-start mb-2">
-                        <h4 className="font-medium text-sm">{item.name}</h4>
-                        <Badge variant="secondary" className="text-xs">
-                          {item.stock || 0} in stock
-                        </Badge>
-                      </div>
-                      <p className="text-xs text-muted-foreground mb-3">₱{item.price.toFixed(2)} each</p>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              updateQuantity(item.id, (preparedItem?.quantity || 0) - 1)
-                            }}
-                            disabled={!preparedItem}
-                            className="h-7 w-7 sm:h-8 sm:w-8 p-0"
-                          >
-                            <Minus className="w-3 h-3 sm:w-4 sm:h-4" />
-                          </Button>
-                          <span className="w-6 sm:w-8 text-center font-medium text-sm sm:text-base">
-                            {preparedItem?.quantity || 0}
-                          </span>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              addToPrepared(item)
-                            }}
-                            className="h-7 w-7 sm:h-8 sm:w-8 p-0"
-                          >
-                            <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </CardContent>
-          </Card>
+        {/* ── Desktop 3-col | Mobile tab panels ── */}
+        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-3 gap-3 overflow-hidden">
 
-          {/* Current Prepared Items */}
-          <Card>
-            <CardHeader className="pb-3 sm:pb-6">
-              <div className="flex justify-between items-center">
-                <CardTitle className="flex items-center gap-2">
-                  <Clock className="w-4 h-4 sm:w-5 sm:h-5" />
-                  <span className="text-sm sm:text-base">Current Prepared Items</span>
-                </CardTitle>
-                {preparedItems.length > 0 && (
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    className="text-xs text-red-500 hover:text-red-600 hover:bg-red-50"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setPreparedItems([]);
-                    }}
-                  >
-                    <Trash2 className="w-3.5 h-3.5 mr-1" />
-                    Clear All
-                  </Button>
-                )}
-              </div>
-              {/* Add meal type selection */}
-              <div>
-                <Label className="text-sm text-muted-foreground">Meal Type</Label>
-                <div className="flex flex-wrap gap-1 sm:gap-2 mt-1">
-                  {mealTypes.map((type) => (
-                    <Button
-                      key={type}
-                      variant={selectedMealType === type ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setSelectedMealType(type)}
-                      className="text-xs sm:text-sm min-w-[60px] sm:min-w-[80px]"
-                    >
-                      {type}
-                    </Button>
+          {/* Col 1 — Build Batch */}
+          <div className={cn("flex flex-col min-h-0 overflow-hidden",activeTab!=="build"&&"hidden lg:flex")}>
+            <Card className="flex flex-col flex-1 min-h-0 overflow-hidden">
+              <div className="shrink-0 px-4 pt-4 pb-2 border-b">
+                <p className="text-sm font-semibold flex items-center gap-1.5 mb-2">
+                  <Plus className="w-4 h-4 text-primary"/> Select Items
+                </p>
+                <div className="flex gap-1 overflow-x-auto pb-1" style={{scrollbarWidth:"none"}}>
+                  {categories.map(c=>(
+                    <button key={c} onClick={()=>setSelectedCategory(c)}
+                      className={cn("px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap shrink-0 border transition-all",
+                        selectedCategory===c?"bg-primary text-primary-foreground border-primary":"bg-background border-border text-muted-foreground hover:bg-muted")}>
+                      {c}
+                    </button>
                   ))}
                 </div>
               </div>
-            </CardHeader>
-            <CardContent className="pt-0 h-[300px] overflow-y-auto">
-              {preparedItems.length === 0 ? (
-                <p className="text-muted-foreground text-center py-8">No items prepared yet</p>
-              ) : (
-                <div className="space-y-2 sm:space-y-3">
-                  {preparedItems.map((item) => (
-                    <div key={item.id} className="flex items-center justify-between p-2 sm:p-3 border rounded-lg">
+              <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                {filteredItems.map(item=>{
+                  const pi=preparedItems.find(i=>i.id===item.id)
+                  return (
+                    <div key={item.id} className="flex items-center gap-2 p-2.5 border rounded-xl hover:bg-muted/50 transition-colors">
                       <div className="flex-1 min-w-0">
-                        <h4 className="font-medium text-sm sm:text-base truncate">{item.name}</h4>
-                        <p className="text-xs sm:text-sm text-muted-foreground">₱{item.price.toFixed(2)} each</p>
+                        <p className="text-sm font-medium truncate">{item.name}</p>
+                        <p className="text-xs text-muted-foreground">₱{item.price.toFixed(2)} · <span className={cn(item.stock<=3?"text-red-500":item.stock<=8?"text-amber-600":"text-green-600")}>{item.stock} left</span></p>
                       </div>
-                      <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
-                        <span className="w-6 sm:w-8 text-center font-medium text-sm sm:text-base">{item.quantity}</span>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeFromPrepared(item.id)}
-                          className="h-7 w-7 sm:h-8 sm:w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
-                        >
-                          <X className="w-3 h-3 sm:w-4 sm:h-4" />
-                        </Button>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button onClick={()=>updateQuantity(item.id,(pi?.quantity||0)-1)} disabled={!pi}
+                          className="w-7 h-7 rounded-full border flex items-center justify-center text-sm hover:bg-muted disabled:opacity-30">−</button>
+                        <span className="w-6 text-center text-sm font-bold">{pi?.quantity||0}</span>
+                        <button onClick={()=>addToPrepared(item)} disabled={item.stock<=0||(pi?pi.quantity>=item.stock:false)}
+                          className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm hover:bg-primary/90 disabled:opacity-30">+</button>
                       </div>
                     </div>
-                  ))}
-                  <div className="border-t pt-3">
-                    <div className="flex justify-between items-center">
-                      <span className="font-semibold">Total:</span>
-                      <span className="font-bold text-lg">₱{total.toFixed(2)}</span>
+                  )
+                })}
+              </div>
+              {preparedItems.length>0&&(
+                <div className="shrink-0 border-t px-4 py-3 space-y-2 bg-muted/20">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Basket</p>
+                  <div className="space-y-1 max-h-24 overflow-y-auto">
+                    {preparedItems.map(item=>(
+                      <div key={item.id} className="flex items-center justify-between text-xs">
+                        <span className="truncate flex-1">{item.quantity}× {item.name}</span>
+                        <button onClick={()=>removeFromPrepared(item.id)} className="ml-2 text-red-400 hover:text-red-600"><X className="w-3 h-3"/></button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-between pt-1 border-t">
+                    <div>
+                      <p className="text-[10px] text-muted-foreground mb-1">Meal Type</p>
+                      <div className="flex gap-1">
+                        {mealTypes.map(t=>(
+                          <button key={t} onClick={()=>setSelectedMealType(t)}
+                            className={cn("px-2 py-0.5 rounded-full text-[10px] font-medium border transition-all",
+                              selectedMealType===t?"bg-primary text-primary-foreground border-primary":"border-border text-muted-foreground")}>
+                            {t}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                    <Button
-                      onClick={() => setShowConfirmModal(true)}
-                      className="w-full mt-3"
-                      disabled={preparedItems.length === 0}
-                    >
-                      <Check className="w-4 h-4 mr-2" />
-                      Confirm Prepared Order
-                    </Button>
+                    <div className="text-right">
+                      <p className="text-[10px] text-muted-foreground">Total</p>
+                      <p className="text-sm font-bold text-primary">₱{total.toFixed(2)}</p>
+                    </div>
                   </div>
                 </div>
               )}
-            </CardContent>
-          </Card>
-        </div>
+            </Card>
+          </div>
 
-        {/* Prepared Orders List */}
-        <Card>
-          <CardHeader>
-            <div className="flex justify-between items-center mb-4">
-              <CardTitle className="flex items-center gap-2">
-                <Package className="w-5 h-5" />
-                Prepared Orders List
-              </CardTitle>
-              {filteredPreparedOrders.length > 0 && (
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  className="text-xs text-red-500 hover:text-red-600 hover:bg-red-50"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowClearAllDialog(true);
-                  }}
-                >
-                  <Trash2 className="w-3.5 h-3.5 mr-1" />
-                  Clear All
-                </Button>
-              )}
-            </div>
-            {/* Meal Type Filter */}
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant={filterMealType === "All" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setFilterMealType("All")}
-              >
-                All
-              </Button>
-              {mealTypes.map((mealType) => (
-                <Button
-                  key={mealType}
-                  variant={filterMealType === mealType ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setFilterMealType(mealType)}
-                >
-                  {mealType}
-                </Button>
-              ))}
-            </div>
-          </CardHeader>
-          <CardContent>
-            {filteredPreparedOrders.length === 0 ? (
-              <p className="text-muted-foreground text-center py-8">No prepared orders found</p>
-            ) : (
-              <div className="grid grid-cols-1 gap-3">
-                {filteredPreparedOrders.map((order) => (
-                  <Card key={order.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => openOrderModal(order)}>
-                    <CardContent className="p-3 sm:p-4">
-                      <div className="flex justify-between items-start mb-2">
-                        <div className="flex flex-wrap gap-2">
-                          <Badge variant="secondary" className="text-sm">PREPARED</Badge>
-                          {order.mealType && (
-                            <Badge variant="outline" className="text-sm">
-                              {order.mealType}
-                            </Badge>
-                          )}
+          {/* Col 2 — Batches List */}
+          <div className={cn("flex flex-col min-h-0 overflow-hidden",activeTab!=="batches"&&"hidden lg:flex")}>
+            <Card className="flex flex-col flex-1 min-h-0 overflow-hidden">
+              <div className="shrink-0 px-4 pt-4 pb-2 border-b">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-semibold flex items-center gap-1.5">
+                    <Package className="w-4 h-4 text-primary"/> Batches
+                    <span className="text-xs font-normal text-muted-foreground">({filteredPreparedOrders.length})</span>
+                  </p>
+                  {filteredPreparedOrders.length>0&&(
+                    <button onClick={()=>setShowClearAllDialog(true)}
+                      className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1">
+                      <Trash2 className="w-3 h-3"/>Clear all
+                    </button>
+                  )}
+                </div>
+                <div className="flex gap-1 flex-wrap">
+                  {(["All",...mealTypes]).map(mt=>(
+                    <button key={mt} onClick={()=>setFilterMealType(mt)}
+                      className={cn("px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all",
+                        filterMealType===mt?"bg-primary text-primary-foreground border-primary":"bg-background border-border text-muted-foreground hover:bg-muted")}>
+                      {mt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                {filteredPreparedOrders.length===0?(
+                  <div className="text-center py-12">
+                    <Package className="w-10 h-10 mx-auto text-muted-foreground/30 mb-2"/>
+                    <p className="text-sm text-muted-foreground">No batches yet</p>
+                    <p className="text-xs text-muted-foreground mt-1">Build a batch on the left and confirm it</p>
+                  </div>
+                ):(
+                  filteredPreparedOrders.map(order=>(
+                    <div key={order.id} onClick={()=>openOrderModal(order)}
+                      className="border rounded-xl p-3 cursor-pointer hover:shadow-md hover:border-primary/30 transition-all">
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div className="flex gap-1.5 flex-wrap">
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary">BATCH</span>
+                          {order.mealType&&<span className="text-[10px] px-2 py-0.5 rounded-full border text-muted-foreground">{order.mealType}</span>}
                         </div>
+                        <button onClick={e=>{e.stopPropagation();handleDeleteClick(order.id,e)}}
+                          className="text-red-400 hover:text-red-600 p-0.5 shrink-0">
+                          <Trash2 className="w-3.5 h-3.5"/>
+                        </button>
                       </div>
-                      <div className="space-y-2 mb-3">
-                        {order.items.slice(0, 3).map((item, index) => (
-                          <div key={index} className="flex justify-between items-center">
-                            <span className="text-base">{item.name}</span>
-                            <span className="text-sm text-muted-foreground font-mono bg-gray-100 px-2 py-1 rounded">
-                              {item.remainingQuantity || item.quantity}/{item.quantity}
+                      <div className="space-y-1 mb-2">
+                        {order.items.slice(0,3).map((item,i)=>(
+                          <div key={i} className="flex justify-between text-xs">
+                            <span className="truncate flex-1">{item.name}</span>
+                            <span className="font-mono bg-muted px-1.5 py-0.5 rounded text-muted-foreground ml-2 shrink-0">
+                              {item.remainingQuantity||item.quantity}/{item.quantity}
                             </span>
                           </div>
                         ))}
-                        {order.items.length > 3 && (
-                          <div className="text-sm text-muted-foreground">
-                            +{order.items.length - 3} more items
-                          </div>
-                        )}
+                        {order.items.length>3&&<p className="text-xs text-muted-foreground">+{order.items.length-3} more</p>}
                       </div>
-                      <div className="flex justify-between items-center">
-                        <span className="font-bold text-lg">₱{order.total.toFixed(2)}</span>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={(e) => handleDeleteClick(order.id, e)}
-                            className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                          <ArrowRight className="w-4 h-4 text-muted-foreground" />
-                        </div>
+                      <div className="flex justify-between items-center pt-1.5 border-t">
+                        <span className="font-bold text-sm text-primary">₱{order.total.toFixed(2)}</span>
+                        <ArrowRight className="w-3.5 h-3.5 text-muted-foreground"/>
                       </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                    </div>
+                  ))
+                )}
               </div>
-            )}
-          </CardContent>
-        </Card>
+            </Card>
+          </div>
+
+          {/* Col 3 — Stock Summary */}
+          <div className={cn("flex flex-col min-h-0 overflow-hidden",activeTab!=="summary"&&"hidden lg:flex")}>
+            <Card className="flex flex-col flex-1 min-h-0 overflow-hidden">
+              <div className="shrink-0 px-4 pt-4 pb-2 border-b">
+                <p className="text-sm font-semibold flex items-center gap-1.5">
+                  <BarChart3 className="w-4 h-4 text-primary"/> Stock Summary
+                </p>
+              </div>
+              <div className="flex-1 overflow-y-auto p-3">
+                {Object.keys(inventory).length===0?(
+                  <div className="text-center py-12">
+                    <BarChart3 className="w-10 h-10 mx-auto text-muted-foreground/30 mb-2"/>
+                    <p className="text-sm text-muted-foreground">No batch data yet</p>
+                  </div>
+                ):(
+                  <div className="space-y-3">
+                    {Object.entries(inventory).map(([itemId,data])=>{
+                      const pct=data.prepared>0?(data.sold/data.prepared)*100:0
+                      const barColor=data.remaining===0?"bg-red-500":data.remaining<=data.prepared*0.2?"bg-orange-500":"bg-green-500"
+                      return (
+                        <div key={itemId} className="border rounded-xl p-3">
+                          <div className="flex justify-between items-center mb-1.5">
+                            <p className="text-sm font-medium">{data.name}</p>
+                            <span className={cn("text-xs font-bold px-2 py-0.5 rounded-full",
+                              data.remaining===0?"bg-red-100 text-red-700":data.remaining<=data.prepared*0.2?"bg-orange-100 text-orange-700":"bg-green-100 text-green-700")}>
+                              {data.remaining} left
+                            </span>
+                          </div>
+                          <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden mb-1">
+                            <div className="flex h-full">
+                              <div className="bg-blue-400 transition-all" style={{width:`${pct}%`}}/>
+                              <div className={cn("transition-all",barColor)} style={{width:`${100-pct}%`}}/>
+                            </div>
+                          </div>
+                          <div className="flex justify-between text-[10px] text-muted-foreground">
+                            <span className="text-blue-500">{data.sold} sold</span>
+                            <span>{data.prepared} prepared</span>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </Card>
+          </div>
+
+        </div>
       </div>
 
       {/* Confirm Prepared Order Modal */}

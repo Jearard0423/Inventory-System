@@ -100,7 +100,14 @@ export default function AIAssistantPage() {
   }
 
   useEffect(()=>{
-    refresh()
+    // Trigger RTDB refresh first — replaces localStorage with clean RTDB data
+    // so stats never include ghost orders from stale localStorage
+    Promise.all([
+      import("@/lib/firebase-inventory-sync")
+        .then(m => m.loadOrderHistoryFromFirebase())
+        .catch(()=>{})
+    ]).finally(()=>refresh())
+
     const iv=setInterval(refresh,30000)
     const fn=()=>refresh()
     window.addEventListener("firebase-orders-updated",fn)

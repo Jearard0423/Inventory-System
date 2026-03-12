@@ -159,6 +159,39 @@ export default function PricingCalculatorPage() {
           </div>
         </div>
 
+        {/* Templates — pinned at top so they're always accessible */}
+        <Card>
+          <CardContent className="px-3 sm:px-4 py-3">
+            <div className="flex flex-col sm:flex-row gap-2">
+              {/* Load existing template */}
+              {Object.keys(templates).length > 0 && (
+                <div className="flex gap-2 flex-1">
+                  <Select value={selectedTemplate} onValueChange={v => { if (v) loadTemplate(v) }}>
+                    <SelectTrigger className="flex-1 h-9 text-sm"><SelectValue placeholder="Load template…" /></SelectTrigger>
+                    <SelectContent className="max-h-48 overflow-y-auto">
+                      {Object.keys(templates).map(tn => <SelectItem key={tn} value={tn}>{tn}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <Button size="sm" variant="destructive" className="text-xs shrink-0 h-9"
+                    onClick={() => { if (selectedTemplate) { deleteTemplate(selectedTemplate); setSelectedTemplate("") } }}
+                    disabled={!selectedTemplate}>Delete</Button>
+                </div>
+              )}
+              {/* Save / New */}
+              <div className="flex gap-2">
+                <Input placeholder="Template name…" value={templateName} onChange={e => setTemplateName(e.target.value)}
+                  className="h-9 text-sm w-36 sm:w-44" />
+                <Button onClick={() => saveTemplate(templateName)} disabled={!templateName} size="sm" className="text-xs shrink-0 h-9">Save</Button>
+                <Button variant="outline" size="sm" className="text-xs shrink-0 h-9" onClick={() => {
+                  setIngredients([{ id: `ing-${Date.now()}`, name: "", purchaseUnit: "kg", purchaseUnitAmount: 1, costPerPurchaseUnit: 0, amountUsedPerProduct: 0, usedUnit: "g" }])
+                  setPackaging([{ id: `pkg-${Date.now()}`, name: "", pcs: 0, costPerPiece: 0 }])
+                  setTemplateName(""); setSelectedTemplate(""); setRegularSellingPrice("")
+                }}>New</Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Ingredients */}
         <Card>
           <CardHeader className="pb-2 pt-4 px-4">
@@ -359,37 +392,6 @@ export default function PricingCalculatorPage() {
           </CardContent>
         </Card>
 
-        {/* Templates */}
-        <Card>
-          <CardHeader className="pb-2 pt-4 px-4">
-            <h3 className="font-semibold text-sm sm:text-base">Templates</h3>
-          </CardHeader>
-          <CardContent className="px-3 sm:px-4 pb-4 space-y-3">
-            <div className="flex gap-2">
-              <Input placeholder="Template name" value={templateName} onChange={e => setTemplateName(e.target.value)}
-                className="flex-1 h-9 text-sm" />
-              <Button onClick={() => saveTemplate(templateName)} disabled={!templateName} size="sm" className="text-xs shrink-0">Save</Button>
-              <Button variant="outline" size="sm" className="text-xs shrink-0" onClick={() => {
-                setIngredients([{ id: `ing-${Date.now()}`, name: "", purchaseUnit: "kg", purchaseUnitAmount: 1, costPerPurchaseUnit: 0, amountUsedPerProduct: 0, usedUnit: "g" }])
-                setPackaging([{ id: `pkg-${Date.now()}`, name: "", pcs: 0, costPerPiece: 0 }])
-                setTemplateName(""); setSelectedTemplate(""); setRegularSellingPrice("")
-              }}>New</Button>
-            </div>
-            {Object.keys(templates).length > 0 && (
-              <div className="flex gap-2">
-                <Select value={selectedTemplate} onValueChange={v => { if (v) loadTemplate(v) }}>
-                  <SelectTrigger className="flex-1 h-9 text-sm"><SelectValue placeholder="Load template…" /></SelectTrigger>
-                  <SelectContent>
-                    {Object.keys(templates).map(tn => <SelectItem key={tn} value={tn}>{tn}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-                <Button size="sm" variant="destructive" className="text-xs shrink-0"
-                  onClick={() => { if (selectedTemplate) { deleteTemplate(selectedTemplate); setSelectedTemplate("") } }}
-                  disabled={!selectedTemplate}>Delete</Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
       </div>
     </POSLayout>
   )

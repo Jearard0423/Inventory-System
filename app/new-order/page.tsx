@@ -311,7 +311,7 @@ export default function NewOrderPage() {
 
   // Filter customers based on input
   const filteredCustomers = loyalCustomers.filter((customer) =>
-    customer.name.toLowerCase().includes(customerName.toLowerCase())
+    customer?.name?.toLowerCase().includes(customerName.toLowerCase())
   )
 
   // Show suggestions only when there's input and matches exist

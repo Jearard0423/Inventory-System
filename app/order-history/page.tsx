@@ -54,36 +54,33 @@ export default function OrderHistoryPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const itemsPerPage = 10
 
-  const load = () => {
-    // Only show non-cancelled final-state orders in history
-    // Pending orders ARE shown (as "Pending" tab)
-    const liveOrders = getCustomerOrders().filter(o => {
-      const s = (o.status || "").toLowerCase()
-      // Exclude cancelled from history entirely
-      if (CANCELLED.has(s)) return false
-      return true
-    })
+  const buildList = () => {
+    // Only show non-cancelled orders in history
+    // getCustomerOrders() is RTDB-backed (replaced on every RTDB push)
+    // getOrderHistory() is now also RTDB-replaced (not merged)
+    const liveOrders = getCustomerOrders().filter(o => !CANCELLED.has((o.status || "").toLowerCase()))
+    const archived   = getOrderHistory().filter(o => !CANCELLED.has((o.status || "").toLowerCase()))
 
-    const archived = getOrderHistory().filter(o => {
-      const s = (o.status || "").toLowerCase()
-      if (CANCELLED.has(s)) return false
-      return true
-    })
-
+    // Deduplicate: live RTDB takes precedence over history archive
     const liveIds = new Set(liveOrders.map(o => o.id))
     const merged = [
       ...liveOrders,
       ...archived.filter(o => !liveIds.has(o.id))
     ]
-    // Sort newest first
     merged.sort((a, b) => new Date(b.createdAt || b.date || 0).getTime() - new Date(a.createdAt || a.date || 0).getTime())
     setAllOrders(merged)
     setIsLoading(false)
   }
 
   useEffect(() => {
-    load()
-    const fn = () => load()
+    // First: trigger RTDB history refresh (replaces localStorage, not merges)
+    // This ensures ghost orders are purged before we render
+    import("@/lib/firebase-inventory-sync")
+      .then(m => m.loadOrderHistoryFromFirebase())
+      .catch(() => {})
+      .finally(() => buildList())
+
+    const fn = () => buildList()
     window.addEventListener("orders-updated", fn)
     window.addEventListener("delivery-updated", fn)
     window.addEventListener("firebase-orders-updated", fn)
