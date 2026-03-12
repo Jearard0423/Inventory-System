@@ -85,6 +85,17 @@ export const deleteOrder = (orderId: string): void => {
   const orders = getOrders()
   const orderToDelete = orders.find(order => order.id === orderId)
   
+  // Clean up any notifications for this order from Firebase so they don't ghost
+  try {
+    const { getNotifications, deleteNotification } = require('./notifications-store')
+    const allNotifs = getNotifications()
+    allNotifs.forEach((n: any) => {
+      if (n?.data?.id === orderId || n?.data?.orderId === orderId || n?.data?.orderNumber === orderToDelete?.orderNumber) {
+        deleteNotification(n.id)
+      }
+    })
+  } catch { /* non-critical */ }
+  
   if (orderToDelete) {
     // Restore stock before deleting the order
     restoreStockForOrder(orderToDelete)

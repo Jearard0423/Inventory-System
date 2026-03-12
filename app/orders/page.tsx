@@ -2005,15 +2005,20 @@ export default function OrdersPage() {
                           className="w-6 h-6 rounded-full border flex items-center justify-center text-sm font-bold hover:bg-muted"
                         >−</button>
                         <span className="w-6 text-center text-sm font-bold">{item.quantity}</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const stockItem = menuItems.find(m => m.id === item.id)
-                            const maxStock = stockItem ? stockItem.stock : 999
-                            setEditItems(prev => prev.map((it, i) => i === idx ? { ...it, quantity: Math.min(maxStock, it.quantity + 1) } : it))
-                          }}
-                          className="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold hover:bg-primary/90"
-                        >+</button>
+                        {(() => {
+                          const stockItem = menuItems.find(m => m.id === item.id)
+                          const maxStock = stockItem ? stockItem.stock : 999
+                          const atMax = item.quantity >= maxStock
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => setEditItems(prev => prev.map((it, i) => i === idx ? { ...it, quantity: Math.min(maxStock, it.quantity + 1) } : it))}
+                              disabled={atMax}
+                              title={atMax ? `Max stock: ${maxStock}` : `+1 (${maxStock - item.quantity} left)`}
+                              className="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed"
+                            >+</button>
+                          )
+                        })()}
                       </div>
                     </div>
                   ))}
@@ -2031,7 +2036,9 @@ export default function OrdersPage() {
                         className="text-left px-2.5 py-1.5 rounded-lg border border-dashed border-border hover:border-primary hover:bg-primary/5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         <p className="text-xs font-medium truncate">{m.name}</p>
-                        <p className="text-xs text-muted-foreground">₱{m.price} · {m.stock} left</p>
+                        <p className={cn("text-xs", m.stock <= 0 ? "text-red-500 font-medium" : m.stock <= 3 ? "text-amber-600" : "text-muted-foreground")}>
+                          ₱{m.price} · {m.stock <= 0 ? "Out of stock" : `${m.stock} left`}
+                        </p>
                       </button>
                     ))}
                   </div>

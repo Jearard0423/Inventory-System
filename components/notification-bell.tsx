@@ -100,7 +100,14 @@ export function NotificationBell() {
         </Button>
       </PopoverTrigger>
 
-      <PopoverContent className="w-[min(360px,calc(100vw-16px))] p-0" align="end" sideOffset={8}>
+      <PopoverContent 
+        className="p-0" 
+        align="end" 
+        sideOffset={8} 
+        avoidCollisions={true}
+        collisionPadding={8}
+        style={{width:"clamp(280px, calc(100vw - 16px), 360px)"}}
+      >
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-1 border-b px-3 py-2.5">
           <div className="flex items-center gap-2">

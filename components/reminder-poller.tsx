@@ -57,10 +57,16 @@ const clearSentKeysForChangedOrders = (orders: any[]) => {
 export function ReminderPoller() {
   const poll = async () => {
     try {
-      const raw = typeof window !== "undefined"
-        ? localStorage.getItem("yellowbell_customer_orders")
-        : null
-      const orders = raw ? JSON.parse(raw) : []
+      // Use RTDB-backed in-memory orders (via getCustomerOrders) to avoid ghost orders from localStorage
+      let orders: any[] = []
+      try {
+        const { getCustomerOrders } = await import("@/lib/inventory-store")
+        orders = getCustomerOrders()
+      } catch {
+        // fallback to localStorage only if module fails to load
+        const raw = typeof window !== "undefined" ? localStorage.getItem("yellowbell_customer_orders") : null
+        orders = raw ? JSON.parse(raw) : []
+      }
 
       // Clear stale sent keys for any orders whose time was edited
       clearSentKeysForChangedOrders(orders)
