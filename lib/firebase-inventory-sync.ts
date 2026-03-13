@@ -126,6 +126,8 @@ export const forceRefreshInventoryFromFirebase = async () => {
  * Sets up real-time listeners for inventory, orders, kitchen items, and menu
  * Gracefully falls back to localStorage if permissions are denied
  */
+const DONE_STATUSES_SYNC = new Set(["delivered","served","cancelled","canceled","complete","completed"])
+
 // IMPORTANT: We use the delivery date (o.date / cookTime date), NOT createdAt.
 // Orders placed today for 3 days from now must NOT be purged just because
 // createdAt is >24hrs old. We only purge if the scheduled delivery day has passed.
@@ -213,7 +215,7 @@ export const initializeFirebaseSync = () => {
     // RTDB is the single source of truth for orders.
     // On every push, fully replace localStorage with ONLY non-finished orders from RTDB.
     // This permanently clears any stale orders (e.g. the 68-order ghost problem).
-    const DONE_STATUSES_SYNC = new Set(["delivered","served","cancelled","canceled","complete","completed"])
+    // DONE_STATUSES_SYNC defined at module level
 
     // An order is considered stale/done if:
     // 1. Its status is explicitly a done status (delivered, served, cancelled, etc.), OR

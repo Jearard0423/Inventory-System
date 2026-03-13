@@ -50,6 +50,8 @@ export default function KitchenPage() {
   
   // Initialize to 'lunch' as default, will be updated on client only
   const [filterMealType, setFilterMealType] = useState<"all" | "breakfast" | "lunch" | "dinner" | "other">("lunch")
+  // Ref so loadData always reads the latest filterMealType without needing it as a useEffect dep
+  const filterMealTypeRef = useRef<"all" | "breakfast" | "lunch" | "dinner" | "other">("lunch")
   const [autoMealType, setAutoMealType] = useState<"breakfast" | "lunch" | "dinner">("lunch")
   const [quantityInputs, setQuantityInputs] = useState<Record<string, string>>({})
   const [selectedOrder, setSelectedOrder] = useState<CustomerOrder | null>(null)
@@ -71,6 +73,7 @@ export default function KitchenPage() {
   }, [])
 
   const handleFilterChange = (mealType: "all" | "breakfast" | "lunch" | "dinner" | "other") => {
+    filterMealTypeRef.current = mealType
     setFilterMealType(mealType)
   }
 
@@ -170,8 +173,14 @@ export default function KitchenPage() {
     }
 
     const allOrders = recentOrders
-    setKitchenItems(getKitchenItems())
-    setCustomerOrders(allOrders)
+    // Sanitize via JSON round-trip to prevent circular reference crash in React reconciler
+    try {
+      setKitchenItems(JSON.parse(JSON.stringify(getKitchenItems())))
+      setCustomerOrders(JSON.parse(JSON.stringify(allOrders)))
+    } catch {
+      setKitchenItems(getKitchenItems())
+      setCustomerOrders(allOrders)
+    }
     
     // Helper to reliably check if an order is for today using local date string (avoids timezone issues)
     const isOrderForToday = (order: CustomerOrder) => {
@@ -237,8 +246,12 @@ export default function KitchenPage() {
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       })
     
-    setTodayOrders(filtered)
-    console.log(`[Kitchen] loadData complete: ${allOrders.length} total orders → ${filtered.length} today's orders for meal type "${filterMealType}"`)
+    try {
+      setTodayOrders(JSON.parse(JSON.stringify(filtered)))
+    } catch {
+      setTodayOrders(filtered)
+    }
+    console.log(`[Kitchen] loadData complete: ${allOrders.length} total orders → ${filtered.length} today's orders for meal type "${filterMealTypeRef.current}"`,)
     } finally {
       isLoadingRef.current = false
     }
@@ -389,7 +402,7 @@ export default function KitchenPage() {
         window.removeEventListener("firebase-kitchen-updated", handleUpdate)
       }
     }
-  }, [filterMealType])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Helper to reliably check if an order is for today using local date string (avoids timezone midnight issues)
   const isOrderForToday = (order: CustomerOrder) => {
@@ -418,8 +431,8 @@ export default function KitchenPage() {
       if (!order) return false
 
       const matchesMealType = filterMealType === "all" || 
-        (order.mealType && order.mealType.toLowerCase() === filterMealType) ||
-        (order.originalMealType && order.originalMealType.toLowerCase() === filterMealType)
+        (order.mealType && order.mealType.toLowerCase() === filterMealTypeRef.current) ||
+        (order.originalMealType && order.originalMealType.toLowerCase() === filterMealTypeRef.current)
       const isNotFinal = order.status !== 'delivered' && order.status !== 'complete' && order.status !== 'ready' && order.status !== 'served'
       
       return item.status === "to-cook" && matchesMealType && isNotFinal
