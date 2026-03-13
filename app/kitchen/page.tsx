@@ -23,7 +23,7 @@ import { checkAndSendFoodPreparationReminder, resetNotificationState, checkAndSe
 import { useAuth } from "@/components/AuthProvider"
 import { checkAndFireOrderReminders, resetOrderReminders } from "@/lib/order-reminders"
 import { syncOrderToRTDB, logOrderEvent } from "@/lib/rtdb-sync"
-import { fetchOrdersNow, fetchKitchenNow, rebuildKitchenFromOrders } from "@/lib/firebase-inventory-sync"
+import { fetchOrdersNow, fetchKitchenNow, rebuildKitchenFromOrders, loadOrdersPageFromFirebase } from "@/lib/firebase-inventory-sync"
 
 // Helper function to convert 24-hour time to 12-hour format
 const formatTimeForDisplay = (time24: string): string => {
@@ -270,6 +270,7 @@ export default function KitchenPage() {
       await Promise.all([
         fetchOrdersNow().catch(() => {}),
         fetchKitchenNow().catch(() => {}),
+        loadOrdersPageFromFirebase().catch(() => {}),
       ])
       // If Firebase kitchen is missing items for existing orders, rebuild it
       await rebuildKitchenFromOrders().catch(() => {})

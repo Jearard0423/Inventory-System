@@ -11,7 +11,7 @@ import { getLowStockItems, type InventoryItem, getCustomerOrders } from "@/lib/i
 import { getOrders, type Order } from "@/lib/orders"
 import { getCustomerAnalytics } from "@/lib/customers"
 import { useRouter } from "next/navigation"
-import { fetchOrdersNow } from "@/lib/firebase-inventory-sync"
+import { fetchOrdersNow, loadOrdersPageFromFirebase } from "@/lib/firebase-inventory-sync"
 
 export default function DashboardPage() {
   const router = useRouter()
@@ -175,7 +175,8 @@ export default function DashboardPage() {
       setCustomers(getCustomerAnalytics())
     }
 
-    fetchOrdersNow().catch(() => {}) // instant cross-admin sync
+    fetchOrdersNow().catch(() => {})              // instant customer-orders sync
+    loadOrdersPageFromFirebase().catch(() => {})   // sync yellowbell_orders so Admin 2 sees deletions/edits instantly
     loadData()
     if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
       window.addEventListener("inventory-updated", loadData)
