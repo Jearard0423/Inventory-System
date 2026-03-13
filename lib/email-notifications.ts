@@ -114,7 +114,7 @@ export const parseLocalDate = (dateString: string): Date => {
 
 // Helper: get order items regardless of whether order is Order (uses .items) or CustomerOrder (uses .orderedItems)
 const getOrderItems = (order: any): Array<{ name: string; quantity: number }> =>
-  getOrderItems(order) || order.items || []
+  order.orderedItems || order.items || []
 
 // default interval for kitchen reminders (milliseconds)
 let REMINDER_INTERVAL = 30 * 60 * 1000 // 30 minutes, can be adjusted via setReminderInterval()
