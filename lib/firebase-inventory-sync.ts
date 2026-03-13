@@ -934,6 +934,28 @@ export const saveOrdersPageToFirebase = async (orderId: string, order: any) => {
  * Called on every page mount so admins see current data instantly
  * without waiting for the onValue listener to fire its first event.
  */
+/**
+ * Fetch kitchen items from RTDB immediately on page mount.
+ * Ensures all admins see the correct kitchen state without waiting for onValue.
+ */
+export const fetchKitchenNow = async (): Promise<void> => {
+  if (typeof window === 'undefined') return
+  try {
+    const { get, ref: dbRef } = await import('firebase/database')
+    const snap = await get(dbRef(database, 'inventories/kitchen'))
+    if (snap.exists()) {
+      const items = snap.val()
+      const itemsArray = Object.values(items)
+      localStorage.setItem('yellowbell_kitchen_items', JSON.stringify(itemsArray))
+      window.dispatchEvent(new CustomEvent('firebase-kitchen-updated', { detail: items }))
+      window.dispatchEvent(new Event('kitchen-updated'))
+      console.log(`[firebase-sync] fetchKitchenNow: ${itemsArray.length} kitchen items loaded`)
+    }
+  } catch (e) {
+    console.warn('[firebase-sync] fetchKitchenNow failed:', e)
+  }
+}
+
 export const fetchOrdersNow = async (): Promise<void> => {
   if (typeof window === 'undefined') return
   try {

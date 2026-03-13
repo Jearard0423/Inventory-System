@@ -23,7 +23,7 @@ import { checkAndSendFoodPreparationReminder, resetNotificationState, checkAndSe
 import { useAuth } from "@/components/AuthProvider"
 import { checkAndFireOrderReminders, resetOrderReminders } from "@/lib/order-reminders"
 import { syncOrderToRTDB, logOrderEvent } from "@/lib/rtdb-sync"
-import { fetchOrdersNow } from "@/lib/firebase-inventory-sync"
+import { fetchOrdersNow, fetchKitchenNow } from "@/lib/firebase-inventory-sync"
 
 // Helper function to convert 24-hour time to 12-hour format
 const formatTimeForDisplay = (time24: string): string => {
@@ -275,6 +275,7 @@ export default function KitchenPage() {
 
   useEffect(() => {
     fetchOrdersNow().catch(() => {}) // instant cross-admin sync
+    fetchKitchenNow().catch(() => {}) // instant kitchen sync
     loadData()
     updateMealType()
 

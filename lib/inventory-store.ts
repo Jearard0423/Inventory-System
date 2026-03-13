@@ -871,6 +871,19 @@ export const markOrderAsDelivered = (orderId: string): boolean => {
   saveToLocalStorage(CUSTOMER_ORDERS_KEY, customerOrders);
   saveToLocalStorage(KITCHEN_ITEMS_KEY, kitchenItems);
 
+  // Sync status + kitchen to Firebase so all admins see delivery instantly
+  try {
+    const { updateOrderInFirebase } = require('./firebase-inventory-sync');
+    updateOrderInFirebase(orderId, { status: 'delivered' }).catch(() => {});
+  } catch { /* non-critical */ }
+  try {
+    const { database } = require('./firebase');
+    const { ref, set } = require('firebase/database');
+    const kitchenMap: Record<string, any> = {};
+    kitchenItems.forEach((item: KitchenItem) => { if (item.id) kitchenMap[item.id] = item; });
+    set(ref(database, 'inventories/kitchen'), kitchenMap).catch(() => {});
+  } catch { /* non-critical */ }
+
   // Also update the regular orders list so Orders page moves it to history
   if (typeof window !== 'undefined') {
     try {
@@ -916,6 +929,19 @@ export const markOrderAsUndelivered = (orderId: string): boolean => {
   // Persist changes
   saveToLocalStorage(CUSTOMER_ORDERS_KEY, customerOrders);
   saveToLocalStorage(KITCHEN_ITEMS_KEY, kitchenItems);
+
+  // Sync undo-delivery to Firebase so all admins see it instantly
+  try {
+    const { updateOrderInFirebase } = require('./firebase-inventory-sync');
+    updateOrderInFirebase(orderId, { status: 'complete' }).catch(() => {});
+  } catch { /* non-critical */ }
+  try {
+    const { database } = require('./firebase');
+    const { ref, set } = require('firebase/database');
+    const kitchenMap: Record<string, any> = {};
+    kitchenItems.forEach((item: KitchenItem) => { if (item.id) kitchenMap[item.id] = item; });
+    set(ref(database, 'inventories/kitchen'), kitchenMap).catch(() => {});
+  } catch { /* non-critical */ }
   
   // Dispatch events for UI updates
   if (typeof window !== 'undefined') {
@@ -1389,6 +1415,15 @@ export const saveOrder = (order: Omit<Order, 'id' | 'orderNumber' | 'createdAt'>
   saveToLocalStorage(CUSTOMER_ORDERS_KEY, customerOrders);
   saveToLocalStorage(KITCHEN_ITEMS_KEY, kitchenItems);
   
+  // Sync kitchen items to Firebase so ALL admins see the new items in kitchen view
+  try {
+    const { database } = require('./firebase');
+    const { ref, set } = require('firebase/database');
+    const kitchenMap: Record<string, any> = {};
+    kitchenItems.forEach((item: KitchenItem) => { if (item.id) kitchenMap[item.id] = item; });
+    set(ref(database, 'inventories/kitchen'), kitchenMap).catch(() => {});
+  } catch { /* non-critical */ }
+
   // Also save to Firebase RTDB for persistence
   if (typeof window !== 'undefined') {
     try {

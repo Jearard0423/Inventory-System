@@ -1,6 +1,8 @@
 "use client"
 
 import React, { useState, useMemo, useEffect } from "react"
+import { database } from "@/lib/firebase"
+import { ref, set, onValue, remove } from "firebase/database"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -51,6 +53,14 @@ export default function PricingCalculatorPage() {
       }
     } catch {}
     try { setTemplates(JSON.parse(localStorage.getItem(TEMPLATES_KEY) || "{}")) } catch {}
+    const unsub = onValue(ref(database, "pricingTemplates"), (snap) => {
+      if (snap.exists()) {
+        const t = snap.val()
+        setTemplates(t)
+        try { localStorage.setItem(TEMPLATES_KEY, JSON.stringify(t)) } catch {}
+      }
+    })
+    return () => unsub()
   }, [])
 
   useEffect(() => {
@@ -101,9 +111,13 @@ export default function PricingCalculatorPage() {
 
   const saveTemplate = (name: string) => {
     if (!name) return
-    const t = { ...templates, [name]: { ingredients, packaging, overhead: overheadPct, profit: profitPct, regularSellingPrice } }
+    const templateData = { ingredients, packaging, overhead: overheadPct, profit: profitPct, regularSellingPrice }
+    const t = { ...templates, [name]: templateData }
     setTemplates(t)
     try { localStorage.setItem(TEMPLATES_KEY, JSON.stringify(t)) } catch {}
+    // Sync to Firebase so all admins share templates
+    const key = name.replace(/[.$#[\]]/g, "_")
+    set(ref(database, `pricingTemplates/${key}`), { ...templateData, _name: name }).catch(() => {})
     setTemplateName("")
   }
 
@@ -123,6 +137,9 @@ export default function PricingCalculatorPage() {
     delete t[name]
     setTemplates(t)
     try { localStorage.setItem(TEMPLATES_KEY, JSON.stringify(t)) } catch {}
+    // Remove from Firebase so all admins see the deletion
+    const key = name.replace(/[.$#[\]]/g, "_")
+    remove(ref(database, `pricingTemplates/${key}`)).catch(() => {})
   }
 
   const exportCSV = () => {

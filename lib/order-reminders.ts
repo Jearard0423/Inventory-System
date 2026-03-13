@@ -72,8 +72,10 @@ export const checkAndFireOrderReminders = () => {
   const sentReminders = getSentReminders()
 
   orders.forEach((order) => {
-    // Skip delivered or completed orders
-    if (order.status === "delivered" || order.status === "complete") return
+    // Skip all finalized orders — never fire reminders for these
+    const s = (order.status || "").toLowerCase()
+    if (s === "delivered" || s === "complete" || s === "served" ||
+        s === "cancelled" || s === "canceled" || s === "ready") return
     if (!order.cookTime) return
 
     const deliveryTime = parseCookTimeToday(order.cookTime)
