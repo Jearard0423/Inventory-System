@@ -123,8 +123,9 @@ export default function KitchenPage() {
         const s = (order.status || '').toLowerCase()
         const isFinal = s === 'delivered' || s === 'served' || s === 'cancelled' || s === 'canceled'
 
-        // Determine order date
-        const orderDate = order.createdAt ? new Date(order.createdAt) : null
+        // Prefer order.date (delivery/scheduled date) over createdAt
+        const dateStr = (order as any).date || order.createdAt
+        const orderDate = dateStr ? new Date(dateStr) : null
         if (!orderDate) return !isFinal // keep undated non-final orders
 
         orderDate.setHours(0, 0, 0, 0)
@@ -158,9 +159,13 @@ export default function KitchenPage() {
       }
     })
 
-    // Persist cleanup if anything was removed
+    // Persist cleanup if anything was removed.
+    // IMPORTANT: use localStorage directly (not updateCustomerOrders) to avoid
+    // triggering a Firebase write → onValue → loadData infinite loop.
     if (recentOrders.length < allOrdersRaw.length) {
-      updateCustomerOrders(recentOrders)
+      try {
+        localStorage.setItem('yellowbell_customer_orders', JSON.stringify(recentOrders))
+      } catch { /* non-critical */ }
       console.log(`[Kitchen] Cleanup: removed ${allOrdersRaw.length - recentOrders.length} stale orders`)
     }
 
@@ -171,22 +176,25 @@ export default function KitchenPage() {
     // Helper to reliably check if an order is for today using local date string (avoids timezone issues)
     const isOrderForToday = (order: CustomerOrder) => {
       try {
-        if (!order.createdAt) {
-          console.warn('[Kitchen] Order missing createdAt:', order.id, order.customerName)
-          return false
+        // Prefer order.date (delivery date set by admin) over createdAt
+        // This ensures scheduled future orders appear on the correct day in kitchen
+        const dateStr = (order as any).date || order.createdAt
+        if (!dateStr) {
+          console.warn('[Kitchen] Order missing date:', order.id, order.customerName)
+          return true // show undated orders rather than hiding them
         }
-        const od = parseLocalDate(order.createdAt)
+        const od = parseLocalDate(dateStr)
         const today = new Date()
         today.setHours(0, 0, 0, 0)
         od.setHours(0, 0, 0, 0)
         const isToday = od.getTime() === today.getTime()
         if (!isToday) {
-          console.log(`[Kitchen] Filtered out old order: ${order.customerName} - Date: ${od.toDateString()} vs Today: ${today.toDateString()}`)
+          console.log(`[Kitchen] Filtered out non-today order: ${order.customerName} - Date: ${od.toDateString()} vs Today: ${today.toDateString()}`)
         }
         return isToday
       } catch (e) {
-        console.warn('[Kitchen] Error checking order date:', order.createdAt, e)
-        return false
+        console.warn('[Kitchen] Error checking order date:', e)
+        return true
       }
     }
     

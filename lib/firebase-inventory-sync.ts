@@ -126,6 +126,35 @@ export const forceRefreshInventoryFromFirebase = async () => {
  * Sets up real-time listeners for inventory, orders, kitchen items, and menu
  * Gracefully falls back to localStorage if permissions are denied
  */
+// IMPORTANT: We use the delivery date (o.date / cookTime date), NOT createdAt.
+// Orders placed today for 3 days from now must NOT be purged just because
+// createdAt is >24hrs old. We only purge if the scheduled delivery day has passed.
+const isStaleOrder = (o: any): boolean => {
+  const status = (o.status || "").toLowerCase()
+  if (DONE_STATUSES_SYNC.has(status)) return true
+  if (status === "incomplete" || status === "cooking" || status === "ready") {
+    // Use scheduled delivery date (o.date = YYYY-MM-DD set by date picker)
+    // Fall back to createdAt only if no delivery date is set
+    let deliveryDate: Date | null = null
+    if (o.date) {
+      // o.date is "YYYY-MM-DD" — parse as local date (no timezone shift)
+      const [y, m, d] = o.date.split("-").map(Number)
+      deliveryDate = new Date(y, m - 1, d)
+      deliveryDate.setHours(23, 59, 59, 999) // end of delivery day
+    } else if (o.createdAt) {
+      // No delivery date — fall back to createdAt + generous 7-day window
+      deliveryDate = new Date(new Date(o.createdAt).getTime() + 7 * 24 * 3600000)
+    }
+    if (!deliveryDate) return false
+    // Stale if the delivery date has passed by more than 28 hours (gives same-day buffer)
+    const phOffset = new Date().getTimezoneOffset() * 60000 + 8 * 3600000
+    const phNow = Date.now() + phOffset
+    const hoursPassedSinceDelivery = (phNow - deliveryDate.getTime()) / 3600000
+    return hoursPassedSinceDelivery > 28
+  }
+  return false
+}
+
 export const initializeFirebaseSync = () => {
   if (typeof window === "undefined") return
 
@@ -190,34 +219,7 @@ export const initializeFirebaseSync = () => {
     // 1. Its status is explicitly a done status (delivered, served, cancelled, etc.), OR
     // 2. Its status is "incomplete" AND its DELIVERY DATE has passed by more than 24 hours
     //
-    // IMPORTANT: We use the delivery date (o.date / cookTime date), NOT createdAt.
-    // Orders placed today for 3 days from now must NOT be purged just because
-    // createdAt is >24hrs old. We only purge if the scheduled delivery day has passed.
-    const isStaleOrder = (o: any): boolean => {
-      const status = (o.status || "").toLowerCase()
-      if (DONE_STATUSES_SYNC.has(status)) return true
-      if (status === "incomplete" || status === "cooking" || status === "ready") {
-        // Use scheduled delivery date (o.date = YYYY-MM-DD set by date picker)
-        // Fall back to createdAt only if no delivery date is set
-        let deliveryDate: Date | null = null
-        if (o.date) {
-          // o.date is "YYYY-MM-DD" — parse as local date (no timezone shift)
-          const [y, m, d] = o.date.split("-").map(Number)
-          deliveryDate = new Date(y, m - 1, d)
-          deliveryDate.setHours(23, 59, 59, 999) // end of delivery day
-        } else if (o.createdAt) {
-          // No delivery date — fall back to createdAt + generous 7-day window
-          deliveryDate = new Date(new Date(o.createdAt).getTime() + 7 * 24 * 3600000)
-        }
-        if (!deliveryDate) return false
-        // Stale if the delivery date has passed by more than 28 hours (gives same-day buffer)
-        const phOffset = new Date().getTimezoneOffset() * 60000 + 8 * 3600000
-        const phNow = Date.now() + phOffset
-        const hoursPassedSinceDelivery = (phNow - deliveryDate.getTime()) / 3600000
-        return hoursPassedSinceDelivery > 28
-      }
-      return false
-    }
+    // isStaleOrder defined at module level above
     const ordersRef = ref(database, "inventories/orders")
     ordersListener = onValue(
       ordersRef,

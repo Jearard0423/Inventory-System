@@ -62,10 +62,12 @@ const formatTime12h = (t: string) => {
     return `${h % 12 || 12}:${m.toString().padStart(2,'0')} ${h >= 12 ? 'PM' : 'AM'}`
   } catch { return t }
 }
-const todayPHLabel = () => getPHTime().toLocaleDateString('en-PH', {
+// Use new Date() directly — the timeZone option handles the PHT conversion.
+// Do NOT use getPHTime() here: it already shifts +8hrs, then timeZone shifts again = double offset.
+const todayPHLabel = () => new Date().toLocaleDateString('en-PH', {
   weekday:'long', year:'numeric', month:'long', day:'numeric', timeZone:'Asia/Manila'
 })
-const nowPHLabel = () => getPHTime().toLocaleTimeString('en-PH', {
+const nowPHLabel = () => new Date().toLocaleTimeString('en-PH', {
   hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:true, timeZone:'Asia/Manila'
 })
 
