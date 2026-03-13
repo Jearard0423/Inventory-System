@@ -285,6 +285,7 @@ export default function KitchenPage() {
     const dataInterval = setInterval(loadData, 60000)
 
     const handleUpdate = () => { loadData() }
+    const handleFirebaseKitchen = () => { fetchKitchenNow().catch(() => {}).finally(() => loadData()) }
     // firebase-orders-updated: RTDB pushed fresh data — reload immediately
     // This ensures deleted orders disappear on all clients as soon as Firebase fires
     const handleFirebaseOrders = (ev: Event) => {
@@ -295,7 +296,8 @@ export default function KitchenPage() {
           try { localStorage.setItem("yellowbell_customer_orders", JSON.stringify(detail.orders)) } catch {}
         }
       }
-      loadData()
+      // Also fetch fresh kitchen state so cooked/undo actions by other admins appear instantly
+      fetchKitchenNow().catch(() => {}).finally(() => loadData())
     }
 
     if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
@@ -306,7 +308,7 @@ export default function KitchenPage() {
       window.addEventListener("delivery-updated", handleUpdate)
       window.addEventListener("storage", handleUpdate)
       window.addEventListener("firebase-orders-updated", handleFirebaseOrders)
-      window.addEventListener("firebase-kitchen-updated", handleUpdate)
+      window.addEventListener("firebase-kitchen-updated", handleFirebaseKitchen)
     } else {
       console.warn('[kitchen-page] window.addEventListener is not available in this environment')
     }
@@ -400,7 +402,7 @@ export default function KitchenPage() {
         window.removeEventListener("delivery-updated", handleUpdate)
         window.removeEventListener("storage", handleUpdate)
         window.removeEventListener("firebase-orders-updated", handleUpdate)
-        window.removeEventListener("firebase-kitchen-updated", handleUpdate)
+        window.removeEventListener("firebase-kitchen-updated", handleFirebaseKitchen)
       }
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps

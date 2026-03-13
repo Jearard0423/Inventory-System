@@ -55,16 +55,27 @@ export default function OrderHistoryPage() {
   const itemsPerPage = 10
 
   const buildList = () => {
-    // Only show non-cancelled orders in history
-    // getCustomerOrders() is RTDB-backed (replaced on every RTDB push)
-    // getOrderHistory() is now also RTDB-replaced (not merged)
-    const liveOrders = getCustomerOrders().filter(o => !CANCELLED.has((o.status || "").toLowerCase()))
-    const archived   = getOrderHistory().filter(o => !CANCELLED.has((o.status || "").toLowerCase()))
+    // History shows only FINALIZED orders (delivered, complete, cancelled).
+    // Active orders (incomplete/pending/cooking) belong on the Orders/Kitchen pages only.
+    const ACTIVE_STATUSES = new Set(["incomplete", "pending", "cooking", "to-cook"])
 
-    // Deduplicate: live RTDB takes precedence over history archive
-    const liveIds = new Set(liveOrders.map(o => o.id))
+    // getOrderHistory() is RTDB-replaced (not merged) — the authoritative archive
+    const archived = getOrderHistory().filter(o => {
+      const s = (o.status || "").toLowerCase()
+      // Exclude cancelled AND active orders from history
+      if (CANCELLED.has(s)) return false
+      if (ACTIVE_STATUSES.has(s)) return false
+      return true
+    })
+
+    // Also include delivered/complete orders from the live feed (in case archival was delayed)
+    const FINAL_LIVE = new Set(["complete", "completed", "delivered", "served", "ready"])
+    const liveFinalized = getCustomerOrders().filter(o => FINAL_LIVE.has((o.status || "").toLowerCase()))
+    const liveIds = new Set(liveFinalized.map(o => o.id))
+
+    // Merge: live finalized first, then archived (excluding those already in live)
     const merged = [
-      ...liveOrders,
+      ...liveFinalized,
       ...archived.filter(o => !liveIds.has(o.id))
     ]
     merged.sort((a, b) => new Date(b.createdAt || b.date || 0).getTime() - new Date(a.createdAt || a.date || 0).getTime())
@@ -73,22 +84,29 @@ export default function OrderHistoryPage() {
   }
 
   useEffect(() => {
-    // First: trigger RTDB history refresh (replaces localStorage, not merges)
-    // This ensures ghost orders are purged before we render
+    // Trigger RTDB history refresh (replaces localStorage, not merges)
+    // This purges ghost pending orders from history before we render
     import("@/lib/firebase-inventory-sync")
       .then(m => m.loadOrderHistoryFromFirebase())
       .catch(() => {})
       .finally(() => buildList())
 
     const fn = () => buildList()
+    // When Firebase pushes order changes, re-fetch history from RTDB then rebuild
+    const handleFirebaseOrders = () => {
+      import("@/lib/firebase-inventory-sync")
+        .then(m => m.loadOrderHistoryFromFirebase())
+        .catch(() => {})
+        .finally(() => buildList())
+    }
     window.addEventListener("orders-updated", fn)
     window.addEventListener("delivery-updated", fn)
-    window.addEventListener("firebase-orders-updated", fn)
+    window.addEventListener("firebase-orders-updated", handleFirebaseOrders)
     window.addEventListener("customer-orders-updated", fn)
     return () => {
       window.removeEventListener("orders-updated", fn)
       window.removeEventListener("delivery-updated", fn)
-      window.removeEventListener("firebase-orders-updated", fn)
+      window.removeEventListener("firebase-orders-updated", handleFirebaseOrders)
       window.removeEventListener("customer-orders-updated", fn)
     }
   }, [])
@@ -246,7 +264,7 @@ export default function OrderHistoryPage() {
             {paginated.map(order => {
               const badge = statusBadge(order.status)
               const isExpanded = expandedId === order.id
-              const items = order.orderedItems || order.items || []
+              const items = order.orderedItems || (order as any).items || []
 
               return (
                 <Card key={order.id} className={cn("overflow-hidden transition-shadow hover:shadow-md", isExpanded && "ring-1 ring-primary/20")}>
@@ -280,7 +298,7 @@ export default function OrderHistoryPage() {
                           </div>
 
                           <div className="flex items-center gap-2 mt-1 text-[11px] text-muted-foreground flex-wrap">
-                            <span>{fmtDate(order.createdAt || order.date)}</span>
+                            <span>{fmtDate(order.createdAt || order.date || "")}</span>
                             {order.mealType && <><span>·</span><span className="capitalize">{order.mealType}</span></>}
                             {order.cookTime  && <><span>·</span><span>{order.cookTime}</span></>}
                             <span>·</span>

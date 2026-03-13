@@ -120,18 +120,25 @@ export default function DeliveryPage() {
     const mealTypeInterval = setInterval(updateMealType, 60000)
 
     const handleUpdate = () => loadData()
+    // When Firebase pushes order changes (cooked/delivered by another admin),
+    // force-fetch fresh orders AND kitchen data before reloading UI
     const handleFirebaseOrders = (ev: Event) => {
       const detail = (ev as CustomEvent).detail
       if (detail?.orders && typeof window !== "undefined") {
         try { localStorage.setItem("yellowbell_customer_orders", JSON.stringify(detail.orders)) } catch {}
       }
-      loadData()
+      Promise.all([
+        fetchOrdersNow().catch(() => {}),
+        fetchKitchenNow().catch(() => {}),
+      ]).finally(() => loadData())
     }
     window.addEventListener("customer-orders-updated", handleUpdate)
     window.addEventListener("kitchen-updated", handleUpdate)
     window.addEventListener("orders-updated", handleUpdate)
     window.addEventListener("firebase-orders-updated", handleFirebaseOrders)
-    window.addEventListener("firebase-kitchen-updated", handleUpdate)
+    // firebase-kitchen-updated: another admin marked item as cooked/undo — fetch fresh kitchen then reload
+    const handleFirebaseKitchen = () => { fetchKitchenNow().catch(() => {}).finally(() => loadData()) }
+    window.addEventListener("firebase-kitchen-updated", handleFirebaseKitchen)
 
     return () => {
       clearInterval(mealTypeInterval)
@@ -139,7 +146,7 @@ export default function DeliveryPage() {
       window.removeEventListener("kitchen-updated", handleUpdate)
       window.removeEventListener("orders-updated", handleUpdate)
       window.removeEventListener("firebase-orders-updated", handleFirebaseOrders)
-      window.removeEventListener("firebase-kitchen-updated", handleUpdate)
+      window.removeEventListener("firebase-kitchen-updated", handleFirebaseKitchen)
     }
   }, [filterMealType])
 
