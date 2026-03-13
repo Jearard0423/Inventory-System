@@ -106,6 +106,7 @@ export default function KitchenPage() {
       history
         .filter(o => {
           const s = (o.status || '').toLowerCase()
+          // Only truly final — complete/ready are cooked-not-delivered, must stay visible
           return s === 'delivered' || s === 'served' || s === 'cancelled' || s === 'canceled'
         })
         .map(o => o.id)
@@ -118,33 +119,29 @@ export default function KitchenPage() {
           console.log(`[Kitchen] Skipping history-finalized order: ${order.customerName} (${order.id})`)
           return false
         }
-        // Always archive delivered/complete before any removal
-        if (order.status === 'delivered' || order.status === 'complete' || order.status === 'ready') {
-          archiveOrderToHistory(order)
-        }
-
         const s = (order.status || '').toLowerCase()
         const isFinal = s === 'delivered' || s === 'served' || s === 'cancelled' || s === 'canceled'
 
-        // Prefer order.date (delivery/scheduled date) over createdAt
-        const dateStr = (order as any).date || order.createdAt
-        const orderDate = dateStr ? new Date(dateStr) : null
-        if (!orderDate) return !isFinal // keep undated non-final orders
-
-        orderDate.setHours(0, 0, 0, 0)
-        const isToday = orderDate.getTime() === today.getTime()
-
-        // Remove if final status (delivered/cancelled) — always, regardless of date
+        // Archive + remove truly final orders only (NOT complete/ready — those are cooked but awaiting delivery)
         if (isFinal) {
           archiveOrderToHistory(order)
-          console.log(`[Kitchen] Removing final-status order: ${order.customerName} (${order.id}) status=${order.status}`)
+          console.log(`[Kitchen] Removing final order: ${order.customerName} (${order.id}) status=${order.status}`)
           return false
         }
 
-        // Remove if not today
-        if (!isToday) {
-          archiveOrderToHistory(order)
-          console.log(`[Kitchen] Removing old order: ${order.customerName} (${order.id}) date=${order.createdAt}`)
+        // Use createdAt for "is this order from today or an advanced order for today"
+        // Use order.date only if it is today (advanced order scheduled for today)
+        const createdStr = order.createdAt
+        const scheduledStr = (order as any).date
+        const createdDate = createdStr ? new Date(createdStr) : null
+        const scheduledDate = scheduledStr ? (() => { const [y,m,d] = scheduledStr.split('-').map(Number); return new Date(y, m-1, d) })() : null
+
+        // Show if: created today OR scheduled delivery date is today
+        const createdToday = createdDate ? (createdDate.setHours(0,0,0,0), createdDate.getTime() === today.getTime()) : false
+        const scheduledToday = scheduledDate ? scheduledDate.getTime() === today.getTime() : false
+
+        if (!createdToday && !scheduledToday) {
+          console.log(`[Kitchen] Removing non-today order: ${order.customerName} created=${createdStr} scheduled=${scheduledStr}`)
           return false
         }
 
@@ -221,9 +218,10 @@ export default function KitchenPage() {
         if (!isOrderForToday(order)) return false
         
         // Check meal type filter
-        const matchesMealType = filterMealType === "all" || 
-          (order.mealType && order.mealType.toLowerCase() === filterMealType) ||
-          (order.originalMealType && order.originalMealType.toLowerCase() === filterMealType)
+        const mealFilter = filterMealTypeRef.current
+        const matchesMealType = mealFilter === "all" || 
+          (order.mealType && order.mealType.toLowerCase() === mealFilter) ||
+          (order.originalMealType && order.originalMealType.toLowerCase() === mealFilter)
         if (!matchesMealType) return false
         
         return true
