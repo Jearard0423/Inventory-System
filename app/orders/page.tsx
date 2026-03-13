@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { getOrders, deleteOrder, updateOrder } from "@/lib/orders"
-import { fetchOrdersNow } from "@/lib/firebase-inventory-sync"
+import { fetchOrdersNow, loadOrdersPageFromFirebase, loadOrderHistoryFromFirebase } from "@/lib/firebase-inventory-sync"
 import { saveNotification } from "@/lib/notifications-store"
 import { useToast } from '@/hooks/use-toast'
 import { Pagination } from "@/components/pagination"
@@ -247,18 +247,26 @@ export default function OrdersPage() {
       setOrders(regularOrders)
     }
 
-    fetchOrdersNow().catch(() => {}) // instant cross-admin sync
+    fetchOrdersNow().catch(() => {})              // instant customer-orders sync
+    loadOrdersPageFromFirebase().catch(() => {})   // sync yellowbell_orders from Firebase so deletions/edits by other admins appear
+    loadOrderHistoryFromFirebase().catch(() => {}) // sync order history from Firebase across all admins
     loadOrders()
     window.addEventListener("orders-updated", loadOrders)
     window.addEventListener("prepared-orders-updated", loadOrders)
     window.addEventListener("customer-orders-updated", loadOrders)
-    // Listen to Firebase real-time updates so changes by other admins appear instantly
-    window.addEventListener("firebase-orders-updated", loadOrders)
+
+    // When Firebase pushes a change (any admin delete/edit/add), re-fetch ordersPage
+    // from RTDB then reload the UI. This guarantees Admin 2 sees Admin 1's deletion
+    // immediately, even if the ordersPage listener hasn't updated localStorage yet.
+    const handleFirebaseOrders = () => {
+      loadOrdersPageFromFirebase().then(() => loadOrders()).catch(() => loadOrders())
+    }
+    window.addEventListener("firebase-orders-updated", handleFirebaseOrders)
     return () => {
       window.removeEventListener("orders-updated", loadOrders)
       window.removeEventListener("prepared-orders-updated", loadOrders)
       window.removeEventListener("customer-orders-updated", loadOrders)
-      window.removeEventListener("firebase-orders-updated", loadOrders)
+      window.removeEventListener("firebase-orders-updated", handleFirebaseOrders)
     }
   }, [mounted])
 

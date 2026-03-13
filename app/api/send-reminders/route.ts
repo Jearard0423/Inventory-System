@@ -104,7 +104,6 @@ const emailWrapper = (content: string, mealType?: string) => {
   <tr><td align="center">
   <table width="620" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.12);max-width:620px;">
     <tr><td style="background:${c.headerBg};padding:36px 40px;text-align:center;">
-      <img src="cid:yrclogo@yellow" alt="YRC" width="72" height="72" style="border-radius:12px;border:3px solid rgba(255,255,255,0.35);margin-bottom:16px;display:block;margin-left:auto;margin-right:auto;"/>
       <h1 style="margin:0;color:#fff;font-size:28px;font-weight:800;">Yellow Roast Co.</h1>
       <p style="margin:6px 0 0;color:rgba(255,255,255,0.88);font-size:13px;letter-spacing:1.2px;font-weight:500;">${c.label} &nbsp;·&nbsp; ${c.emoji} &nbsp;KITCHEN NOTIFICATION</p>
     </td></tr>
@@ -138,10 +137,7 @@ const sendEmail = async (to: string, subject: string, html: string, text: string
   const mailer = getTransporter()
   if (!mailer) { console.log(`[send-reminders] (no SMTP) simulated → ${to}`); return true }
   try {
-    const fs = require('fs'), path = require('path')
-    const logoPath = path.join(process.cwd(), 'public', 'yrclogo.jpg')
     const mailOptions: any = { from: `"Yellow Roast Co." <${SMTP_USER}>`, to, subject, text, html }
-    if (fs.existsSync(logoPath)) mailOptions.attachments = [{ filename:'yrclogo.jpg', path:logoPath, cid:'yrclogo@yellow' }]
     await mailer.sendMail(mailOptions)
     console.log(`[send-reminders] ✅ Sent "${subject}" → ${to}`)
     return true
