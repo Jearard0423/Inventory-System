@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { AlertCircle, Check, CheckCircle, ChevronDown, Clock, Loader2, Minus, Plus, RotateCcw, X, ChefHat } from "lucide-react"
-import { useEffect, useState } from "react"
+import React, { useEffect, useState, useRef } from "react"
 import { cn } from "@/lib/utils"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import {
@@ -23,6 +23,7 @@ import { checkAndSendFoodPreparationReminder, resetNotificationState, checkAndSe
 import { useAuth } from "@/components/AuthProvider"
 import { checkAndFireOrderReminders, resetOrderReminders } from "@/lib/order-reminders"
 import { syncOrderToRTDB, logOrderEvent } from "@/lib/rtdb-sync"
+import { fetchOrdersNow } from "@/lib/firebase-inventory-sync"
 
 // Helper function to convert 24-hour time to 12-hour format
 const formatTimeForDisplay = (time24: string): string => {
@@ -41,6 +42,8 @@ const formatTimeForDisplay = (time24: string): string => {
 
 export default function KitchenPage() {
   const auth = useAuth()
+  // Guard: prevents loadData from re-entering itself when Firebase write → onValue → event → loadData
+  const isLoadingRef = useRef(false)
   const [kitchenItems, setKitchenItems] = useState<KitchenItem[]>([])
   const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([])
   const [todayOrders, setTodayOrders] = useState<CustomerOrder[]>([])
@@ -85,6 +88,9 @@ export default function KitchenPage() {
   }
 
   const loadData = () => {
+    if (isLoadingRef.current) return  // prevent re-entrant call loop
+    isLoadingRef.current = true
+    try {
     const allOrdersRaw = getCustomerOrders()
     const kItems = getKitchenItems()
     const today = new Date()
@@ -225,6 +231,9 @@ export default function KitchenPage() {
     
     setTodayOrders(filtered)
     console.log(`[Kitchen] loadData complete: ${allOrders.length} total orders → ${filtered.length} today's orders for meal type "${filterMealType}"`)
+    } finally {
+      isLoadingRef.current = false
+    }
   }
 
   // Track the current time-based meal type (for display only)
@@ -244,6 +253,7 @@ export default function KitchenPage() {
   }
 
   useEffect(() => {
+    fetchOrdersNow().catch(() => {}) // instant cross-admin sync
     loadData()
     updateMealType()
 

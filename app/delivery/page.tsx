@@ -11,6 +11,7 @@ import { getCustomerOrders, markOrderAsDelivered, getMissingItems, type Customer
 import { saveNotification } from "@/lib/notifications-store"
 import { cn } from "@/lib/utils"
 import { Pagination } from "@/components/pagination"
+import { fetchOrdersNow } from "@/lib/firebase-inventory-sync"
 import {
   Dialog,
   DialogContent,
@@ -110,6 +111,7 @@ export default function DeliveryPage() {
   }
 
   useEffect(() => {
+    fetchOrdersNow().catch(() => {}) // instant cross-admin sync
     loadData()
     updateMealType()
 

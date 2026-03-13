@@ -1,7 +1,8 @@
 "use client"
 
 import React, { createContext, useContext, useEffect, useState } from "react"
-import { auth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, firebaseSignOut } from "@/lib/firebase"
+import { auth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, firebaseSignOut, database } from "@/lib/firebase"
+import { ref, set } from "firebase/database"
 import LoginClient from "./LoginClient"
 
 type User = any
@@ -38,7 +39,20 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u)
       setLoading(false)
-      if (u) resetIdleTimer()
+      if (u) {
+        resetIdleTimer()
+        // Write this admin's email to /users/{uid} in RTDB so the reminder
+        // system can always find ALL admin emails — even when no one is logged in.
+        // This runs on every login/page refresh so the record stays current.
+        if (u.email) {
+          set(ref(database, `users/${u.uid}`), {
+            uid: u.uid,
+            email: u.email,
+            displayName: u.displayName || u.email,
+            lastSeen: new Date().toISOString(),
+          }).catch(() => {})
+        }
+      }
     })
     return () => unsubscribe()
   }, [])

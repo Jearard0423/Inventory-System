@@ -22,6 +22,10 @@ const FIREBASE_DB_SECRET = process.env.FIREBASE_DB_SECRET || ''
 const FIREBASE_DB_URL =
   process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL ||
   'https://inventory-system-cc7dc-default-rtdb.firebaseio.com'
+// Comma-separated fallback list e.g. "admin1@gmail.com,admin2@gmail.com"
+// Used when Firebase /users node is empty and SMTP_USER is not set.
+const ADMIN_EMAILS_FALLBACK = (process.env.ADMIN_EMAILS || '')
+  .split(',').map(e => e.trim()).filter(Boolean)
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -145,51 +149,48 @@ const sendEmail = async (to: string, subject: string, html: string, text: string
   }
 }
 
-// Fetch emails — reads ALL admin accounts from Firebase RTDB /users node.
-// Tries with FIREBASE_DB_SECRET first, then without auth (for open read rules),
-// then falls back to SMTP_USER. This ensures ALL admins get reminder emails,
-// not just the one whose browser is open.
+// Fetch ALL admin emails.
+// Source 1: RTDB /users node — populated by AuthProvider every time an admin logs in.
+// Source 2: ADMIN_EMAILS env var — hardcoded fallback set in Vercel dashboard.
+// Source 3: SMTP_USER env var — last resort single-email fallback.
+// All three are merged and deduplicated so every admin always gets reminded.
 const fetchAllUserEmails = async (): Promise<string[]> => {
-  const triedUrls: string[] = []
+  // Attempt 1: RTDB /users node (populated by AuthProvider on login)
   try {
-    // Attempt 1: with secret
-    if (FIREBASE_DB_SECRET) {
-      const url = `${FIREBASE_DB_URL}/users.json?auth=${FIREBASE_DB_SECRET}`
-      triedUrls.push('with-secret')
-      const res = await fetch(url)
-      if (res.ok) {
-        const users = await res.json()
-        if (users) {
-          const emails: string[] = []
-          Object.values(users).forEach((u: any) => { if (u?.email?.trim()) emails.push(u.email.trim()) })
-          if (SMTP_USER && !emails.includes(SMTP_USER)) emails.push(SMTP_USER)
-          const unique = Array.from(new Set(emails))
-          console.log(`[send-reminders] ${unique.length} admin email(s) from RTDB (secret):`, unique)
+    const authParam = FIREBASE_DB_SECRET ? `?auth=${FIREBASE_DB_SECRET}` : ''
+    const res = await fetch(`${FIREBASE_DB_URL}/users.json${authParam}`)
+    if (res.ok) {
+      const users = await res.json()
+      if (users && typeof users === 'object') {
+        const emails: string[] = []
+        Object.values(users).forEach((u: any) => { if (u?.email?.trim()) emails.push(u.email.trim()) })
+        // Always merge in env var emails so nobody is missed
+        if (SMTP_USER && !emails.includes(SMTP_USER)) emails.push(SMTP_USER)
+        ADMIN_EMAILS_FALLBACK.forEach(e => { if (!emails.includes(e)) emails.push(e) })
+        const unique = Array.from(new Set(emails))
+        if (unique.length > 0) {
+          console.log(`[send-reminders] ${unique.length} admin email(s) from RTDB /users:`, unique)
           return unique
         }
       }
-      console.warn(`[send-reminders] RTDB /users (secret) → ${res.status}`)
     }
-    // Attempt 2: without auth (works if Firebase rules allow public read on /users)
-    triedUrls.push('no-auth')
-    const res2 = await fetch(`${FIREBASE_DB_URL}/users.json`)
-    if (res2.ok) {
-      const users2 = await res2.json()
-      if (users2) {
-        const emails: string[] = []
-        Object.values(users2).forEach((u: any) => { if (u?.email?.trim()) emails.push(u.email.trim()) })
-        if (SMTP_USER && !emails.includes(SMTP_USER)) emails.push(SMTP_USER)
-        const unique = Array.from(new Set(emails))
-        console.log(`[send-reminders] ${unique.length} admin email(s) from RTDB (no-auth):`, unique)
-        return unique
-      }
-    }
-    console.warn(`[send-reminders] RTDB /users (no-auth) → ${res2.status}, using SMTP_USER fallback`)
-    return SMTP_USER ? [SMTP_USER] : []
+    console.warn(`[send-reminders] RTDB /users returned no emails, using env fallback`)
   } catch (err) {
-    console.warn('[send-reminders] Firebase unreachable, fallback to SMTP_USER:', err)
-    return SMTP_USER ? [SMTP_USER] : []
+    console.warn('[send-reminders] RTDB /users read failed:', err)
   }
+
+  // Attempt 2: env var fallbacks only
+  return buildFallbackEmails()
+}
+
+// Build fallback email list from env vars when all Firebase reads fail
+const buildFallbackEmails = (): string[] => {
+  const emails = new Set<string>()
+  if (SMTP_USER) emails.add(SMTP_USER)
+  ADMIN_EMAILS_FALLBACK.forEach(e => emails.add(e))
+  const result = Array.from(emails)
+  console.log(`[send-reminders] Using fallback emails:`, result)
+  return result
 }
 
 const parseLocalDate = (s: string): Date => {

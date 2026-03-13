@@ -927,6 +927,32 @@ export const saveOrdersPageToFirebase = async (orderId: string, order: any) => {
  * Load all orders-page orders from Firebase RTDB and merge into localStorage.
  * Called once on app init so yellowbell_orders is always populated from Firebase.
  */
+/**
+ * Fetch orders from RTDB once immediately (not a listener).
+ * Called on every page mount so admins see current data instantly
+ * without waiting for the onValue listener to fire its first event.
+ */
+export const fetchOrdersNow = async (): Promise<void> => {
+  if (typeof window === 'undefined') return
+  try {
+    const { get, ref: dbRef } = await import('firebase/database')
+    const snap = await get(dbRef(database, 'inventories/orders'))
+    if (snap.exists()) {
+      const raw = snap.val()
+      const orders = Object.values(raw as Record<string, any>).filter((o: any) => !isStaleOrder(o))
+      localStorage.setItem('yellowbell_customer_orders', JSON.stringify(orders))
+      window.dispatchEvent(new CustomEvent('firebase-orders-updated', { detail: { orders } }))
+      window.dispatchEvent(new Event('customer-orders-updated'))
+      console.log(`[firebase-sync] fetchOrdersNow: ${orders.length} orders loaded instantly`)
+    } else {
+      localStorage.setItem('yellowbell_customer_orders', JSON.stringify([]))
+      window.dispatchEvent(new CustomEvent('firebase-orders-updated', { detail: { orders: [] } }))
+    }
+  } catch (e) {
+    console.warn('[firebase-sync] fetchOrdersNow failed:', e)
+  }
+}
+
 export const loadOrdersPageFromFirebase = async (): Promise<void> => {
   try {
     const { get, ref: fbRef } = await import("firebase/database")

@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
-import { initializeFirebaseSync, cleanupFirebaseSync, initializeCategoriesInFirebase, getCategoriesFromFirebase, loadOrdersPageFromFirebase, loadOrderHistoryFromFirebase } from "@/lib/firebase-inventory-sync"
+import { initializeFirebaseSync, cleanupFirebaseSync, initializeCategoriesInFirebase, getCategoriesFromFirebase, loadOrdersPageFromFirebase, loadOrderHistoryFromFirebase, fetchOrdersNow } from "@/lib/firebase-inventory-sync"
 import { initializeFirestoreSync, cleanupFirestoreSync } from "@/lib/firestore-sync"
 import { startNotificationsListener, stopNotificationsListener } from "@/lib/notifications-store"
 
@@ -41,6 +41,10 @@ export function FirebaseSyncInitializer() {
     } catch (err) {
       console.warn("Firebase RTDB sync initialization encountered an error. App will use localStorage.")
     }
+
+    // *** CRITICAL: Fetch orders immediately so ALL admins see the same data on page load ***
+    // Don't wait for the onValue listener — fetch once right now so there's no blank gap.
+    fetchOrdersNow().catch(() => {})
 
     // Load orders-page orders from Firebase so they survive logout / device switch
     try {

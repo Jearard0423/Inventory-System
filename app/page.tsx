@@ -11,6 +11,7 @@ import { getLowStockItems, type InventoryItem, getCustomerOrders } from "@/lib/i
 import { getOrders, type Order } from "@/lib/orders"
 import { getCustomerAnalytics } from "@/lib/customers"
 import { useRouter } from "next/navigation"
+import { fetchOrdersNow } from "@/lib/firebase-inventory-sync"
 
 export default function DashboardPage() {
   const router = useRouter()
@@ -174,6 +175,7 @@ export default function DashboardPage() {
       setCustomers(getCustomerAnalytics())
     }
 
+    fetchOrdersNow().catch(() => {}) // instant cross-admin sync
     loadData()
     if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
       window.addEventListener("inventory-updated", loadData)
