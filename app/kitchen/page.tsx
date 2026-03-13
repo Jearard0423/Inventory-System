@@ -221,10 +221,20 @@ export default function KitchenPage() {
 
     // Update meal type every minute
     const mealTypeInterval = setInterval(updateMealType, 60000)
-    // also refresh order data periodically (ensures overnight/day‑change cleanup and delivered orders disappear)
-    const dataInterval = setInterval(loadData, 60000)
+    // Periodically sync from RTDB + reload so kitchen stays fresh even without user interaction
+    const dataInterval = setInterval(() => {
+      fetchKitchenNow().catch(() => {}).finally(() => loadData())
+    }, 60000)
 
-    const handleUpdate = () => { loadData() }
+    // On any order/kitchen update, fetch fresh kitchen state from RTDB then reload.
+    // This ensures newly-placed orders' kitchen items appear without a manual refresh.
+    const handleUpdate = () => {
+      if (kitchenFetchDebounceRef.current) clearTimeout(kitchenFetchDebounceRef.current)
+      kitchenFetchDebounceRef.current = setTimeout(() => {
+        kitchenFetchDebounceRef.current = null
+        fetchKitchenNow().catch(() => {}).finally(() => loadData())
+      }, 300)
+    }
     // Debounced kitchen fetch — prevents firebase-kitchen-updated loop
     // (fetchKitchenNow itself dispatches firebase-kitchen-updated, which would re-trigger without debounce)
     const handleFirebaseKitchen = () => {
