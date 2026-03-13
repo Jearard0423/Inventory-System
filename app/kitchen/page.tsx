@@ -44,6 +44,7 @@ export default function KitchenPage() {
   const auth = useAuth()
   // Guard: prevents loadData from re-entering itself when Firebase write → onValue → event → loadData
   const isLoadingRef = useRef(false)
+  const kitchenFetchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [kitchenItems, setKitchenItems] = useState<KitchenItem[]>([])
   const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([])
   const [todayOrders, setTodayOrders] = useState<CustomerOrder[]>([])
@@ -112,54 +113,24 @@ export default function KitchenPage() {
         .map(o => o.id)
     )
 
+    // Only skip truly final orders from the in-memory list.
+    // Do NOT delete based on date here — RTDB's isStaleOrder handles permanent cleanup.
+    // Deleting non-today orders from localStorage caused them to vanish for all admins.
     const recentOrders = allOrdersRaw.filter(order => {
       try {
         // Skip any order already archived as delivered/cancelled in history
-        if (finalHistoryIds.has(order.id)) {
-          console.log(`[Kitchen] Skipping history-finalized order: ${order.customerName} (${order.id})`)
-          return false
-        }
+        if (finalHistoryIds.has(order.id)) return false
         const s = (order.status || '').toLowerCase()
         const isFinal = s === 'delivered' || s === 'served' || s === 'cancelled' || s === 'canceled'
-
-        // Archive + remove truly final orders only (NOT complete/ready — those are cooked but awaiting delivery)
         if (isFinal) {
           archiveOrderToHistory(order)
-          console.log(`[Kitchen] Removing final order: ${order.customerName} (${order.id}) status=${order.status}`)
           return false
         }
-
-        // Use createdAt for "is this order from today or an advanced order for today"
-        // Use order.date only if it is today (advanced order scheduled for today)
-        const createdStr = order.createdAt
-        const scheduledStr = (order as any).date
-        const createdDate = createdStr ? new Date(createdStr) : null
-        const scheduledDate = scheduledStr ? (() => { const [y,m,d] = scheduledStr.split('-').map(Number); return new Date(y, m-1, d) })() : null
-
-        // Show if: created today OR scheduled delivery date is today
-        const createdToday = createdDate ? (createdDate.setHours(0,0,0,0), createdDate.getTime() === today.getTime()) : false
-        const scheduledToday = scheduledDate ? scheduledDate.getTime() === today.getTime() : false
-
-        if (!createdToday && !scheduledToday) {
-          console.log(`[Kitchen] Removing non-today order: ${order.customerName} created=${createdStr} scheduled=${scheduledStr}`)
-          return false
-        }
-
         return true
       } catch {
         return true
       }
     })
-
-    // Persist cleanup if anything was removed.
-    // IMPORTANT: use localStorage directly (not updateCustomerOrders) to avoid
-    // triggering a Firebase write → onValue → loadData infinite loop.
-    if (recentOrders.length < allOrdersRaw.length) {
-      try {
-        localStorage.setItem('yellowbell_customer_orders', JSON.stringify(recentOrders))
-      } catch { /* non-critical */ }
-      console.log(`[Kitchen] Cleanup: removed ${allOrdersRaw.length - recentOrders.length} stale orders`)
-    }
 
     const allOrders = recentOrders
     // Sanitize via JSON round-trip to prevent circular reference crash in React reconciler
@@ -285,7 +256,15 @@ export default function KitchenPage() {
     const dataInterval = setInterval(loadData, 60000)
 
     const handleUpdate = () => { loadData() }
-    const handleFirebaseKitchen = () => { fetchKitchenNow().catch(() => {}).finally(() => loadData()) }
+    // Debounced kitchen fetch — prevents firebase-kitchen-updated loop
+    // (fetchKitchenNow itself dispatches firebase-kitchen-updated, which would re-trigger without debounce)
+    const handleFirebaseKitchen = () => {
+      if (kitchenFetchDebounceRef.current) clearTimeout(kitchenFetchDebounceRef.current)
+      kitchenFetchDebounceRef.current = setTimeout(() => {
+        kitchenFetchDebounceRef.current = null
+        loadData()
+      }, 300)
+    }
     // firebase-orders-updated: RTDB pushed fresh data — reload immediately
     // This ensures deleted orders disappear on all clients as soon as Firebase fires
     const handleFirebaseOrders = (ev: Event) => {
@@ -296,8 +275,12 @@ export default function KitchenPage() {
           try { localStorage.setItem("yellowbell_customer_orders", JSON.stringify(detail.orders)) } catch {}
         }
       }
-      // Also fetch fresh kitchen state so cooked/undo actions by other admins appear instantly
-      fetchKitchenNow().catch(() => {}).finally(() => loadData())
+      // Debounced reload so rapid RTDB pushes collapse into one render
+      if (kitchenFetchDebounceRef.current) clearTimeout(kitchenFetchDebounceRef.current)
+      kitchenFetchDebounceRef.current = setTimeout(() => {
+        kitchenFetchDebounceRef.current = null
+        loadData()
+      }, 300)
     }
 
     if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {

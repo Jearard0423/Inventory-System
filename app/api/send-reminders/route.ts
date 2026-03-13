@@ -256,27 +256,19 @@ const FINAL_STATUSES = new Set(['delivered','served','cancelled','canceled','com
  * We combine them to get the exact delivery moment.
  */
 const getDeliveryDT = (order: any): Date | null => {
+  // Orders with no cookTime set are skipped — reminders only fire once a time is set
+  if (!order.cookTime) return null
+  const [h, m] = order.cookTime.split(':').map(Number)
+  if (isNaN(h) || isNaN(m)) return null
+
   // Prefer order.date (the cooking/delivery date) over createdAt
   const dateStr = order.date || order.createdAt || ''
   if (!dateStr) return null
 
-  const base = parseLocalDate(dateStr)
-
-  if (!order.cookTime) {
-    // No time set — treat delivery as 8:00 AM PHT on the delivery date
-    // This ensures orders with no time still get the day-before reminder
-    // (8:00 AM PHT = 00:00 UTC)
-    const dt = new Date(base)
-    dt.setHours(0, 0, 0, 0) // 00:00 UTC = 08:00 PHT
-    return dt
-  }
-
-  const [h, m] = order.cookTime.split(':').map(Number)
-  if (isNaN(h) || isNaN(m)) return null
-
   // cookTime is entered by admins in Philippine time (UTC+8).
   // We must convert to UTC so time math works correctly on the server (which runs in UTC).
   // e.g. 23:00 PHT = 15:00 UTC
+  const base = parseLocalDate(dateStr)
   const dt = new Date(base)
   dt.setHours(h - 8, m, 0, 0)  // convert PHT → UTC
   return dt
