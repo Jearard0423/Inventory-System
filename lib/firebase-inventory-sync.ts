@@ -126,7 +126,9 @@ export const forceRefreshInventoryFromFirebase = async () => {
  * Sets up real-time listeners for inventory, orders, kitchen items, and menu
  * Gracefully falls back to localStorage if permissions are denied
  */
-const DONE_STATUSES_SYNC = new Set(["delivered","served","cancelled","canceled","complete","completed"])
+// NOTE: "complete" is intentionally excluded here — kitchen needs to show complete orders
+// (cooked but not yet delivered). Only truly final statuses are filtered out.
+const DONE_STATUSES_SYNC = new Set(["delivered","served","cancelled","canceled","completed"])
 
 // IMPORTANT: We use the delivery date (o.date / cookTime date), NOT createdAt.
 // Orders placed today for 3 days from now must NOT be purged just because
@@ -288,15 +290,11 @@ export const initializeFirebaseSync = () => {
           // The only exception: orders created in the last 10 seconds that haven't synced yet.
           const now = Date.now()
           const merged: any[] = []
+          // Remote (Firebase) ALWAYS wins — it is the single source of truth.
+          // Any edit by any admin goes to Firebase first, so remote is always correct.
+          // Never let a stale local copy override a Firebase edit from another admin.
           remoteMap.forEach((remote, id) => {
-            const local = localMap.get(id)
-            if (local) {
-              const remoteTs = new Date(remote.lastUpdated || remote.createdAt || 0).getTime()
-              const localTs  = new Date(local.lastUpdated  || local.createdAt  || 0).getTime()
-              merged.push(localTs > remoteTs ? local : remote)
-            } else {
-              merged.push(remote)
-            }
+            merged.push(remote)
           })
           // Only keep local-only orders if they were just created (within 10s) — not yet synced to Firebase.
           // This prevents ghost orders from re-appearing after another admin deletes them.

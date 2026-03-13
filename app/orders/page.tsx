@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { getOrders, deleteOrder, updateOrder } from "@/lib/orders"
+import { fetchOrdersNow } from "@/lib/firebase-inventory-sync"
 import { saveNotification } from "@/lib/notifications-store"
 import { useToast } from '@/hooks/use-toast'
 import { Pagination } from "@/components/pagination"
@@ -246,6 +247,7 @@ export default function OrdersPage() {
       setOrders(regularOrders)
     }
 
+    fetchOrdersNow().catch(() => {}) // instant cross-admin sync
     loadOrders()
     window.addEventListener("orders-updated", loadOrders)
     window.addEventListener("prepared-orders-updated", loadOrders)
