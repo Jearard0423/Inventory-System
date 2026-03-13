@@ -938,6 +938,76 @@ export const saveOrdersPageToFirebase = async (orderId: string, order: any) => {
  * Fetch kitchen items from RTDB immediately on page mount.
  * Ensures all admins see the correct kitchen state without waiting for onValue.
  */
+/**
+ * Rebuild kitchen items from /inventories/orders if /inventories/kitchen is missing items.
+ * Called on kitchen page mount to ensure all orders have corresponding kitchen items.
+ * This handles the case where orders were placed before kitchen→Firebase sync was deployed.
+ */
+export const rebuildKitchenFromOrders = async (): Promise<void> => {
+  if (typeof window === 'undefined') return
+  try {
+    const { get, ref: dbRef, set: dbSet } = await import('firebase/database')
+    const [ordersSnap, kitchenSnap] = await Promise.all([
+      get(dbRef(database, 'inventories/orders')),
+      get(dbRef(database, 'inventories/kitchen')),
+    ])
+
+    if (!ordersSnap.exists()) return
+
+    const orders = Object.values(ordersSnap.val() as Record<string, any>)
+    const FINAL = new Set(['delivered', 'served', 'cancelled', 'canceled', 'completed'])
+    const activeOrders = orders.filter((o: any) => !FINAL.has((o.status || '').toLowerCase()))
+
+    // Get existing kitchen items
+    const existingKitchen: Record<string, any> = kitchenSnap.exists() ? kitchenSnap.val() : {}
+    const existingOrderIds = new Set(
+      Object.values(existingKitchen).map((k: any) => k.orderId)
+    )
+
+    // Find active orders that have NO kitchen items yet
+    const missingOrders = activeOrders.filter((o: any) => !existingOrderIds.has(o.id))
+    if (missingOrders.length === 0) {
+      console.log('[firebase-sync] rebuildKitchenFromOrders: all orders have kitchen items')
+      return
+    }
+
+    console.log(`[firebase-sync] rebuilding kitchen items for ${missingOrders.length} orders missing from /inventories/kitchen`)
+
+    // Build kitchen items for missing orders
+    const newKitchenItems: Record<string, any> = { ...existingKitchen }
+    missingOrders.forEach((order: any) => {
+      const items = order.orderedItems || order.items || []
+      items.forEach((item: any) => {
+        const id = `${order.id}_${item.name}`.replace(/[^a-zA-Z0-9_]/g, '_')
+        newKitchenItems[id] = {
+          id,
+          orderId: order.id,
+          customerName: order.customerName,
+          name: item.name,
+          itemName: item.name,
+          quantity: item.quantity,
+          totalOrdered: item.quantity,
+          totalCooked: 0,
+          pending: item.quantity,
+          status: 'to-cook',
+          category: 'other',
+          cookedItems: order.cookedItems || [],
+        }
+      })
+    })
+
+    // Write rebuilt kitchen items to Firebase
+    await dbSet(dbRef(database, 'inventories/kitchen'), newKitchenItems)
+    const itemsArray = Object.values(newKitchenItems)
+    localStorage.setItem('yellowbell_kitchen_items', JSON.stringify(itemsArray))
+    window.dispatchEvent(new CustomEvent('firebase-kitchen-updated', { detail: newKitchenItems }))
+    window.dispatchEvent(new Event('kitchen-updated'))
+    console.log(`[firebase-sync] rebuilt ${itemsArray.length} kitchen items from ${activeOrders.length} active orders`)
+  } catch (e) {
+    console.warn('[firebase-sync] rebuildKitchenFromOrders failed:', e)
+  }
+}
+
 export const fetchKitchenNow = async (): Promise<void> => {
   if (typeof window === 'undefined') return
   try {

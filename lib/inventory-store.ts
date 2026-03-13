@@ -560,17 +560,22 @@ export const setCustomerOrdersFromRTDB = (orders: CustomerOrder[]): void => {
   }
 };
 
-export const updateCustomerOrders = (orders: CustomerOrder[]): void => {
+export const updateCustomerOrders = (orders: CustomerOrder[], changedOrderIds?: string[]): void => {
   customerOrders = [...orders];
   saveToLocalStorage(CUSTOMER_ORDERS_KEY, customerOrders);
-  // Sync every order to Firebase RTDB so all admins see status changes in real-time
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('customer-orders-updated'));
+  }
+  // Only sync the orders that actually changed (avoids blasting all orders to Firebase)
+  const toSync = changedOrderIds
+    ? customerOrders.filter(o => changedOrderIds.includes(o.id))
+    : [] // callers that don't pass changedOrderIds must sync manually
   try {
     const { updateOrderInFirebase } = require('./firebase-inventory-sync');
-    customerOrders.forEach((order: CustomerOrder) => {
+    toSync.forEach((order: CustomerOrder) => {
       updateOrderInFirebase(order.id, {
         status: order.status,
         cookedItems: order.cookedItems || [],
-        paymentStatus: order.paymentStatus,
       }).catch(() => {});
     });
   } catch { /* non-critical */ }
@@ -750,12 +755,30 @@ export const markItemAsCooked = (itemId: string, quantity?: number, orderId?: st
     }
   }
   
-  // Update the kitchen items
+  // Update the kitchen items (also writes to Firebase /inventories/kitchen)
   updateKitchenItems([...kitchenItems]);
   // Persist customer orders update for downstream views
   saveToLocalStorage(CUSTOMER_ORDERS_KEY, customerOrders);
-  // Persist kitchen items update
   saveToLocalStorage(KITCHEN_ITEMS_KEY, kitchenItems);
+
+  // Sync the specific order status+cookedItems to Firebase so all admins see it
+  if (orderId) {
+    const changedOrder = customerOrders.find(o => o.id === orderId);
+    if (changedOrder) {
+      try {
+        const { updateOrderInFirebase } = require('./firebase-inventory-sync');
+        updateOrderInFirebase(orderId, {
+          status: changedOrder.status,
+          cookedItems: changedOrder.cookedItems || [],
+        }).catch(() => {});
+      } catch { /* non-critical */ }
+    }
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('customer-orders-updated'));
+    window.dispatchEvent(new Event('kitchen-updated'));
+  }
   return true;
 };
 

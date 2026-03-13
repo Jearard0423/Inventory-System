@@ -112,6 +112,10 @@ export const parseLocalDate = (dateString: string): Date => {
   return new Date(year, month - 1, day)
 }
 
+// Helper: get order items regardless of whether order is Order (uses .items) or CustomerOrder (uses .orderedItems)
+const getOrderItems = (order: any): Array<{ name: string; quantity: number }> =>
+  getOrderItems(order) || order.items || []
+
 // default interval for kitchen reminders (milliseconds)
 let REMINDER_INTERVAL = 30 * 60 * 1000 // 30 minutes, can be adjusted via setReminderInterval()
 
@@ -214,7 +218,7 @@ const headerColorsForMeal = (mealType?: string) => {
 
 /** Render a clean styled order row for use inside the email table */
 const renderOrderRow = (o: CustomerOrder, colors: ReturnType<typeof headerColorsForMeal>, isAlt: boolean) => {
-  const items = (o.orderedItems || []).map((i: any) => `<strong>${i.quantity}×</strong> ${i.name}`).join(', ')
+  const items = (getOrderItems(o) || []).map((i: any) => `<strong>${i.quantity}×</strong> ${i.name}`).join(', ')
   const delivTime = o.cookTime ? formatCookTime(o.cookTime) : '—'
   const payment = (o.paymentStatus === 'paid')
     ? `<span style="color:#16a34a;font-weight:600;">✓ Paid</span>`
@@ -380,7 +384,7 @@ const groupOrdersByDeliveryTime = (orders: CustomerOrder[]): string => {
             ${groups['within_1hr'].map(o => `
               <tr style="border: 1px solid #fca5a5; background-color: #fef2f2;">
                 <td style="padding: 10px; color: #374151;">${o.customerName}</td>
-                <td style="padding: 10px; color: #374151;">${o.orderedItems.map((i: any) => `${i.quantity}× ${i.name}`).join(', ')}</td>
+                <td style="padding: 10px; color: #374151;">${getOrderItems(o).map((i: any) => `${i.quantity}× ${i.name}`).join(', ')}</td>
                 <td style="padding: 10px; color: #374151;">${o.createdAt || 'Today'}</td>
                 <td style="padding: 10px; color: #dc2626; font-weight: 600;">${o.cookTime || 'Immediate'}</td>
               </tr>
@@ -412,7 +416,7 @@ const groupOrdersByDeliveryTime = (orders: CustomerOrder[]): string => {
             ${groups['above_2hrs'].map(o => `
               <tr style="border: 1px solid #fdba74; background-color: #fffbeb;">
                 <td style="padding: 10px; color: #374151;">${o.customerName}</td>
-                <td style="padding: 10px; color: #374151;">${o.orderedItems.map((i: any) => `${i.quantity}× ${i.name}`).join(', ')}</td>
+                <td style="padding: 10px; color: #374151;">${getOrderItems(o).map((i: any) => `${i.quantity}× ${i.name}`).join(', ')}</td>
                 <td style="padding: 10px; color: #374151;">${o.createdAt || 'Today'}</td>
                 <td style="padding: 10px; color: #ea580c; font-weight: 600;">${o.cookTime || 'Not set'}</td>
               </tr>
@@ -451,7 +455,7 @@ const groupOrdersByDeliveryTime = (orders: CustomerOrder[]): string => {
               return `
               <tr style="border: 1px solid #93c5fd; background-color: #f0f9ff;">
                 <td style="padding: 10px; color: #374151;">${o.customerName}</td>
-                <td style="padding: 10px; color: #374151;">${o.orderedItems.map((i: any) => `${i.quantity}× ${i.name}`).join(', ')}</td>
+                <td style="padding: 10px; color: #374151;">${getOrderItems(o).map((i: any) => `${i.quantity}× ${i.name}`).join(', ')}</td>
                 <td style="padding: 10px; color: #374151;">${dateLabel}</td>
                 <td style="padding: 10px; color: #0284c7; font-weight: 600;">${o.cookTime || 'Not set'}</td>
               </tr>
@@ -478,7 +482,7 @@ const formatOrderDetailsForEmail = (orders: CustomerOrder[]): string => {
   })
 
   incompleteOrders.forEach(order => {
-    const pendingItems = order.orderedItems
+    const pendingItems = getOrderItems(order)
       .map(item => {
         const cooked = order.cookedItems?.find(c => c.name === item.name)
         const cookedQty = cooked?.quantity || 0
@@ -723,7 +727,7 @@ ${todayLabel()} at ${nowLabel()} (Asia/Manila)
 
 Orders to prepare today:
 ${todayOrders.map(order => {
-  const pendingItems = order.orderedItems
+  const pendingItems = getOrderItems(order)
     .map(item => {
       const cooked = order.cookedItems?.find(c => c.name === item.name)
       const cookedQty = cooked?.quantity || 0
@@ -1001,8 +1005,8 @@ export const sendOrderPlacedNotification = async (
           <div style="background: white; padding: 16px; border-radius: 6px; border-left: 4px solid #dc2626;">
             <p style="margin: 0 0 12px; color: #6b7280; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">📋 Order Items:</p>
             <ul style="margin: 0; padding-left: 20px; list-style: none;">
-              ${order.items
-                .map(i => `<li style="color: #374151; margin-bottom: 6px; font-size: 15px;">
+              ${getOrderItems(order)
+                .map((i: any) => `<li style="color: #374151; margin-bottom: 6px; font-size: 15px;">
                   <span style="display: inline-block; width: 24px; text-align: center; font-weight: 600; color: #dc2626;">${i.quantity}×</span>
                   <span style="font-weight: 500;">${i.name}</span>
                 </li>`)
@@ -1024,8 +1028,8 @@ Customer: ${order.customerName}
 Received: ${todayLabel()} at ${nowLabel()}
 
 Order Items:
-${order.items
-  .map(i => `- ${i.quantity}x ${i.name}`)
+${getOrderItems(order)
+  .map((i: any) => `- ${i.quantity}x ${i.name}`)
   .join('\n')}
 
 URGENT: No delivery time was specified. Prepare this order ASAP!`
@@ -1076,8 +1080,8 @@ URGENT: No delivery time was specified. Prepare this order ASAP!`
         <div style="background: white; padding: 16px; border-radius: 6px; border-left: 4px solid #dc2626;">
           <p style="margin: 0 0 12px; color: #6b7280; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">📋 Order Items:</p>
           <ul style="margin: 0; padding-left: 20px; list-style: none;">
-            ${order.items
-              .map(i => `<li style="color: #374151; margin-bottom: 6px; font-size: 15px;">
+            ${getOrderItems(order)
+              .map((i: any) => `<li style="color: #374151; margin-bottom: 6px; font-size: 15px;">
                 <span style="display: inline-block; width: 24px; text-align: center; font-weight: 600; color: #dc2626;">${i.quantity}×</span>
                 <span style="font-weight: 500;">${i.name}</span>
               </li>`) 
@@ -1100,8 +1104,8 @@ Delivery Time: ${deliveryTimeLabel}
 Time Remaining: ~${Math.round(hoursUntilDelivery * 60)} minutes
 
 Order Items:
-${order.items
-  .map(i => `- ${i.quantity}x ${i.name}`)
+${getOrderItems(order)
+  .map((i: any) => `- ${i.quantity}x ${i.name}`)
   .join('\n')}
 
 START PREPARATION NOW - Delivery in ~${Math.round(hoursUntilDelivery * 60)} minutes!`
@@ -1160,8 +1164,8 @@ export const sendUpcomingOrdersReminder = async (
           <div style="background: white; padding: 16px; border-radius: 6px; margin-bottom: 12px; border-left: 4px solid #d97706;">
             <h4 style="color: #374151; margin: 0 0 8px; font-size: 16px;">${index + 1}. 👤 ${order.customerName}</h4>
             <ul style="margin: 0; padding-left: 20px;">
-              ${order.items
-                .map(i => `<li style="color: #374151; margin-bottom: 2px;">${i.quantity}× ${i.name}</li>`)
+              ${getOrderItems(order)
+                .map((i: any) => `<li style="color: #374151; margin-bottom: 2px;">${i.quantity}× ${i.name}</li>`)
                 .join('')}
             </ul>
           </div>
@@ -1182,7 +1186,7 @@ You have ${tomorrowOrders.length} order${tomorrowOrders.length > 1 ? 's' : ''} s
 
 ${tomorrowOrders.map((order, index) => `
 ${index + 1}. ${order.customerName}
-${order.items.map(i => `   - ${i.quantity}x ${i.name}`).join('\n')}
+${getOrderItems(order).map((i: any) => `   - ${i.quantity}x ${i.name}`).join('\n')}
 `).join('\n')}
 
 Please ensure all ingredients and preparations are ready for tomorrow's orders.`
@@ -1450,7 +1454,7 @@ Delivery: ${deliveryDateLabel} at ${deliveryTimeLabel}
 
 ${orders
       .map(o =>
-        `${o.customerName} | ${o.orderedItems
+        `${o.customerName} | ${getOrderItems(o)
           .map((i: any) => `${i.quantity}x ${i.name}`)
           .join(', ')}`
       )
@@ -1536,7 +1540,7 @@ Date: ${deliveryDateLabel}
 
 ${orders
       .map(o =>
-        `${o.customerName} | ${o.orderedItems
+        `${o.customerName} | ${getOrderItems(o)
           .map((i: any) => `${i.quantity}x ${i.name}`)
           .join(', ')}`
       )
@@ -1621,7 +1625,7 @@ Date: ${deliveryDateLabel}
 
 ${orders
       .map(o =>
-        `${o.customerName} | ${o.orderedItems
+        `${o.customerName} | ${getOrderItems(o)
           .map((i: any) => `${i.quantity}x ${i.name}`)
           .join(', ')}`
       )

@@ -23,7 +23,7 @@ import { checkAndSendFoodPreparationReminder, resetNotificationState, checkAndSe
 import { useAuth } from "@/components/AuthProvider"
 import { checkAndFireOrderReminders, resetOrderReminders } from "@/lib/order-reminders"
 import { syncOrderToRTDB, logOrderEvent } from "@/lib/rtdb-sync"
-import { fetchOrdersNow, fetchKitchenNow } from "@/lib/firebase-inventory-sync"
+import { fetchOrdersNow, fetchKitchenNow, rebuildKitchenFromOrders } from "@/lib/firebase-inventory-sync"
 
 // Helper function to convert 24-hour time to 12-hour format
 const formatTimeForDisplay = (time24: string): string => {
@@ -148,14 +148,6 @@ export default function KitchenPage() {
           return false
         }
 
-        // Remove if incomplete/cooking but has NO kitchen items at all (stale ghost order)
-        const hasKitchenItems = kItems.some(ki => ki.orderId === order.id)
-        const isActiveStatus = s === 'incomplete' || s === 'cooking'
-        if (isActiveStatus && !hasKitchenItems) {
-          console.log(`[Kitchen] Removing ghost order with no kitchen items: ${order.customerName} (${order.id})`)
-          return false
-        }
-
         return true
       } catch {
         return true
@@ -274,9 +266,18 @@ export default function KitchenPage() {
   }
 
   useEffect(() => {
-    fetchOrdersNow().catch(() => {}) // instant cross-admin sync
-    fetchKitchenNow().catch(() => {}) // instant kitchen sync
-    loadData()
+    // Fetch fresh data from Firebase FIRST, then load — prevents race where
+    // loadData runs before Firebase responds and incorrectly removes orders
+    const init = async () => {
+      await Promise.all([
+        fetchOrdersNow().catch(() => {}),
+        fetchKitchenNow().catch(() => {}),
+      ])
+      // If Firebase kitchen is missing items for existing orders, rebuild it
+      await rebuildKitchenFromOrders().catch(() => {})
+      loadData()
+    }
+    init()
     updateMealType()
 
     // Update meal type every minute
@@ -674,7 +675,9 @@ export default function KitchenPage() {
       }
     })
 
-    updateCustomerOrders(updatedWithStatus)
+    // Only sync the orders that actually changed
+    const changedIds = itemsToUndo.map(i => i.orderId).filter(Boolean) as string[]
+    updateCustomerOrders(updatedWithStatus, [...new Set(changedIds)])
     window.dispatchEvent(new Event("delivery-updated"))
     loadData()
     
