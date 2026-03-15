@@ -144,6 +144,13 @@ export default function DeliveryPage() {
     window.addEventListener("firebase-orders-updated", handleFirebaseOrders)
     window.addEventListener("firebase-kitchen-updated", handleFirebaseKitchen)
 
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        fetchOrdersNow().catch(() => {}).finally(() => loadData())
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibility)
+
     return () => {
       clearInterval(mealTypeInterval)
       window.removeEventListener("customer-orders-updated", handleUpdate)
@@ -152,6 +159,7 @@ export default function DeliveryPage() {
       window.removeEventListener("delivery-updated", handleUpdate)
       window.removeEventListener("firebase-orders-updated", handleFirebaseOrders)
       window.removeEventListener("firebase-kitchen-updated", handleFirebaseKitchen)
+      document.removeEventListener("visibilitychange", handleVisibility)
     }
   }, [filterMealType])
 

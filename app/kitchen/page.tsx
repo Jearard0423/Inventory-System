@@ -272,6 +272,16 @@ export default function KitchenPage() {
       }, 150)
     }
 
+    // Re-sync from RTDB when tab becomes visible (mobile browsers pause WebSocket when backgrounded)
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        Promise.all([
+          fetchOrdersNow().catch(() => {}),
+          fetchKitchenNow().catch(() => {}),
+        ]).finally(() => loadData())
+      }
+    }
+
     if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
       window.addEventListener("kitchen-updated", handleUpdate)
       window.addEventListener("orders-updated", handleUpdate)
@@ -281,6 +291,7 @@ export default function KitchenPage() {
       window.addEventListener("storage", handleUpdate)
       window.addEventListener("firebase-orders-updated", handleFirebaseOrders)
       window.addEventListener("firebase-kitchen-updated", handleFirebaseKitchen)
+      document.addEventListener("visibilitychange", handleVisibility)
     } else {
       console.warn('[kitchen-page] window.addEventListener is not available in this environment')
     }
@@ -373,8 +384,9 @@ export default function KitchenPage() {
         window.removeEventListener("inventory-updated", handleUpdate)
         window.removeEventListener("delivery-updated", handleUpdate)
         window.removeEventListener("storage", handleUpdate)
-        window.removeEventListener("firebase-orders-updated", handleUpdate)
+        window.removeEventListener("firebase-orders-updated", handleFirebaseOrders)
         window.removeEventListener("firebase-kitchen-updated", handleFirebaseKitchen)
+        document.removeEventListener("visibilitychange", handleVisibility)
       }
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
