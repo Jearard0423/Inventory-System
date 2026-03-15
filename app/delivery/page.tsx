@@ -103,12 +103,14 @@ export default function DeliveryPage() {
     // force-fetch fresh orders AND kitchen data before reloading UI
     // firebase-orders-updated fires when ANY admin changes an order (mark delivered, cancel, edit)
     // We re-fetch from RTDB so this admin's UI reflects the other admin's action immediately
+    // firebase-orders-updated already carries fresh orders in detail.orders — just apply + reload.
+    // NEVER call fetchOrdersNow() here: it dispatches firebase-orders-updated again → infinite loop.
     const handleFirebaseOrders = (ev: Event) => {
       const detail = (ev as CustomEvent).detail
       if (detail?.orders && typeof window !== "undefined") {
         try { localStorage.setItem("yellowbell_customer_orders", JSON.stringify(detail.orders)) } catch {}
       }
-      fetchOrdersNow().catch(() => {}).finally(() => loadData())
+      loadData()
     }
     const handleFirebaseKitchen = () => { fetchKitchenNow().catch(() => {}).finally(() => loadData()) }
 

@@ -246,15 +246,13 @@ export default function KitchenPage() {
     }
     // firebase-orders-updated: RTDB pushed fresh data — reload immediately
     // This ensures deleted orders disappear on all clients as soon as Firebase fires
+    // firebase-orders-updated carries fresh orders in detail — just apply + debounce reload.
+    // NEVER call fetchOrdersNow() here: it dispatches firebase-orders-updated again → infinite loop.
     const handleFirebaseOrders = (ev: Event) => {
       const detail = (ev as CustomEvent).detail
-      if (detail?.orders) {
-        // Directly invalidate in-memory cache so next loadData() reads fresh array
-        if (typeof window !== 'undefined') {
-          try { localStorage.setItem("yellowbell_customer_orders", JSON.stringify(detail.orders)) } catch {}
-        }
+      if (detail?.orders && typeof window !== 'undefined') {
+        try { localStorage.setItem('yellowbell_customer_orders', JSON.stringify(detail.orders)) } catch {}
       }
-      // Debounced reload so rapid RTDB pushes collapse into one render
       if (kitchenFetchDebounceRef.current) clearTimeout(kitchenFetchDebounceRef.current)
       kitchenFetchDebounceRef.current = setTimeout(() => {
         kitchenFetchDebounceRef.current = null
