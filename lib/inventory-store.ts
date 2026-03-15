@@ -15,6 +15,9 @@ export interface KitchenItem {
   itemName: string
   cookedAt?: string
   quantity?: number
+  mealType?: string
+  cookTime?: string
+  date?: string
 }
 
 export interface InventoryItem {
@@ -815,6 +818,9 @@ interface NewOrder {
   deliveryPhone?: string;
   deliveryAddress?: string;
   mealType?: string;
+  originalMealType?: string;
+  cookTime?: string;
+  date?: string;
   deliveryMethod?: 'hand-in' | 'lalamove';
   paymentStatus?: 'paid' | 'unpaid';
   total?: number;
@@ -864,7 +870,10 @@ export const addCustomerOrder = (order: NewOrder): CustomerOrder => {
         status: 'to-cook',
         customerName: order.customerName,
         itemName: orderedItem.name,
-        quantity: orderedItem.quantity
+        quantity: orderedItem.quantity,
+        mealType: order.mealType || order.originalMealType || '',
+        cookTime: order.cookTime || '',
+        date: order.date || '',
       };
       kitchenItems.push(kitchenItem);
     }
@@ -888,8 +897,18 @@ export const markOrderAsDelivered = (orderId: string): boolean => {
   
   customerOrders[orderIndex].status = 'delivered';
 
-  // Archive to permanent history so order-history page always has it
-  archiveOrderToHistory(customerOrders[orderIndex]);
+  // Build a complete order for archiving: merge in-memory with localStorage version
+  // (in-memory object may be missing orderedItems if it came from a partial Firebase patch)
+  const fullOrderForArchive = (() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(CUSTOMER_ORDERS_KEY) || '[]')
+      const storedOrder = stored.find((o: any) => o.id === orderId)
+      return storedOrder
+        ? { ...storedOrder, ...customerOrders[orderIndex], status: 'delivered' }
+        : customerOrders[orderIndex]
+    } catch { return customerOrders[orderIndex] }
+  })()
+  archiveOrderToHistory(fullOrderForArchive);
 
   // attempt to sync with RTDB (non-blocking)
   try {
@@ -932,13 +951,13 @@ export const markOrderAsDelivered = (orderId: string): boolean => {
   if (typeof window !== 'undefined') {
     try {
       const existingOrders = JSON.parse(localStorage.getItem("yellowbell_orders") || "[]")
-      const updatedOrders = existingOrders.map((o: any) => o.id === orderId ? { ...o, status: 'complete' } : o)
+      const updatedOrders = existingOrders.map((o: any) => o.id === orderId ? { ...o, status: 'delivered' } : o)
       localStorage.setItem("yellowbell_orders", JSON.stringify(updatedOrders))
       window.dispatchEvent(new Event('orders-updated'))
       // Sync status change to Firebase ordersPage node
       try {
         const { updateOrderInFirebase } = require('./firebase-inventory-sync')
-        updateOrderInFirebase(orderId, { status: 'complete' }).catch(() => {})
+        updateOrderInFirebase(orderId, { status: 'delivered' }).catch(() => {})
       } catch { /* non-critical */ }
     } catch (e) {
       // ignore

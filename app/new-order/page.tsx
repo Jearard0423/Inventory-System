@@ -118,6 +118,7 @@ export default function NewOrderPage() {
   const [cookingDate, setCookingDate] = useState("")
   const [cookTime, setCookTime] = useState("")
   const [menuItems, setMenuItems] = useState<InventoryItem[]>([])
+  const [preparedBatches, setPreparedBatches] = useState<Array<any>>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [amountGiven, setAmountGiven] = useState("")
   const [gcashPhone, setGcashPhone] = useState("")
@@ -188,6 +189,16 @@ export default function NewOrderPage() {
         return item.stock > 0
       })
       setMenuItems(inventory)
+      // Load prepared order batches with remaining stock
+      try {
+        const raw = localStorage.getItem("yellowbell_prepared_orders")
+        const batches = raw ? JSON.parse(raw) : []
+        const active = batches.filter((b: any) =>
+          b.status === "prepared" &&
+          b.items?.some((i: any) => (i.remainingQuantity ?? i.quantity) > 0)
+        )
+        setPreparedBatches(active)
+      } catch { setPreparedBatches([]) }
     }
 
     const loadCustomers = () => {
@@ -197,9 +208,11 @@ export default function NewOrderPage() {
     loadInventory()
     loadCustomers()
     window.addEventListener("inventory-updated", loadInventory)
+    window.addEventListener("prepared-orders-updated", loadInventory)
     window.addEventListener("orders-updated", loadCustomers)
     return () => {
       window.removeEventListener("inventory-updated", loadInventory)
+      window.removeEventListener("prepared-orders-updated", loadInventory)
       window.removeEventListener("orders-updated", loadCustomers)
     }
   }, [])
@@ -233,6 +246,28 @@ export default function NewOrderPage() {
     const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase())
     return matchesCategory && matchesSearch
   })
+
+  const addPreparedToOrder = (batchId: string, itemName: string, price: number, available: number) => {
+    if (!customerName.trim()) {
+      setErrors(prev => ({ ...prev, customerName: "Please enter the customer name first" }))
+      const field = document.getElementById('customer-name')
+      if (field) { field.scrollIntoView({ behavior: 'smooth', block: 'center' }); field.focus() }
+      return
+    }
+    const itemId = `prepared_${batchId}_${itemName}`
+    const existing = orderItems.find(i => i.id === itemId)
+    const currentQty = existing?.quantity ?? 0
+    if (currentQty >= available) {
+      setErrors(prev => ({ ...prev, orderItems: `Only ${available} available for ${itemName}` }))
+      return
+    }
+    setErrors(prev => ({ ...prev, orderItems: "" }))
+    if (existing) {
+      setOrderItems(prev => prev.map(i => i.id === itemId ? { ...i, quantity: i.quantity + 1 } : i))
+    } else {
+      setOrderItems(prev => [...prev, { id: itemId, name: itemName, price, quantity: 1 }])
+    }
+  }
 
   const addToOrder = (item: InventoryItem) => {
     // Customer name must be entered first
@@ -1795,6 +1830,54 @@ export default function NewOrderPage() {
                 </div>
               </CardContent>
             </Card>
+
+            {preparedBatches.length > 0 && (
+              <Card className="border-amber-200 bg-amber-50/40">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-amber-800 flex items-center gap-2">
+                    <Package className="h-5 w-5" />
+                    Prepared Orders
+                  </CardTitle>
+                  <p className="text-sm text-amber-700">Ready-to-serve items from prepared batches</p>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {preparedBatches.flatMap(batch =>
+                      batch.items
+                        .filter((i: any) => (i.remainingQuantity ?? i.quantity) > 0)
+                        .map((item: any) => {
+                          const qty = item.remainingQuantity ?? item.quantity
+                          const inCart = orderItems.find(o => o.id === `prepared_${batch.id}_${item.name}`)?.quantity ?? 0
+                          const remaining = qty - inCart
+                          return (
+                            <button
+                              key={`${batch.id}_${item.name}`}
+                              onClick={() => addPreparedToOrder(batch.id, item.name, item.price, qty)}
+                              disabled={remaining <= 0}
+                              className={cn(
+                                "p-4 bg-white border border-amber-200 rounded-lg text-left transition-colors",
+                                remaining > 0
+                                  ? "hover:border-amber-400 hover:bg-amber-50"
+                                  : "opacity-50 cursor-not-allowed"
+                              )}
+                            >
+                              <div className="flex justify-between items-start">
+                                <div className="flex-1">
+                                  <p className="font-medium text-lg">{item.name}</p>
+                                  <p className={cn("text-sm mt-1 font-medium", remaining > 0 ? "text-amber-700" : "text-red-500")}>
+                                    {remaining > 0 ? `${remaining} available` : "Out of stock"}
+                                  </p>
+                                </div>
+                                <p className="text-xl font-bold text-amber-800">₱{item.price}</p>
+                              </div>
+                            </button>
+                          )
+                        })
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             <Card>
               <CardHeader>

@@ -440,10 +440,17 @@ export default function KitchenPage() {
   
   const cookedItems = kitchenItems.filter((item) => {
     if (item.status !== 'cooked') return false
-    const mealFilter = filterMealType
+    // mealType on kitchen item may not be set; fall back to checking via todayOrders
+    const mealFilter = filterMealTypeRef.current
     if (mealFilter === 'all') return true
     const mt = ((item as any).mealType || '').toLowerCase()
-    return mt === mealFilter || mt === ''
+    if (mt) return mt === mealFilter
+    // check via order
+    const order = todayOrders.find(o => o.id === item.orderId) ||
+                  customerOrders.find(o => o.id === item.orderId)
+    if (!order) return true
+    const orderMt = (order.mealType || order.originalMealType || '').toLowerCase()
+    return orderMt === mealFilter || orderMt === ''
   })
 
   // Group items by name — sorted by cookTime then customer name

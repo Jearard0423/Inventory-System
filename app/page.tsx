@@ -101,7 +101,7 @@ export default function DashboardPage() {
     // Exclude if RTDB says it's delivered or cancelled
     if (cust) {
       const custStatus = (cust.status || '').toLowerCase()
-      if (CANCELLED_STATUSES.has(custStatus) || custStatus === 'delivered' || custStatus === 'served') return false
+      if (CANCELLED_STATUSES.has(custStatus) || custStatus === 'delivered' || custStatus === 'served' || custStatus === 'complete') return false
     }
     return createdDate.toDateString() === today.toDateString()
   })
