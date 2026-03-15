@@ -450,6 +450,9 @@ export default function KitchenPage() {
   const toCookItems = kitchenItems
     .filter((item) => {
       if (item.status !== 'to-cook') return false
+      // Skip items with nothing left to cook (pending=0 means all units done)
+      const pending = item.pending ?? (item.totalOrdered - (item.totalCooked || 0))
+      if (pending <= 0) return false
       const mealFilter = filterMealType
       if (mealFilter === 'all') return true
       const mt = ((item as any).mealType || '').toLowerCase()
@@ -564,8 +567,34 @@ export default function KitchenPage() {
       else console.warn('[Kitchen] markItemAsCooked failed for id:', itemToMark.id)
     }
     if (!anyMarked) {
-      console.warn('[Kitchen] No items were marked — kitchen items may be out of sync, re-fetching')
-      fetchKitchenNow().catch(() => {}).finally(() => loadData())
+      console.warn('[Kitchen] No items were marked — kitchen items out of sync, reloading from Firebase and retrying')
+      // Reload kitchen from Firebase then retry once
+      fetchKitchenNow().catch(() => {}).finally(async () => {
+        await rebuildKitchenFromOrders().catch(() => {})
+        loadData()
+        // Retry mark after reload
+        const retryItems = getKitchenItems().filter(item =>
+          item.status === 'to-cook' && item.itemName === itemName
+        )
+        let retryRemaining = quantity
+        let retryMarked = 0
+        for (const it of retryItems) {
+          if (retryRemaining <= 0) break
+          const canCook = Math.max(0, (it.totalOrdered || it.quantity || 1) - (it.totalCooked || 0))
+          const cookNow = Math.min(retryRemaining, canCook)
+          if (cookNow <= 0) continue
+          const ok = markItemAsCooked(it.id, cookNow, it.orderId)
+          if (ok) { retryRemaining -= cookNow; retryMarked += cookNow }
+        }
+        if (retryMarked > 0) {
+          window.dispatchEvent(new Event('delivery-updated'))
+          loadData()
+          setMarkedItemName(itemName)
+          setMarkedItemQuantity(retryMarked)
+          setMarkedItemDialogOpen(true)
+          setQuantityInputs(prev => ({ ...prev, [itemName]: '' }))
+        }
+      })
       return
     }
     window.dispatchEvent(new Event("delivery-updated"))

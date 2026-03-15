@@ -256,11 +256,36 @@ export const initializeFirebaseSync = () => {
           } else {
             console.log("[firebase-sync] RTDB has no orders — cleared localStorage")
           }
+          // Cross-check against /ordersPage: orders in /inventories/orders but NOT in
+          // /ordersPage were deleted by an admin — exclude them and clean up RTDB
+          const ordersPageIds = new Set<string>()
+          try {
+            const raw = localStorage.getItem("yellowbell_orders")
+            if (raw) (JSON.parse(raw) as any[]).forEach((o: any) => { if (o.id) ordersPageIds.add(o.id) })
+          } catch {}
+          const hasOrdersPage = ordersPageIds.size > 0
+          let filteredOrders = activeOrders
+          if (hasOrdersPage) {
+            const ghostIds: string[] = []
+            filteredOrders = activeOrders.filter((o: any) => {
+              if (ordersPageIds.has(o.id)) return true
+              ghostIds.push(o.id)
+              return false
+            })
+            // Delete ghost orders from /inventories/orders so they never come back
+            if (ghostIds.length > 0) {
+              ghostIds.forEach(id => {
+                remove(ref(database, `inventories/orders/${id}`)).catch(() => {})
+              })
+              console.log(`[firebase-sync] Removed ${ghostIds.length} ghost orders from /inventories/orders:`, ghostIds)
+            }
+          }
+
           // Write to localStorage
-          localStorage.setItem("yellowbell_customer_orders", JSON.stringify(activeOrders))
-          // Pass activeOrders as event detail so inventory-store.ts in-memory
+          localStorage.setItem("yellowbell_customer_orders", JSON.stringify(filteredOrders))
+          // Pass filteredOrders as event detail so inventory-store.ts in-memory
           // customerOrders array also gets replaced (prevents stale array overwriting localStorage)
-          window.dispatchEvent(new CustomEvent("firebase-orders-updated", { detail: { orders: activeOrders } }))
+          window.dispatchEvent(new CustomEvent("firebase-orders-updated", { detail: { orders: filteredOrders } }))
           window.dispatchEvent(new Event("customer-orders-updated"))
         } catch (e) {
           console.warn("[firebase-sync] Orders sync error:", e)
@@ -988,6 +1013,11 @@ export const rebuildKitchenFromOrders = async (): Promise<void> => {
       const items = order.orderedItems || order.items || []
       items.forEach((item: any) => {
         const id = `${order.id}_${item.name}`.replace(/[^a-zA-Z0-9_]/g, '_')
+        // Respect existing cookedItems from the order so totalCooked/pending/status are correct
+        const cookedEntry = (order.cookedItems || []).find((c: any) => c.name === item.name)
+        const totalCooked = cookedEntry ? (cookedEntry.quantity || 0) : 0
+        const pending = Math.max(0, item.quantity - totalCooked)
+        const status = pending <= 0 ? 'cooked' : totalCooked > 0 ? 'to-cook' : 'to-cook'
         newKitchenItems[id] = {
           id,
           orderId: order.id,
@@ -996,11 +1026,13 @@ export const rebuildKitchenFromOrders = async (): Promise<void> => {
           itemName: item.name,
           quantity: item.quantity,
           totalOrdered: item.quantity,
-          totalCooked: 0,
-          pending: item.quantity,
-          status: 'to-cook',
+          totalCooked,
+          pending,
+          status,
           category: 'other',
-          cookedItems: order.cookedItems || [],
+          mealType: order.mealType || order.originalMealType || '',
+          cookTime: order.cookTime || '',
+          date: order.date || '',
         }
       })
     })
