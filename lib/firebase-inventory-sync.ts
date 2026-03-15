@@ -1111,11 +1111,17 @@ export const loadOrderHistoryFromFirebase = async (): Promise<void> => {
     // Use RTDB as the ONLY source — filter out anything still active
     const remote: any[] = Object.values(histSnap.val() as Record<string, any>)
       .filter((o: any) => o?.id && !activeIds.has(o.id))
-      .map((o: any) => ({
-        ...o,
-        // syncOrderToRTDB saves items as `items`; remap to `orderedItems` for consistency
-        orderedItems: o.orderedItems?.length ? o.orderedItems : (o.items || []),
-      }))
+      .map((o: any) => {
+        try {
+          return {
+            ...o,
+            // syncOrderToRTDB saves items as `items`; remap to `orderedItems` for consistency
+            orderedItems: (Array.isArray(o.orderedItems) && o.orderedItems.length) ? o.orderedItems
+              : (Array.isArray(o.items) && o.items.length) ? o.items
+              : [],
+          }
+        } catch { return o }
+      })
 
     remote.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
 

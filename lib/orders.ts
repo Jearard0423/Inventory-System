@@ -81,8 +81,22 @@ export const getTodaysOrderCount = (): number => {
   if (typeof window === "undefined") return 0
   const today = new Date().toDateString()
   const orders = getOrders()
-  // only count pending orders; completed/delivered should be excluded
-  return orders.filter(order => new Date(order.date).toDateString() === today && order.status === 'pending').length
+  // Cross-check customer orders for delivery status
+  let custOrders: any[] = []
+  try { custOrders = JSON.parse(localStorage.getItem('yellowbell_customer_orders') || '[]') } catch {}
+  return orders.filter(order => {
+    if (order.status !== 'pending') return false
+    // Check customer order status too
+    const cust = custOrders.find((co: any) => co.id === order.id)
+    if (cust) {
+      const cs = (cust.status || '').toLowerCase()
+      if (cs === 'delivered' || cs === 'served' || cs === 'complete' || cs === 'cancelled') return false
+    }
+    // Match by createdAt (when placed) OR date (delivery date) — show if either is today
+    const createdToday = order.createdAt ? new Date(order.createdAt).toDateString() === today : false
+    const dateToday = new Date(order.date).toDateString() === today
+    return createdToday || dateToday
+  }).length
 }
 
 export const deleteOrder = (orderId: string): void => {

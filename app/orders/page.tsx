@@ -222,13 +222,13 @@ export default function OrdersPage() {
   }, [showPaymentModal, showOrderDetailsModal, showDeleteModal, showUndoPaymentModal])
 
   // Helper function to create items summary
-  const createItemsSummary = (items: { id: string; name: string; price: number; quantity: number }[]) => {
-    if (items.length <= 2) {
-      return items.map(item => `${item.quantity}x ${item.name}`).join(', ')
+  const createItemsSummary = (items: any) => {
+    const safeItems: { quantity: number; name: string }[] = Array.isArray(items) ? items : []
+    if (safeItems.length <= 2) {
+      return safeItems.map(item => `${item.quantity}x ${item.name}`).join(', ')
     }
-    
-    const firstTwo = items.slice(0, 2).map(item => `${item.quantity}x ${item.name}`).join(', ')
-    const remainingCount = items.length - 2
+    const firstTwo = safeItems.slice(0, 2).map(item => `${item.quantity}x ${item.name}`).join(', ')
+    const remainingCount = safeItems.length - 2
     return `${firstTwo}, ... ${remainingCount} more`
   }
 
@@ -488,9 +488,17 @@ export default function OrdersPage() {
     const dayOrders = orders.filter((order) => {
       const orderDate = new Date(order.date)
       orderDate.setHours(0, 0, 0, 0)
-      // Exclude only cancelled orders from meal type breakdown
+      // Exclude delivered, completed and cancelled orders from meal type breakdown
       const ss = (order.status || '').toLowerCase()
       if (ss === 'cancelled' || ss === 'canceled' || ss === 'deleted' || ss === 'removed') return false
+      if (ss === 'delivered' || ss === 'served' || ss === 'completed') return false
+      // Cross-check customerOrders for latest delivery status
+      const freshCust = JSON.parse(localStorage.getItem('yellowbell_customer_orders') || '[]')
+      const cust = freshCust.find((co: any) => co.id === order.id)
+      if (cust) {
+        const cs = (cust.status || '').toLowerCase()
+        if (cs === 'delivered' || cs === 'served' || cs === 'complete') return false
+      }
       return orderDate.toDateString() === targetDate.toDateString()
     })
 
@@ -678,7 +686,7 @@ export default function OrdersPage() {
       deliveryAddress: (order as any).deliveryAddress || co?.deliveryAddress || "",
     })
     // Load current items from the order
-    setEditItems(order.items.map(i => ({ ...i })))
+    setEditItems((order.items || []).map((i: any) => ({ ...i })))
     // Load all food items from inventory for the item selector
     setMenuItems(getMenuItems())
     setShowEditModal(true)
@@ -1837,7 +1845,7 @@ export default function OrdersPage() {
 
                   <div className="space-y-2 border-t pt-4">
                     <p className="font-semibold text-sm">Order Items:</p>
-                    {selectedOrderForDetails.items.map((item, idx) => (
+                    {(selectedOrderForDetails.items || []).map((item: any, idx: number) => (
                       <div key={idx} className="flex justify-between text-sm">
                         <span>{item.quantity}x {item.name}</span>
                         <span className="font-medium">₱{(item.price * item.quantity).toFixed(2)}</span>

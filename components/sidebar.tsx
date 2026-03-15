@@ -101,10 +101,16 @@ export function Sidebar() {
     window.addEventListener("notifications-updated", updateCounts)
     window.addEventListener("orders-updated", updateCounts)
     window.addEventListener("inventory-updated", updateCounts)
+    window.addEventListener("customer-orders-updated", updateCounts)
+    window.addEventListener("firebase-orders-updated", updateCounts)
+    window.addEventListener("delivery-updated", updateCounts)
 
     return () => {
       window.removeEventListener("notifications-updated", updateCounts)
       window.removeEventListener("orders-updated", updateCounts)
+      window.removeEventListener("customer-orders-updated", updateCounts)
+      window.removeEventListener("firebase-orders-updated", updateCounts)
+      window.removeEventListener("delivery-updated", updateCounts)
       window.removeEventListener("inventory-updated", updateCounts)
     }
   }, [mounted])
