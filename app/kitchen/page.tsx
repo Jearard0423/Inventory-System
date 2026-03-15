@@ -511,11 +511,17 @@ export default function KitchenPage() {
     // Mark the specified number of items as cooked
     const itemsToMark = itemsToCook.slice(0, Math.min(quantity, itemsToCook.length))
     
+    let anyMarked = false
     itemsToMark.forEach(itemToMark => {
-      markItemAsCooked(itemToMark.id, 1, itemToMark.orderId)
+      const ok = markItemAsCooked(itemToMark.id, 1, itemToMark.orderId)
+      if (ok) anyMarked = true
+      else console.warn('[Kitchen] markItemAsCooked failed for id:', itemToMark.id)
     })
-    // `markItemAsCooked` updates customer orders and kitchen items (and persists them),
-    // so avoid duplicating those updates here. Just refresh local view.
+    if (!anyMarked) {
+      console.warn('[Kitchen] No items were marked — kitchen items may be out of sync, re-fetching')
+      fetchKitchenNow().catch(() => {}).finally(() => loadData())
+      return
+    }
     window.dispatchEvent(new Event("delivery-updated"))
     loadData()
     

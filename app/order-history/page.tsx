@@ -69,9 +69,20 @@ export default function OrderHistoryPage() {
     })
 
     // Include ALL customer orders from the live feed (active + finalized)
-    // Active orders show under the "Pending" tab, finalized under Completed/Delivered
+    // Cross-check against ordersPage (yellowbell_orders) — exclude ghost orders that
+    // exist in /inventories/orders but were never in ordersPage (deleted or never placed properly)
     const EXCLUDED = new Set(["cancelled", "canceled", "deleted", "removed"])
-    const liveOrders = getCustomerOrders().filter(o => !EXCLUDED.has((o.status || "").toLowerCase()))
+    const ordersPageIds = new Set<string>()
+    try {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem('yellowbell_orders') : null
+      if (raw) (JSON.parse(raw) as any[]).forEach((o: any) => { if (o.id) ordersPageIds.add(o.id) })
+    } catch {}
+    const hasOrdersPage = ordersPageIds.size > 0
+    const liveOrders = getCustomerOrders().filter(o => {
+      if (EXCLUDED.has((o.status || "").toLowerCase())) return false
+      if (hasOrdersPage && !ordersPageIds.has(o.id)) return false
+      return true
+    })
     const liveIds = new Set(liveOrders.map(o => o.id))
 
     // Merge: live orders first, then archived (excluding those already in live)
