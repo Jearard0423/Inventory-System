@@ -129,8 +129,29 @@ export default function KitchenPage() {
     } catch { /* fallback: don't filter */ }
     const hasOrdersPage = ordersPageIds.size > 0
 
+    // Read yellowbell_orders fresh for cross-check (catches deletions from other devices)
+    const freshYBOrders: any[] = (() => {
+      try {
+        const raw = typeof window !== 'undefined' ? localStorage.getItem('yellowbell_orders') : null
+        return raw ? JSON.parse(raw) : []
+      } catch { return [] }
+    })()
+    const freshYBIds = new Set(freshYBOrders.map((o: any) => o.id).filter(Boolean))
+    const freshYBFinal = new Set(
+      freshYBOrders
+        .filter((o: any) => {
+          const s = (o.status || '').toLowerCase()
+          return s === 'delivered' || s === 'cancelled' || s === 'canceled' || s === 'deleted'
+        })
+        .map((o: any) => o.id)
+    )
+
     const recentOrders = allOrdersRaw.filter(order => {
       try {
+        // Skip null/malformed orders
+        if (!order || !order.id) return false
+        // Skip orders with no customer name (N/A ghost from rebuildKitchenFromOrders)
+        if (!order.customerName || order.customerName === 'N/A' || order.customerName === '') return false
         // Skip any order already archived as delivered/cancelled in history
         if (finalHistoryIds.has(order.id)) return false
         const s = (order.status || '').toLowerCase()
@@ -139,12 +160,15 @@ export default function KitchenPage() {
           archiveOrderToHistory(order)
           return false
         }
-        // Skip ghost orders: exist in /inventories/orders but NOT in /ordersPage
-        // These were created by rebuildKitchenFromOrders and were never real customer orders
+        // Skip if yellowbell_orders marks it as delivered/cancelled
+        if (freshYBFinal.has(order.id)) return false
+        // Skip ghost orders: not in ordersPage at all
+        if (freshYBIds.size > 0 && !freshYBIds.has(order.id)) return false
+        // Fallback: ordersPageIds check
         if (hasOrdersPage && !ordersPageIds.has(order.id)) return false
         return true
       } catch {
-        return true
+        return false
       }
     })
 

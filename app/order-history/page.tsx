@@ -78,8 +78,12 @@ export default function OrderHistoryPage() {
       if (raw) (JSON.parse(raw) as any[]).forEach((o: any) => { if (o.id) ordersPageIds.add(o.id) })
     } catch {}
     const hasOrdersPage = ordersPageIds.size > 0
+    const HISTORY_STATUSES = new Set(["delivered", "complete", "completed", "served", "ready"])
     const liveOrders = getCustomerOrders().filter(o => o != null && o.id != null).filter(o => {
-      if (EXCLUDED.has((o.status || "").toLowerCase())) return false
+      const s = (o.status || "").toLowerCase()
+      // Only include finalized orders in history — not pending/incomplete/cooking
+      if (!HISTORY_STATUSES.has(s)) return false
+      if (EXCLUDED.has(s)) return false
       if (hasOrdersPage && !ordersPageIds.has(o.id)) return false
       return true
     })
