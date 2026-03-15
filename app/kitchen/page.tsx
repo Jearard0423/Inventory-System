@@ -142,7 +142,7 @@ export default function KitchenPage() {
     // Build set of valid order IDs — kitchen items whose order no longer exists are ghosts
     // (happens when an order is cancelled/deleted but kitchen RTDB node wasn't cleaned up)
     const activeOrderIds = new Set(allOrders.map(o => o.id))
-    const cleanKitchenItems = getKitchenItems().filter(item => activeOrderIds.has(item.orderId))
+    const cleanKitchenItems = getKitchenItems().filter(item => item.orderId != null && activeOrderIds.has(item.orderId))
 
     // Sanitize via JSON round-trip to prevent circular reference crash in React reconciler
     try {
@@ -606,7 +606,7 @@ export default function KitchenPage() {
 
       const orderedItemsArr = order.orderedItems || []
       const cookedItemsArr = order.cookedItems || []
-      const totalOrdered = orderedItemsArr.reduce((sum, item) => sum + item.quantity, 0)
+      const totalOrdered = orderedItemsArr.reduce((sum: number, item: any) => sum + item.quantity, 0)
       const totalCooked = cookedItemsArr.reduce((sum, item) => sum + item.quantity, 0)
       return {
         ...order,
@@ -656,7 +656,7 @@ export default function KitchenPage() {
     const orderedItemsArr = (order.orderedItems?.length ? order.orderedItems : (order as any).items) || []
     const cookedItemsArr = order.cookedItems || []
     const missingItems = orderedItemsArr
-      .map(orderedItem => {
+      .map((orderedItem: any) => {
         const cookedQty = cookedItemsArr?.find(ci => ci.name === orderedItem.name)?.quantity || 0
         const remainingQty = orderedItem.quantity - cookedQty
         return remainingQty > 0 ? { ...orderedItem, quantity: remainingQty } : null
@@ -750,7 +750,7 @@ export default function KitchenPage() {
             <h4 className="font-semibold text-sm sm:text-base mb-3 flex items-center gap-2">
               <span>Ordered Items</span>
               <span className="text-xs text-muted-foreground">
-                ({orderedItemsArr.reduce((sum, item) => sum + item.quantity, 0)} items)
+                ({orderedItemsArr.reduce((sum: number, item: any) => sum + item.quantity, 0)} items)
               </span>
             </h4>
             <div className="space-y-3">
@@ -804,7 +804,7 @@ export default function KitchenPage() {
                 <span>Waiting for {missingItems.length} {missingItems.length === 1 ? 'item' : 'items'}</span>
               </h4>
               <div className="grid grid-cols-1 xs:grid-cols-2 gap-2">
-                {missingItems.map((item, idx) => (
+                {missingItems.map((item: any, idx: number) => (
                   <div key={idx} className="flex items-center gap-2 bg-white/50 dark:bg-gray-800/50 px-3 py-2 rounded-md">
                     <span className="text-sm">{item.quantity}x</span>
                     <span className="text-sm font-medium">{item.name}</span>
@@ -1355,7 +1355,7 @@ export default function KitchenPage() {
                         <div className="mt-3 p-3 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded">
                           <p className="text-sm font-semibold text-red-600 mb-2">Missing Items:</p>
                           <div className="flex flex-wrap gap-2">
-                            {missingItems.map((item, idx) => (
+                            {missingItems.map((item: any, idx: number) => (
                               <Badge 
                                 key={idx} 
                                 variant="destructive" 
