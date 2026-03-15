@@ -231,24 +231,18 @@ export default function KitchenPage() {
       fetchKitchenNow().catch(() => {}).finally(() => loadData())
     }, 60000)
 
-    // On any order/kitchen update, fetch fresh kitchen state from RTDB then reload.
-    // This ensures newly-placed orders' kitchen items appear without a manual refresh.
-    const handleUpdate = () => {
-      if (kitchenFetchDebounceRef.current) clearTimeout(kitchenFetchDebounceRef.current)
-      kitchenFetchDebounceRef.current = setTimeout(() => {
-        kitchenFetchDebounceRef.current = null
-        fetchKitchenNow().catch(() => {}).finally(() => loadData())
-      }, 300)
-    }
-    // Debounced kitchen fetch — prevents firebase-kitchen-updated loop
-    // (fetchKitchenNow itself dispatches firebase-kitchen-updated, which would re-trigger without debounce)
-    const handleFirebaseKitchen = () => {
+    // Debounced reload — collapses rapid successive events into one render.
+    // Does NOT call fetchKitchenNow: by the time these events fire, the RTDB listener
+    // has already updated in-memory state via firebase-kitchen-updated / firebase-orders-updated.
+    const debounceReload = () => {
       if (kitchenFetchDebounceRef.current) clearTimeout(kitchenFetchDebounceRef.current)
       kitchenFetchDebounceRef.current = setTimeout(() => {
         kitchenFetchDebounceRef.current = null
         loadData()
-      }, 300)
+      }, 150)
     }
+    const handleUpdate = debounceReload
+    const handleFirebaseKitchen = debounceReload
     // firebase-orders-updated: RTDB pushed fresh data — reload immediately
     // This ensures deleted orders disappear on all clients as soon as Firebase fires
     // firebase-orders-updated carries fresh orders in detail — just apply + debounce reload.
