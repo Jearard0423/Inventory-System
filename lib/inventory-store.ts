@@ -1428,6 +1428,8 @@ export const saveOrder = (order: Omit<Order, 'id' | 'orderNumber' | 'createdAt'>
         status: 'to-cook',
         customerName: newOrder.customerName,
         itemName: orderedItem.name,
+        mealType: newOrder.mealType || newOrder.originalMealType || '',
+        cookTime: newOrder.cookTime || '',
         quantity: 1
       } as KitchenItem;
       kitchenItems.push(kitchenItem);
@@ -1758,8 +1760,9 @@ export const restoreStockForOrder = (order: { items: { id: string; name: string;
   // Restore both menu item stock, ingredient stock (for meals),
   // and raw stock based on RAW_STOCK_DEDUCTION_MAP (mirrors saveOrder logic)
   order.items.forEach((orderItem) => {
-    // 1. Restore main item stock
-    const item = inventoryItems.find(item => item.id === orderItem.id);
+    // 1. Restore main item stock — match by id first, then fall back to name
+    const item = inventoryItems.find(item => item.id === orderItem.id)
+              || inventoryItems.find(item => item.name === orderItem.name);
     if (item) {
       item.stock += orderItem.quantity;
       

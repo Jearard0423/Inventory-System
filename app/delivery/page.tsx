@@ -66,32 +66,11 @@ export default function DeliveryPage() {
 
   const loadData = () => {
     const allOrders = getCustomerOrders()
-    
-    // Get current date at midnight for comparison
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    
-    // Filter orders for today and exclude advanced orders
-    const filtered = allOrders.filter(order => {
-      const orderDate = new Date(order.createdAt)
-      orderDate.setHours(0, 0, 0, 0)
-      
-      // Check if order is for today
-      const isToday = orderDate.getTime() === today.getTime()
-      
-      // Check if it's an advanced order (order is for a future date)
-      const isAdvancedOrder = orderDate > today
-      
-      // Check meal type filter
-      const matchesMealType = filterMealType === "all" || 
-        (order.mealType && order.mealType.toLowerCase() === filterMealType) ||
-        (order.originalMealType && order.originalMealType.toLowerCase() === filterMealType)
-      
-      // Only include orders from today that match the meal type and are not advanced orders
-      return isToday && !isAdvancedOrder && matchesMealType
-    })
-    
-    setAllCustomerOrders(filtered)
+    // Show all active (non-cancelled) orders — same logic as kitchen page.
+    // Stale order cleanup is handled by RTDB isStaleOrder, not here.
+    const FINAL = new Set(['cancelled', 'canceled'])
+    const active = allOrders.filter(o => !FINAL.has((o.status || '').toLowerCase()))
+    setAllCustomerOrders(active)
   }
 
   // Track the current time-based meal type (for display only)
@@ -122,22 +101,22 @@ export default function DeliveryPage() {
     const handleUpdate = () => loadData()
     // When Firebase pushes order changes (cooked/delivered by another admin),
     // force-fetch fresh orders AND kitchen data before reloading UI
+    // firebase-orders-updated fires when ANY admin changes an order (mark delivered, cancel, edit)
+    // We re-fetch from RTDB so this admin's UI reflects the other admin's action immediately
     const handleFirebaseOrders = (ev: Event) => {
       const detail = (ev as CustomEvent).detail
       if (detail?.orders && typeof window !== "undefined") {
         try { localStorage.setItem("yellowbell_customer_orders", JSON.stringify(detail.orders)) } catch {}
       }
-      Promise.all([
-        fetchOrdersNow().catch(() => {}),
-        fetchKitchenNow().catch(() => {}),
-      ]).finally(() => loadData())
+      fetchOrdersNow().catch(() => {}).finally(() => loadData())
     }
+    const handleFirebaseKitchen = () => { fetchKitchenNow().catch(() => {}).finally(() => loadData()) }
+
     window.addEventListener("customer-orders-updated", handleUpdate)
     window.addEventListener("kitchen-updated", handleUpdate)
     window.addEventListener("orders-updated", handleUpdate)
+    window.addEventListener("delivery-updated", handleUpdate)
     window.addEventListener("firebase-orders-updated", handleFirebaseOrders)
-    // firebase-kitchen-updated: another admin marked item as cooked/undo — fetch fresh kitchen then reload
-    const handleFirebaseKitchen = () => { fetchKitchenNow().catch(() => {}).finally(() => loadData()) }
     window.addEventListener("firebase-kitchen-updated", handleFirebaseKitchen)
 
     return () => {
@@ -145,36 +124,38 @@ export default function DeliveryPage() {
       window.removeEventListener("customer-orders-updated", handleUpdate)
       window.removeEventListener("kitchen-updated", handleUpdate)
       window.removeEventListener("orders-updated", handleUpdate)
+      window.removeEventListener("delivery-updated", handleUpdate)
       window.removeEventListener("firebase-orders-updated", handleFirebaseOrders)
       window.removeEventListener("firebase-kitchen-updated", handleFirebaseKitchen)
     }
   }, [filterMealType])
 
   const filteredOrders = allCustomerOrders.filter((order) => {
-    // Apply search filter
+    // Search filter
     if (searchQuery) {
-      const query = searchQuery.toLowerCase()
-      const matchesCustomerName = order.customerName.toLowerCase().includes(query)
-      const matchesOrderNumber = order.orderNumber?.toLowerCase().includes(query)
-      
-      if (!matchesCustomerName && !matchesOrderNumber) {
-        return false
-      }
+      const q = searchQuery.toLowerCase()
+      if (!order.customerName.toLowerCase().includes(q) && !order.orderNumber?.toLowerCase().includes(q)) return false
     }
-    
-    if (filterStatus === "all") return order.status === "complete" || order.status === "ready"
-    if (filterStatus === "delivered") return order.status === "delivered"
-    if (filterStatus === "complete") return order.status === "complete" || order.status === "ready"
-    if (filterStatus === "incomplete") return order.status === "incomplete"
+    // Status filter
+    if (filterStatus === "all") {
+      if (order.status !== "complete" && order.status !== "ready" && order.status !== "incomplete") return false
+    } else if (filterStatus === "delivered") {
+      if (order.status !== "delivered") return false
+    } else if (filterStatus === "complete") {
+      if (order.status !== "complete" && order.status !== "ready") return false
+    } else if (filterStatus === "incomplete") {
+      if (order.status !== "incomplete") return false
+    }
+    // Meal type filter
+    if (filterMealType !== "all") {
+      const mt = (order.mealType || '').toLowerCase()
+      const omt = (order.originalMealType || '').toLowerCase()
+      if (mt !== filterMealType && omt !== filterMealType) return false
+    }
     return true
-  }).filter((order) => {
-    if (filterMealType === "all") return true
-    return (order.mealType && order.mealType.toLowerCase() === filterMealType) ||
-           (order.originalMealType && order.originalMealType.toLowerCase() === filterMealType)
   }).sort((a, b) => {
-    // Sort order: incomplete > complete > delivered
-    const statusOrder = { 'incomplete': 0, 'complete': 1, 'delivered': 2 }
-    return statusOrder[a.status as keyof typeof statusOrder] - statusOrder[b.status as keyof typeof statusOrder]
+    const statusOrder: Record<string, number> = { incomplete: 0, complete: 1, ready: 1, delivered: 2 }
+    return (statusOrder[a.status] ?? 3) - (statusOrder[b.status] ?? 3)
   })
 
   const totalPages = Math.ceil(filteredOrders.length / itemsPerPage)
@@ -197,20 +178,19 @@ export default function DeliveryPage() {
   }
 
   const confirmDelivery = () => {
-    if (selectedOrder && verificationChecked) {
-      markOrderAsDelivered(selectedOrder.id)
-      saveNotification({
-        type: "delivery",
-        title: "Order Delivered",
-        message: `Order ${selectedOrder.orderNumber || `#${selectedOrder.id}`} for ${selectedOrder.customerName} has been successfully delivered`,
-        priority: "low",
-      })
-      setVerificationChecked(false)
-      setOrderDetailsModalOpen(false)
-      setMarkDeliveredModalOpen(false)
-      setSelectedOrder(null)
-      loadData()
-    }
+    if (!selectedOrder || !verificationChecked) return
+    markOrderAsDelivered(selectedOrder.id)
+    saveNotification({
+      type: "delivery",
+      title: "Order Delivered",
+      message: `Order ${selectedOrder.orderNumber || `#${selectedOrder.id}`} for ${selectedOrder.customerName} has been marked as delivered`,
+      priority: "low",
+    })
+    setVerificationChecked(false)
+    setOrderDetailsModalOpen(false)
+    setMarkDeliveredModalOpen(false)
+    setSelectedOrder(null)
+    loadData()
   }
 
   const handleUndoDelivery = (order: CustomerOrder) => {
@@ -288,45 +268,18 @@ export default function DeliveryPage() {
   }
 
   // Calculate meal type counts for delivery page
-  const breakfastOrders = allCustomerOrders.filter(order => {
-    const orderDate = new Date(order.createdAt)
-    orderDate.setHours(0, 0, 0, 0)
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    return orderDate.getTime() === today.getTime() && 
-           ((order.mealType && order.mealType.toLowerCase() === 'breakfast') ||
-            (order.originalMealType && order.originalMealType.toLowerCase() === 'breakfast'))
-  }).length
-
-  const lunchOrders = allCustomerOrders.filter(order => {
-    const orderDate = new Date(order.createdAt)
-    orderDate.setHours(0, 0, 0, 0)
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    return orderDate.getTime() === today.getTime() && 
-           ((order.mealType && order.mealType.toLowerCase() === 'lunch') ||
-            (order.originalMealType && order.originalMealType.toLowerCase() === 'lunch'))
-  }).length
-
-  const dinnerOrders = allCustomerOrders.filter(order => {
-    const orderDate = new Date(order.createdAt)
-    orderDate.setHours(0, 0, 0, 0)
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    return orderDate.getTime() === today.getTime() && 
-           ((order.mealType && order.mealType.toLowerCase() === 'dinner') ||
-            (order.originalMealType && order.originalMealType.toLowerCase() === 'dinner'))
-  }).length
-
-  const otherOrders = allCustomerOrders.filter(order => {
-    const orderDate = new Date(order.createdAt)
-    orderDate.setHours(0, 0, 0, 0)
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    return orderDate.getTime() === today.getTime() && 
-           ((order.mealType && order.mealType.toLowerCase() === 'other') ||
-            (order.originalMealType && order.originalMealType.toLowerCase() === 'other'))
-  }).length
+  const breakfastOrders = allCustomerOrders.filter(o =>
+    (o.mealType || '').toLowerCase() === 'breakfast' || (o.originalMealType || '').toLowerCase() === 'breakfast'
+  ).length
+  const lunchOrders = allCustomerOrders.filter(o =>
+    (o.mealType || '').toLowerCase() === 'lunch' || (o.originalMealType || '').toLowerCase() === 'lunch'
+  ).length
+  const dinnerOrders = allCustomerOrders.filter(o =>
+    (o.mealType || '').toLowerCase() === 'dinner' || (o.originalMealType || '').toLowerCase() === 'dinner'
+  ).length
+  const otherOrders = allCustomerOrders.filter(o =>
+    (o.mealType || '').toLowerCase() === 'other' || (o.originalMealType || '').toLowerCase() === 'other'
+  ).length
 
   return (
     <POSLayout>
@@ -814,7 +767,7 @@ export default function DeliveryPage() {
                       <div>
                         <h4 className="font-semibold">{order.customerName}</h4>
                         <p className="text-sm text-muted-foreground">
-                          {order.orderedItems.length} items • {order.originalMealType || order.mealType}
+                          {(order.orderedItems?.length ?? 0)} items • {order.originalMealType || order.mealType}
                         </p>
                       </div>
                       <Badge variant="outline">{order.status}</Badge>
@@ -948,7 +901,7 @@ export default function DeliveryPage() {
                 <div>
                   <h4 className="font-semibold mb-3">Order Items:</h4>
                   <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg space-y-3">
-                    {selectedOrder.orderedItems.map((item, idx) => (
+                    {(selectedOrder?.orderedItems ?? []).map((item, idx) => (
                       <div key={idx} className="flex items-center justify-between p-2 bg-white dark:bg-gray-700 rounded">
                         <div className="flex items-center gap-3">
                           <Check className="h-4 w-4 text-green-600" />
@@ -961,7 +914,7 @@ export default function DeliveryPage() {
                       <div className="flex justify-between items-center">
                         <span className="font-bold text-lg">Total</span>
                         <span className="font-bold text-lg">
-                          ₱{selectedOrder.orderedItems.reduce((sum, item) => sum + (getItemPrice(item.name) * item.quantity), 0).toFixed(2)}
+                          ₱{(selectedOrder?.orderedItems ?? []).reduce((sum: number, item: any) => sum + (getItemPrice(item.name) * item.quantity), 0).toFixed(2)}
                         </span>
                       </div>
                     </div>
@@ -1027,7 +980,7 @@ export default function DeliveryPage() {
                       <div>
                         <h4 className="font-semibold">{order.customerName}</h4>
                         <p className="text-sm text-muted-foreground">
-                          {order.orderedItems.length} items • {order.originalMealType || order.mealType}
+                          {(order.orderedItems?.length ?? 0)} items • {order.originalMealType || order.mealType}
                         </p>
                       </div>
                       <Badge variant="outline">{order.status}</Badge>
@@ -1121,7 +1074,7 @@ export default function DeliveryPage() {
                 <div>
                   <h4 className="font-semibold mb-3">Order Items:</h4>
                   <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg space-y-3">
-                    {selectedOrder.orderedItems.map((item, idx) => (
+                    {(selectedOrder?.orderedItems ?? []).map((item, idx) => (
                       <div key={idx} className="flex items-center justify-between p-2 bg-white dark:bg-gray-700 rounded">
                         <div className="flex items-center gap-3">
                           <Check className="h-4 w-4 text-green-600" />
@@ -1134,7 +1087,7 @@ export default function DeliveryPage() {
                       <div className="flex justify-between items-center">
                         <span className="font-bold text-lg">Total</span>
                         <span className="font-bold text-lg">
-                          ₱{selectedOrder.orderedItems.reduce((sum, item) => sum + (getItemPrice(item.name) * item.quantity), 0).toFixed(2)}
+                          ₱{(selectedOrder?.orderedItems ?? []).reduce((sum: number, item: any) => sum + (getItemPrice(item.name) * item.quantity), 0).toFixed(2)}
                         </span>
                       </div>
                     </div>

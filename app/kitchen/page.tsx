@@ -389,58 +389,39 @@ export default function KitchenPage() {
     }
   }
   
-  // Show all active (non-final) to-cook items from todayOrders (which is all non-final orders)
+  // toCookItems: driven purely by kitchenItems from RTDB — no cross-reference to orders needed.
+  // mealType is stored on each kitchen item when the order is placed.
   const toCookItems = kitchenItems
     .filter((item) => {
-      const order = todayOrders.find(order => order.id === item.orderId)
-      if (!order) return false
-      const matchesMealType = filterMealType === "all" ||
-        (order.mealType && order.mealType.toLowerCase() === filterMealTypeRef.current) ||
-        (order.originalMealType && order.originalMealType.toLowerCase() === filterMealTypeRef.current)
-      return item.status === "to-cook" && matchesMealType
+      if (item.status !== 'to-cook') return false
+      const mealFilter = filterMealType
+      if (mealFilter === 'all') return true
+      const mt = ((item as any).mealType || '').toLowerCase()
+      return mt === mealFilter || mt === ''
     })
-    // Sort to put completed items at the back
     .sort((a, b) => {
-      const aOrder = todayOrders.find(order => order.id === a.orderId)
-      const bOrder = todayOrders.find(order => order.id === b.orderId)
-      const aComplete = (aOrder?.status === 'complete' || aOrder?.status === 'ready') ? 1 : 0
-      const bComplete = (bOrder?.status === 'complete' || bOrder?.status === 'ready') ? 1 : 0
-      return aComplete - bComplete
+      // Sort by cookTime so most urgent orders appear first
+      const tA = (a as any).cookTime || '99:99'
+      const tB = (b as any).cookTime || '99:99'
+      return tA.localeCompare(tB)
     })
   
   const cookedItems = kitchenItems.filter((item) => {
-    const order = customerOrders.find(order => order.id === item.orderId)
-    if (!order) return false
-    const matchesMealType = filterMealType === "all" ||
-      (order.mealType && order.mealType.toLowerCase() === filterMealType) ||
-      (order.originalMealType && order.originalMealType.toLowerCase() === filterMealType)
-    const isNotDelivered = order.status !== 'delivered' && order.status !== 'served'
-    return item.status === "cooked" && matchesMealType && isNotDelivered
+    if (item.status !== 'cooked') return false
+    const mealFilter = filterMealType
+    if (mealFilter === 'all') return true
+    const mt = ((item as any).mealType || '').toLowerCase()
+    return mt === mealFilter || mt === ''
   })
 
-  // Group items by name and sort by completion status
-  const groupItemsByName = (items: KitchenItem[], useAllOrders: boolean = false) => {
+  // Group items by name — sorted by cookTime then customer name
+  const groupItemsByName = (items: KitchenItem[], _useAllOrders: boolean = false) => {
     const grouped: Record<string, { count: number; items: KitchenItem[]; customers: string[] }> = {}
     
-    // Create a map of customer names to their order status
-    // For cooked items, we need to check all customer orders (not just today's non-complete ones)
-    const ordersToCheck = useAllOrders ? customerOrders : todayOrders
-    const customerStatus = new Map<string, boolean>()
-    ordersToCheck.forEach(order => {
-      customerStatus.set(order.customerName, order.status === 'complete' || order.status === 'ready' || order.status === 'delivered')
-    })
-    
-    // Sort items: incomplete first, then complete, both sorted by customer name
     const sortedItems = [...items].sort((a, b) => {
-      const aComplete = customerStatus.get(a.customerName) ? 1 : 0
-      const bComplete = customerStatus.get(b.customerName) ? 1 : 0
-      
-      // First sort by completion status (incomplete first)
-      if (aComplete !== bComplete) {
-        return aComplete - bComplete
-      }
-      
-      // Then sort by customer name
+      const timeA = (a as any).cookTime || '99:99'
+      const timeB = (b as any).cookTime || '99:99'
+      if (timeA !== timeB) return timeA.localeCompare(timeB)
       return a.customerName.localeCompare(b.customerName)
     })
     
@@ -457,13 +438,9 @@ export default function KitchenPage() {
       }
     })
     
-    // Sort customers within each group to keep completed ones at the end
+    // Sort customers alphabetically within each group
     Object.values(grouped).forEach(group => {
-      group.customers.sort((a, b) => {
-        const aComplete = customerStatus.get(a) ? 1 : 0
-        const bComplete = customerStatus.get(b) ? 1 : 0
-        return aComplete - bComplete || a.localeCompare(b)
-      })
+      group.customers.sort((a, b) => a.localeCompare(b))
     })
     
     return grouped
@@ -484,22 +461,16 @@ export default function KitchenPage() {
   }
 
   const handleMarkAsCooked = (itemName: string, quantity: number = 1) => {
-    const itemsToCook = kitchenItems.filter(item => {
-      // Only include items from active today's orders (todayOrders already excludes delivered/cancelled)
-      const order = todayOrders.find(order => order.id === item.orderId)
-      if (!order) return false
-      
-      return item.status === "to-cook" && item.itemName === itemName
-    })
+    const itemsToCook = kitchenItems.filter(item =>
+      item.status === "to-cook" && item.itemName === itemName
+    )
     
     if (itemsToCook.length === 0 || quantity <= 0) return
     
     // Sort by earliest delivery time so the most urgent order gets marked first
     itemsToCook.sort((a, b) => {
-      const orderA = todayOrders.find(o => o.id === a.orderId)
-      const orderB = todayOrders.find(o => o.id === b.orderId)
-      const timeA = orderA?.cookTime || '99:99'
-      const timeB = orderB?.cookTime || '99:99'
+      const timeA = (a as any).cookTime || '99:99'
+      const timeB = (b as any).cookTime || '99:99'
       return timeA.localeCompare(timeB)
     })
     
@@ -524,13 +495,7 @@ export default function KitchenPage() {
   }
 
   const handleMarkAllAsCooked = () => {
-    const allItemsToCook = kitchenItems.filter(item => {
-      // Only include items from active today's orders (todayOrders already excludes delivered/cancelled)
-      const order = todayOrders.find(order => order.id === item.orderId)
-      if (!order) return false
-      
-      return item.status === "to-cook"
-    })
+    const allItemsToCook = kitchenItems.filter(item => item.status === "to-cook")
     
     if (allItemsToCook.length === 0) return
     
@@ -554,11 +519,9 @@ export default function KitchenPage() {
 
   const handleUndoCooked = (itemName: string, quantity: number = 1) => {
     // Search all customerOrders for cooked items (complete orders are excluded from todayOrders but we still want to undo them)
-    let cookedItemsForName = kitchenItems.filter(item => {
-      const order = customerOrders.find(order => order.id === item.orderId)
-      if (!order) return false
-      return item.status === "cooked" && item.itemName === itemName && order.status !== 'delivered'
-    })
+    let cookedItemsForName = kitchenItems.filter(item =>
+      item.status === "cooked" && item.itemName === itemName
+    )
 
     // If no cooked items from incomplete orders found, don't fall back - prevent affecting delivered orders
     if (cookedItemsForName.length === 0) {

@@ -275,25 +275,36 @@ const getDeliveryDT = (order: any): Date | null => {
 }
 
 const processReminders = async (orders: any[], emails: string[], clientSentKeys: string[]) => {
-  const now = new Date()  // UTC — consistent with getDeliveryDT which also returns UTC
+  const now = new Date()  // UTC
   const sentKeys = new Set(clientSentKeys)
 
-  const pending = orders.filter(o => !FINAL_STATUSES.has((o.status||'').toLowerCase()))
-  console.log(`[send-reminders] ${orders.length} total, ${pending.length} active, ${sentKeys.size} already-sent keys`)
+  // PH time hour for EOD unpaid check (9 PM PHT = 13:00 UTC)
+  const phHour = new Date().toLocaleString('en-US', { hour: 'numeric', hour12: false, timeZone: 'Asia/Manila' })
+  const isEodWindow = parseInt(phHour) >= 21  // 9 PM PHT onwards
 
-  // Buckets keyed by reminder type
-  const dayBeforeBucket: any[] = []  // 18–30 hrs before delivery
-  const oneHourBucket:   any[] = []  // 0–1.1 hr before delivery (slight buffer for poll timing)
-  const twoHourBucket:   any[] = []  // 1.1–2.1 hrs before delivery (slight buffer for poll timing)
+  const pending = orders.filter(o => !FINAL_STATUSES.has((o.status||'').toLowerCase()))
+  console.log(`[send-reminders] ${orders.length} total, ${pending.length} active, ${sentKeys.size} sent keys`)
+
+  // Reminder logic (clean, no redundant 2hr bucket):
+  // - Same-day orders (createdAt today):   1hr-before only
+  // - Advance orders (future date set):    day-before + 1hr-before
+  // - EOD unpaid:                          once per day at 9 PM PHT
+
+  const dayBeforeBucket: any[] = []  // 18–30 hrs before delivery (advance orders only)
+  const oneHourBucket:   any[] = []  // 0–1.1 hr before delivery
 
   pending.forEach(order => {
     const deliveryDT = getDeliveryDT(order)
     if (!deliveryDT) return
     const hoursUntil = (deliveryDT.getTime() - now.getTime()) / 3600000
 
-    if (hoursUntil > 0  && hoursUntil <= 1.1)  oneHourBucket.push({ order, deliveryDT, hoursUntil })
-    else if (hoursUntil > 1.1 && hoursUntil <= 2.1) twoHourBucket.push({ order, deliveryDT, hoursUntil })
-    else if (hoursUntil > 18 && hoursUntil <= 30) dayBeforeBucket.push({ order, deliveryDT, hoursUntil })
+    if (hoursUntil > 0 && hoursUntil <= 1.1) {
+      oneHourBucket.push({ order, deliveryDT, hoursUntil })
+    } else if (hoursUntil > 18 && hoursUntil <= 30) {
+      // Only send day-before for advance orders (order.date set to a future date)
+      const isAdvance = order.date && order.date !== (order.createdAt || '').split('T')[0]
+      if (isAdvance) dayBeforeBucket.push({ order, deliveryDT, hoursUntil })
+    }
   })
 
   const results: string[] = []
@@ -372,39 +383,42 @@ const processReminders = async (orders: any[], emails: string[], clientSentKeys:
     results.push(`1hr-reminder: ${oneHourOrders.length} order(s) → ${emails.length} recipient(s)`)
   }
 
-  // ── 2-HOUR reminder ────────────────────────────────────────────────────────
-  const twoHourOrders = twoHourBucket
-    .filter(({ order }) => !sentKeys.has(`2hr:${order.id}`))
-    .map(e => e.order)
 
-  if (twoHourOrders.length > 0) {
-    const mt = dominantMealType(twoHourOrders)
-    const colors = getMealColors(mt)
-    const delivTime = formatTime12h(twoHourOrders[0].cookTime)
-    const content = `
+  // ── EOD unpaid reminder (9 PM PHT) ──────────────────────────────────────────
+  if (isEodWindow) {
+    const unpaidOrders = pending.filter(o =>
+      (o.paymentStatus || '').toLowerCase() !== 'paid' &&
+      !sentKeys.has(`eod-unpaid:${o.id}:${new Date().toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' })}`)
+    )
+    if (unpaidOrders.length > 0) {
+      const todayKey = new Date().toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' })
+      const mt = dominantMealType(unpaidOrders)
+      const colors = getMealColors(mt)
+      const content = `
       <div style="margin-bottom:24px;">
-        <div style="display:inline-block;background:${colors.badgeBg};border:1px solid ${colors.badgeBorder};border-radius:20px;padding:6px 16px;margin-bottom:16px;">
-          <span style="color:${colors.badgeText};font-weight:700;font-size:12px;">📅 2-HOUR ADVANCE REMINDER</span>
+        <div style="display:inline-block;background:#fef3c7;border:2px solid #f59e0b;border-radius:20px;padding:6px 16px;margin-bottom:16px;">
+          <span style="color:#92400e;font-weight:800;font-size:12px;">💰 END-OF-DAY UNPAID REMINDER</span>
         </div>
-        <h2 style="margin:0 0 8px;color:#111827;font-size:24px;font-weight:800;">
-          ${twoHourOrders.length} Order${twoHourOrders.length>1?'s':''} — Delivery in ~2 Hours
+        <h2 style="margin:0 0 8px;color:#92400e;font-size:26px;font-weight:900;">
+          ${unpaidOrders.length} Unpaid Order${unpaidOrders.length > 1 ? 's' : ''} Today
         </h2>
         <p style="margin:0;color:#6b7280;font-size:14px;">
-          Delivery at <strong style="color:${colors.tableAccent};font-size:18px;">${delivTime}</strong> — begin preparation soon
+          The following orders have not been paid yet. Please follow up before closing.
         </p>
       </div>
-      ${buildOrderTable(twoHourOrders, colors)}
-      <div style="margin-top:20px;padding:14px 18px;background:${colors.badgeBg};border-left:4px solid ${colors.tableAccent};border-radius:0 8px 8px 0;">
-        <p style="margin:0;color:${colors.badgeText};font-size:13px;font-weight:600;">
-          ✅ Delivery in ~2 hours at ${delivTime} — begin final preparation!
+      ${buildOrderTable(unpaidOrders, colors)}
+      <div style="margin-top:20px;padding:14px 18px;background:#fef3c7;border-left:4px solid #f59e0b;border-radius:0 8px 8px 0;">
+        <p style="margin:0;color:#92400e;font-size:13px;font-weight:600;">
+          💳 Please collect payment before end of business today.
         </p>
       </div>`
-    const html = emailWrapper(content, mt)
-    const text = `REMINDER: ${twoHourOrders.length} order(s) due in ~2 hours at ${delivTime}\n\n${twoHourOrders.map(o=>`${o.customerName}: ${(o.orderedItems||o.items||[]).map((i:any)=>`${i.quantity}x ${i.name}`).join(', ')}`).join('\n')}`
-    const subject = `📅 2-Hr Alert: ${twoHourOrders.length} Order${twoHourOrders.length>1?'s':''} Due in ~2 Hours — ${delivTime}`
-    for (const email of emails) await sendEmail(email, subject, html, text)
-    twoHourOrders.forEach(o => { newSentKeys.push(`2hr:${o.id}`) })
-    results.push(`2hr-reminder: ${twoHourOrders.length} order(s) → ${emails.length} recipient(s)`)
+      const html = emailWrapper(content, mt)
+      const text = `END OF DAY: ${unpaidOrders.length} unpaid order(s)\n\n${unpaidOrders.map((o: any) => `${o.customerName} — ${(o.orderedItems||o.items||[]).map((i: any) => `${i.quantity}x ${i.name}`).join(', ')}`).join('\n')}`
+      const subject = `💰 EOD: ${unpaidOrders.length} Unpaid Order${unpaidOrders.length > 1 ? 's' : ''} — ${todayPHLabel()}`
+      for (const email of emails) await sendEmail(email, subject, html, text)
+      unpaidOrders.forEach((o: any) => { newSentKeys.push(`eod-unpaid:${o.id}:${todayKey}`) })
+      results.push(`eod-unpaid-reminder: ${unpaidOrders.length} order(s) → ${emails.length} recipient(s)`)
+    }
   }
 
   if (results.length === 0) results.push('no reminders needed at this time')

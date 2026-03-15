@@ -243,8 +243,30 @@ export default function OrdersPage() {
       const custOrders = getCustomerOrders()
       setCustomerOrders(custOrders)
       
-      // Only include regular orders (not converted prepared orders since they're already in regularOrders)
-      setOrders(regularOrders)
+      // Include prepared orders that are still in stock (status === 'prepared', have remaining qty)
+      // These appear in the list so admins can see available prepared stock
+      try {
+        const raw = localStorage.getItem('yellowbell_prepared_orders')
+        const preparedOrders: any[] = raw ? JSON.parse(raw) : []
+        const availablePrepared = preparedOrders
+          .filter((po: any) => po.status === 'prepared' && po.items?.some((i: any) => (i.remainingQuantity ?? i.quantity) > 0))
+          .map((po: any) => ({
+            id: `prepared-${po.id}`,
+            orderNumber: po.orderNumber || `P-${po.id?.slice(-4)}`,
+            customerName: '📦 Prepared Stock',
+            items: po.items.map((i: any) => ({ ...i, quantity: i.remainingQuantity ?? i.quantity })),
+            total: po.total || 0,
+            date: po.createdAt?.split('T')[0] || new Date().toISOString().split('T')[0],
+            createdAt: po.createdAt || new Date().toISOString(),
+            status: 'prepared' as any,
+            paymentStatus: 'not-paid' as any,
+            mealType: po.mealType || '',
+            isPreparedOrder: true,
+          }))
+        setOrders([...regularOrders, ...availablePrepared])
+      } catch {
+        setOrders(regularOrders)
+      }
     }
 
     fetchOrdersNow().catch(() => {})              // instant customer-orders sync
