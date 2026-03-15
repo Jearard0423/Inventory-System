@@ -846,6 +846,12 @@ export const sendOrderPlacedNotification = async (
     return false
   }
 
+  // Skip if no delivery time set — reminder will fire once admin sets a time
+  if (!order.cookTime) {
+    console.log('[email-notifications] No cookTime set, skipping new-order notification')
+    return false
+  }
+
   // if the order has already been delivered/completed we don't send anything
   if (order.status === 'delivered' || order.status === 'complete') {
     console.log('[email-notifications] Order already delivered/completed, skipping notification')

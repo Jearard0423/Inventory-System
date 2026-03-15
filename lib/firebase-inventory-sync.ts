@@ -1120,12 +1120,26 @@ export const loadOrderHistoryFromFirebase = async (): Promise<void> => {
  */
 export const deleteOrderFromFirebase = async (orderId: string): Promise<void> => {
   try {
-    const { remove } = await import("firebase/database")
+    const { remove, get, ref: dbRef2 } = await import("firebase/database")
+
+    // Also remove kitchen items for this order from /inventories/kitchen
+    const kitchenSnap = await get(dbRef2(database, 'inventories/kitchen'))
+    const kitchenRemovals: Promise<void>[] = []
+    if (kitchenSnap.exists()) {
+      const items = kitchenSnap.val() as Record<string, any>
+      for (const [itemId, item] of Object.entries(items)) {
+        if (item?.orderId === orderId) {
+          kitchenRemovals.push(remove(dbRef2(database, `inventories/kitchen/${itemId}`)))
+        }
+      }
+    }
+
     await Promise.all([
       remove(ref(database, `inventories/orders/${orderId}`)),
       remove(ref(database, `ordersPage/${orderId}`)),
+      ...kitchenRemovals,
     ])
-    console.log(`[firebase-sync] Deleted order ${orderId} from Firebase`)
+    console.log(`[firebase-sync] Deleted order ${orderId} + ${kitchenRemovals.length} kitchen item(s) from Firebase`)
   } catch (err: any) {
     if (err?.code !== 'PERMISSION_DENIED') {
       console.warn('[firebase-sync] deleteOrderFromFirebase failed:', err)

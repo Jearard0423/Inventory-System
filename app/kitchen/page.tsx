@@ -133,12 +133,17 @@ export default function KitchenPage() {
     })
 
     const allOrders = recentOrders
+    // Build set of valid order IDs — kitchen items whose order no longer exists are ghosts
+    // (happens when an order is cancelled/deleted but kitchen RTDB node wasn't cleaned up)
+    const activeOrderIds = new Set(allOrders.map(o => o.id))
+    const cleanKitchenItems = getKitchenItems().filter(item => activeOrderIds.has(item.orderId))
+
     // Sanitize via JSON round-trip to prevent circular reference crash in React reconciler
     try {
-      setKitchenItems(JSON.parse(JSON.stringify(getKitchenItems())))
+      setKitchenItems(JSON.parse(JSON.stringify(cleanKitchenItems)))
       setCustomerOrders(JSON.parse(JSON.stringify(allOrders)))
     } catch {
-      setKitchenItems(getKitchenItems())
+      setKitchenItems(cleanKitchenItems)
       setCustomerOrders(allOrders)
     }
     
