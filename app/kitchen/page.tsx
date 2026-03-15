@@ -463,13 +463,14 @@ export default function KitchenPage() {
     })
   
   const cookedItems = kitchenItems.filter((item) => {
-    if (item.status !== 'cooked') return false
+    // Show item in cooked panel if ANY units have been cooked (partial or full)
+    const cooked = item.totalCooked ?? 0
+    if (cooked <= 0) return false
     // mealType on kitchen item may not be set; fall back to checking via todayOrders
     const mealFilter = filterMealTypeRef.current
     if (mealFilter === 'all') return true
     const mt = ((item as any).mealType || '').toLowerCase()
     if (mt) return mt === mealFilter
-    // check via order
     const order = todayOrders.find(o => o.id === item.orderId) ||
                   customerOrders.find(o => o.id === item.orderId)
     if (!order) return true
@@ -1162,11 +1163,21 @@ export default function KitchenPage() {
                             <div className="flex flex-wrap items-center gap-2 mt-1 text-sm text-amber-700 dark:text-amber-300">
                               <span className="inline-flex items-center">
                                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mr-1.5"></span>
-                                {group.count} {group.count === 1 ? 'item' : 'items'}
+                                {group.count} {group.count === 1 ? 'remaining' : 'remaining'}
                               </span>
                               <span className="text-amber-500 dark:text-amber-400">•</span>
                               <span>{group.customers.length} {group.customers.length === 1 ? 'customer' : 'customers'}</span>
                             </div>
+                            {/* Show partial cook progress if any units already cooked */}
+                            {group.items.some(i => (i.totalCooked || 0) > 0) && (
+                              <div className="mt-1.5">
+                                {group.items.filter(i => (i.totalCooked || 0) > 0).map((i, idx) => (
+                                  <p key={idx} className="text-xs text-green-700 dark:text-green-400">
+                                    {i.totalCooked}/{i.totalOrdered || i.quantity} cooked
+                                  </p>
+                                ))}
+                              </div>
+                            )}
                           </div>
                           <div className="flex flex-col gap-2">
                             <div className="flex items-center justify-center bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
