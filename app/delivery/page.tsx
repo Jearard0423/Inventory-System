@@ -66,10 +66,33 @@ export default function DeliveryPage() {
 
   const loadData = () => {
     const allOrders = getCustomerOrders()
-    // Show all active (non-cancelled) orders — same logic as kitchen page.
-    // Stale order cleanup is handled by RTDB isStaleOrder, not here.
-    const FINAL = new Set(['cancelled', 'canceled'])
-    const active = allOrders.filter(o => !FINAL.has((o.status || '').toLowerCase()))
+    const FINAL = new Set(['cancelled', 'canceled', 'delivered'])
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    const active = allOrders.filter(o => {
+      const status = (o.status || '').toLowerCase()
+      if (FINAL.has(status)) return false
+
+      // Determine the relevant date: use order.date (delivery date) if set, else createdAt
+      const dateStr = (o as any).date || o.createdAt
+      if (!dateStr) return true // no date — keep it
+
+      // Parse delivery date
+      let deliveryDate: Date
+      if ((o as any).date) {
+        const [y, m, d] = (o as any).date.split('-').map(Number)
+        deliveryDate = new Date(y, m - 1, d)
+      } else {
+        deliveryDate = new Date(o.createdAt)
+      }
+      deliveryDate.setHours(0, 0, 0, 0)
+
+      // Hide orders where the delivery date was more than 1 day ago
+      const daysDiff = (today.getTime() - deliveryDate.getTime()) / 86400000
+      return daysDiff <= 1
+    })
+
     setAllCustomerOrders(active)
   }
 

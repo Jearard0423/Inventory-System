@@ -146,8 +146,9 @@ const isStaleOrder = (o: any): boolean => {
       deliveryDate = new Date(y, m - 1, d)
       deliveryDate.setHours(23, 59, 59, 999) // end of delivery day
     } else if (o.createdAt) {
-      // No delivery date — fall back to createdAt + generous 7-day window
-      deliveryDate = new Date(new Date(o.createdAt).getTime() + 7 * 24 * 3600000)
+      // No delivery date — use createdAt date itself (order should have been delivered same day)
+      deliveryDate = new Date(o.createdAt)
+      deliveryDate.setHours(23, 59, 59, 999)
     }
     if (!deliveryDate) return false
     // Stale if the delivery date has passed by more than 28 hours (gives same-day buffer)
