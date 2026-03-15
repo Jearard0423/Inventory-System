@@ -277,12 +277,9 @@ export default function OrdersPage() {
     window.addEventListener("prepared-orders-updated", loadOrders)
     window.addEventListener("customer-orders-updated", loadOrders)
 
-    // When Firebase pushes a change (any admin delete/edit/add), re-fetch ordersPage
-    // from RTDB then reload the UI. This guarantees Admin 2 sees Admin 1's deletion
-    // immediately, even if the ordersPage listener hasn't updated localStorage yet.
-    const handleFirebaseOrders = () => {
-      loadOrdersPageFromFirebase().then(() => loadOrders()).catch(() => loadOrders())
-    }
+    // firebase-orders-updated fires when RTDB changes (delete/edit/add by any admin).
+    // The ordersPageListener already updated localStorage — just reload the UI.
+    const handleFirebaseOrders = () => { loadOrders() }
     window.addEventListener("firebase-orders-updated", handleFirebaseOrders)
     return () => {
       window.removeEventListener("orders-updated", loadOrders)

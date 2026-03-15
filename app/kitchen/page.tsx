@@ -49,9 +49,17 @@ export default function KitchenPage() {
   const [todayOrders, setTodayOrders] = useState<CustomerOrder[]>([])
   
   // Initialize to 'lunch' as default, will be updated on client only
-  const [filterMealType, setFilterMealType] = useState<"all" | "breakfast" | "lunch" | "dinner" | "other">("lunch")
+  // Initialize meal type based on current time immediately (not 'lunch' by default)
+  const getInitMealType = (): "breakfast" | "lunch" | "dinner" => {
+    if (typeof window === 'undefined') return 'dinner'
+    const h = new Date().getHours()
+    if (h >= 6 && h < 11) return 'breakfast'
+    if (h >= 11 && h < 17) return 'lunch'
+    return 'dinner'
+  }
+  const [filterMealType, setFilterMealType] = useState<"all" | "breakfast" | "lunch" | "dinner" | "other">(getInitMealType)
   // Ref so loadData always reads the latest filterMealType without needing it as a useEffect dep
-  const filterMealTypeRef = useRef<"all" | "breakfast" | "lunch" | "dinner" | "other">("lunch")
+  const filterMealTypeRef = useRef<"all" | "breakfast" | "lunch" | "dinner" | "other">(getInitMealType())
   const [autoMealType, setAutoMealType] = useState<"breakfast" | "lunch" | "dinner">("lunch")
   const [quantityInputs, setQuantityInputs] = useState<Record<string, string>>({})
   const [selectedOrder, setSelectedOrder] = useState<CustomerOrder | null>(null)
@@ -239,7 +247,19 @@ export default function KitchenPage() {
       }, 150)
     }
     const handleUpdate = debounceReload
-    const handleFirebaseKitchen = debounceReload
+    // firebase-kitchen-updated: apply items from detail directly to in-memory store,
+    // then reload. This avoids a race where loadData runs before inventory-store's own
+    // firebase-kitchen-updated listener has finished updating in-memory kitchenItems.
+    const handleFirebaseKitchen = (ev: Event) => {
+      const detail = (ev as CustomEvent).detail
+      if (detail && typeof detail === 'object') {
+        try {
+          const { updateKitchenItems: ukiDirect } = require('@/lib/inventory-store')
+          ukiDirect(Object.values(detail))
+        } catch { /* fallback: let inventory-store handle it */ }
+      }
+      debounceReload()
+    }
     // firebase-orders-updated: RTDB pushed fresh data — reload immediately
     // This ensures deleted orders disappear on all clients as soon as Firebase fires
     // firebase-orders-updated carries fresh orders in detail — just apply + debounce reload.
@@ -596,30 +616,17 @@ export default function KitchenPage() {
     setQuantityInputs(prev => ({ ...prev, [itemName]: "" }))
   }
 
-  const completeOrders = todayOrders.filter((order) => order.status === "complete" || order.status === "ready").length
-  const incompleteOrders = todayOrders.filter((order) => order.status === "incomplete").length
+  const completeOrders   = customerOrders.filter(o => o.status === 'complete' || o.status === 'ready').length
+  const incompleteOrders = customerOrders.filter(o => o.status === 'incomplete' || o.status === 'cooking').length
 
-  // Calculate meal type counts using already-filtered todayOrders
-  // todayOrders excludes delivered/served/complete/cancelled orders
-  const breakfastOrders = todayOrders.filter((order) =>
-    (order.mealType && order.mealType.toLowerCase() === 'breakfast') ||
-    (order.originalMealType && order.originalMealType.toLowerCase() === 'breakfast')
+  // Meal type counts use ALL active customerOrders (not just the meal-type-filtered todayOrders)
+  const mealCount = (mt: string) => customerOrders.filter(o =>
+    (o.mealType || '').toLowerCase() === mt || (o.originalMealType || '').toLowerCase() === mt
   ).length
-
-  const lunchOrders = todayOrders.filter((order) =>
-    (order.mealType && order.mealType.toLowerCase() === 'lunch') ||
-    (order.originalMealType && order.originalMealType.toLowerCase() === 'lunch')
-  ).length
-
-  const dinnerOrders = todayOrders.filter((order) =>
-    (order.mealType && order.mealType.toLowerCase() === 'dinner') ||
-    (order.originalMealType && order.originalMealType.toLowerCase() === 'dinner')
-  ).length
-
-  const otherOrders = todayOrders.filter((order: CustomerOrder) => {
-    return ((order.mealType && order.mealType.toLowerCase() === 'other') ||
-            (order.originalMealType && order.originalMealType.toLowerCase() === 'other'))
-  }).length
+  const breakfastOrders = mealCount('breakfast')
+  const lunchOrders     = mealCount('lunch')
+  const dinnerOrders    = mealCount('dinner')
+  const otherOrders     = mealCount('other')
 
   // Sort orders to ensure completed ones are at the bottom
   const sortedTodayOrders = [...todayOrders].sort((a, b) => {
@@ -1261,24 +1268,24 @@ export default function KitchenPage() {
                 <AlertCircle className="h-5 w-5 text-accent" />
                 Customer Orders Details
               </span>
-              {todayOrders.length > 0 && (
+              {customerOrders.length > 0 && (
                 <Badge variant="secondary">
-                  {todayOrders.length} {todayOrders.length === 1 ? 'order' : 'orders'}
+                  {customerOrders.length} {customerOrders.length === 1 ? 'order' : 'orders'}
                 </Badge>
               )}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {todayOrders.length === 0 ? (
+            {customerOrders.length === 0 ? (
               <div className="text-center py-8">
                 <p className="text-sm text-muted-foreground">
-                  No orders for today. Orders will appear here once placed for the current date.
+                  No active orders. Orders will appear here once placed.
                 </p>
               </div>
             ) : (
               <>
                 <div className="space-y-4">
-                  {todayOrders
+                  {customerOrders
                   .slice((currentPage - 1) * ordersPerPage, currentPage * ordersPerPage)
                   .map((order) => {
                     const missingItems = getMissingItems(order)

@@ -32,6 +32,8 @@ import { InventoryItem, CustomerOrder, KitchenItem } from "./inventory-store"
 let inventoryListener: Unsubscribe | null = null
 let ordersListener: Unsubscribe | null = null
 let kitchenListener: Unsubscribe | null = null
+// IDs of orders currently being deleted — listeners skip these to prevent ghost reappearance
+const pendingDeletes = new Set<string>()
 let menuListener: Unsubscribe | null = null
 let ordersPageListener: Unsubscribe | null = null
 
@@ -235,6 +237,7 @@ export const initializeFirebaseSync = () => {
             const rtdbOrders: Record<string, any> = snapshot.val()
             const staleIds: string[] = []
             activeOrders = Object.values(rtdbOrders).filter((o: any) => {
+              if (pendingDeletes.has(o.id || o.orderId)) return false  // being deleted right now
               if (isStaleOrder(o)) {
                 staleIds.push(o.id || o.orderId)
                 return false
@@ -295,7 +298,7 @@ export const initializeFirebaseSync = () => {
           // Any edit by any admin goes to Firebase first, so remote is always correct.
           // Never let a stale local copy override a Firebase edit from another admin.
           remoteMap.forEach((remote, id) => {
-            merged.push(remote)
+            if (!pendingDeletes.has(id)) merged.push(remote)  // skip in-flight deletions
           })
           // Only keep local-only orders if they were just created (within 10s) — not yet synced to Firebase.
           // This prevents ghost orders from re-appearing after another admin deletes them.
@@ -961,12 +964,15 @@ export const rebuildKitchenFromOrders = async (): Promise<void> => {
 
     // Get existing kitchen items
     const existingKitchen: Record<string, any> = kitchenSnap.exists() ? kitchenSnap.val() : {}
-    const existingOrderIds = new Set(
-      Object.values(existingKitchen).map((k: any) => k.orderId)
-    )
+    // Build a map of orderId → Set of item names already in kitchen
+    const existingByOrder = new Map<string, Set<string>>()
+    Object.values(existingKitchen).forEach((k: any) => {
+      if (!existingByOrder.has(k.orderId)) existingByOrder.set(k.orderId, new Set())
+      existingByOrder.get(k.orderId)!.add(k.itemName || k.name || '')
+    })
 
-    // Find active orders that have NO kitchen items yet
-    const missingOrders = activeOrders.filter((o: any) => !existingOrderIds.has(o.id))
+    // Find active orders that have NO kitchen items yet at all
+    const missingOrders = activeOrders.filter((o: any) => !existingByOrder.has(o.id))
     if (missingOrders.length === 0) {
       console.log('[firebase-sync] rebuildKitchenFromOrders: all orders have kitchen items')
       return
@@ -1119,10 +1125,12 @@ export const loadOrderHistoryFromFirebase = async (): Promise<void> => {
  * Removes from /inventories/orders/{id} AND /ordersPage/{id}
  */
 export const deleteOrderFromFirebase = async (orderId: string): Promise<void> => {
+  // Mark as pending so onValue listeners ignore this order during deletion
+  pendingDeletes.add(orderId)
   try {
     const { remove, get, ref: dbRef2 } = await import("firebase/database")
 
-    // Also remove kitchen items for this order from /inventories/kitchen
+    // Remove kitchen items for this order from /inventories/kitchen
     const kitchenSnap = await get(dbRef2(database, 'inventories/kitchen'))
     const kitchenRemovals: Promise<void>[] = []
     if (kitchenSnap.exists()) {
@@ -1144,5 +1152,8 @@ export const deleteOrderFromFirebase = async (orderId: string): Promise<void> =>
     if (err?.code !== 'PERMISSION_DENIED') {
       console.warn('[firebase-sync] deleteOrderFromFirebase failed:', err)
     }
+  } finally {
+    // Remove from pending after a short delay — ensures onValue has settled
+    setTimeout(() => pendingDeletes.delete(orderId), 3000)
   }
 }
