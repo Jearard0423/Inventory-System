@@ -1830,6 +1830,17 @@ export const restoreStockForOrder = (order: { items: { id: string; name: string;
   
   // Save to localStorage
   saveToLocalStorage(INVENTORY_ITEMS_KEY, inventoryItems);
+
+  // Sync restored inventory to Firebase so all admins see updated stock
+  try {
+    const { saveInventoryToFirebase } = require('./firebase-inventory-sync');
+    saveInventoryToFirebase(inventoryItems).catch(() => {});
+  } catch { /* non-critical */ }
+
+  // Dispatch inventory-updated so UI refreshes immediately
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('inventory-updated'));
+  }
   
   return success;
 };

@@ -672,7 +672,10 @@ export default function KitchenPage() {
     return Object.entries(aggregated).map(([name, quantity]) => ({ name, quantity }))
   }
 
-  const renderOrderDetails = (order: CustomerOrder) => {
+  const renderOrderDetails = (rawOrder: CustomerOrder) => {
+    // Always use the freshest copy from store so orderedItems/cookedItems are never stale
+    const order = getCustomerOrders().find(o => o.id === rawOrder.id) || rawOrder
+
     // If the order is already delivered, don't show details in Kitchen view
     if (order.status === 'delivered') {
       return (
