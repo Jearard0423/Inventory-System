@@ -345,12 +345,13 @@ export default function OrdersPage() {
       orderDate.setHours(0, 0, 0, 0)
       if (orderDate.toDateString() !== date.toDateString()) return false
       const s = (order.status || '').toLowerCase()
-      if (s !== 'pending') return false
+      // Exclude only truly cancelled/delivered — not orders that progressed to cooking/complete
+      if (s === 'cancelled' || s === 'canceled' || s === 'deleted' || s === 'removed') return false
       // Cross-check customerOrders for latest delivery/cancel status
       const custOrder = freshCustomerOrders.find((co: any) => co.id === order.id)
       if (custOrder) {
         const cs = (custOrder.status || '').toLowerCase()
-        if (cs === 'delivered' || cs === 'cancelled' || cs === 'canceled' || cs === 'complete' || cs === 'ready') return false
+        if (cs === 'delivered' || cs === 'served' || cs === 'cancelled' || cs === 'canceled') return false
       }
       return true
     }).length
@@ -410,8 +411,9 @@ export default function OrdersPage() {
     if (selectedDate) {
       const selected = new Date(selectedDate)
       selected.setHours(0, 0, 0, 0)
-      // when viewing a specific date from the calendar, only show pending orders
-      if (order.status !== 'pending') return false
+      // Exclude only fully cancelled orders, not orders in progress
+      const ss = (order.status || '').toLowerCase()
+      if (ss === 'cancelled' || ss === 'canceled' || ss === 'deleted' || ss === 'removed') return false
       return orderDate.toDateString() === selected.toDateString()
     }
 
@@ -419,10 +421,13 @@ export default function OrdersPage() {
     todayDate.setHours(0, 0, 0, 0)
 
     if (orderType === "today") {
-      // Only show pending orders; delivered/completed ones belong in history
-      if (order.status !== 'pending') return false
+      const ss = (order.status || '').toLowerCase()
+      if (ss === 'cancelled' || ss === 'canceled' || ss === 'deleted' || ss === 'removed') return false
       const custOrder = customerOrders.find(co => co.id === order.id)
-      if (custOrder && custOrder.status === 'delivered') return false
+      if (custOrder) {
+        const cs = (custOrder.status || '').toLowerCase()
+        if (cs === 'delivered' || cs === 'served' || cs === 'cancelled' || cs === 'canceled') return false
+      }
       return orderDate.toDateString() === todayDate.toDateString()
     } else if (orderType === "advanced") {
       return orderDate > todayDate
@@ -473,8 +478,9 @@ export default function OrdersPage() {
     const dayOrders = orders.filter((order) => {
       const orderDate = new Date(order.date)
       orderDate.setHours(0, 0, 0, 0)
-      // Only consider pending orders for meal type breakdown
-      if (order.status !== 'pending') return false
+      // Exclude only cancelled orders from meal type breakdown
+      const ss = (order.status || '').toLowerCase()
+      if (ss === 'cancelled' || ss === 'canceled' || ss === 'deleted' || ss === 'removed') return false
       return orderDate.toDateString() === targetDate.toDateString()
     })
 

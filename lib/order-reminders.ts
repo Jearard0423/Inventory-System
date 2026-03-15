@@ -32,6 +32,15 @@ export const resetOrderReminders = () => {
 /**
  * Parse cookTime string "HH:MM" into a Date object for today (PH time)
  */
+const formatCookTime12h = (cookTime: string): string => {
+  try {
+    const [h, m] = cookTime.split(":").map(Number)
+    const period = h >= 12 ? "PM" : "AM"
+    const h12 = h % 12 || 12
+    return `${h12}:${m.toString().padStart(2, '0')} ${period}`
+  } catch { return cookTime }
+}
+
 const parseCookTimeToday = (cookTime: string): Date | null => {
   try {
     const [hours, minutes] = cookTime.split(":").map(Number)
@@ -100,7 +109,7 @@ export const checkAndFireOrderReminders = () => {
           saveNotification({
             type: "order",
             title: "📅 Order Due Tomorrow",
-            message: `Reminder: ${order.customerName}'s order is scheduled for tomorrow at ${order.cookTime}. Start preparations early!`,
+            message: `Reminder: ${order.customerName}'s order is scheduled for tomorrow at ${formatCookTime12h(order.cookTime)}. Start preparations early!`,
             priority: "medium",
             data: { orderId: order.id, orderNumber: order.orderNumber },
           })
@@ -130,7 +139,7 @@ export const checkAndFireOrderReminders = () => {
       saveNotification({
         type: "order",
         title: `⏰ Order in 2 Hours`,
-        message: `${name} ${orderNum} is due at ${order.cookTime}. Items: ${itemsSummary}`,
+        message: `${name} ${orderNum} is due at ${formatCookTime12h(order.cookTime)}. Items: ${itemsSummary}`,
         priority: "medium",
         data: { orderId: order.id },
       })
@@ -143,7 +152,7 @@ export const checkAndFireOrderReminders = () => {
       saveNotification({
         type: "order",
         title: `🚨 Order Due in 30 Minutes!`,
-        message: `${name} ${orderNum} is due at ${order.cookTime}. Get ready! Items: ${itemsSummary}`,
+        message: `${name} ${orderNum} is due at ${formatCookTime12h(order.cookTime)}. Get ready! Items: ${itemsSummary}`,
         priority: "high",
         data: { orderId: order.id },
       })
@@ -156,7 +165,7 @@ export const checkAndFireOrderReminders = () => {
       saveNotification({
         type: "order",
         title: `🔔 Order Due in 10 Minutes!`,
-        message: `${name} ${orderNum} is almost due at ${order.cookTime}! Items: ${itemsSummary}`,
+        message: `${name} ${orderNum} is almost due at ${formatCookTime12h(order.cookTime)}! Items: ${itemsSummary}`,
         priority: "high",
         data: { orderId: order.id },
       })
@@ -169,7 +178,7 @@ export const checkAndFireOrderReminders = () => {
       saveNotification({
         type: "order",
         title: `❗ Order Overdue!`,
-        message: `${name} ${orderNum} was due at ${order.cookTime} and hasn't been marked delivered. Items: ${itemsSummary}`,
+        message: `${name} ${orderNum} was due at ${formatCookTime12h(order.cookTime)} and hasn't been marked delivered. Items: ${itemsSummary}`,
         priority: "high",
         data: { orderId: order.id },
       })

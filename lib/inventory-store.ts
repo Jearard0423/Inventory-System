@@ -717,29 +717,41 @@ export const markItemAsCooked = (itemId: string, quantity?: number, orderId?: st
   if (orderId) {
     const order = customerOrders.find(o => o.id === orderId);
     if (order) {
+      // Use orderedItems with fallback to items (some RTDB orders store items under 'items')
+      const orderedItemsArr = (order.orderedItems?.length ? order.orderedItems : (order as any).items) || [];
+
       // Try to locate which orderedItem this kitchen item corresponds to
       const orderedItemId = item.orderedItemId;
       let cookedSource: OrderItem | undefined;
       if (orderedItemId) {
-        cookedSource = order.orderedItems.find(i => i.id === orderedItemId);
+        cookedSource = orderedItemsArr.find((i: any) => i.id === orderedItemId);
       }
       // Fallback: match by name
       if (!cookedSource) {
-        cookedSource = order.orderedItems.find(i => i.name === item.itemName);
+        cookedSource = orderedItemsArr.find((i: any) => i.name === item.itemName);
       }
 
       if (cookedSource) {
         if (!order.cookedItems) order.cookedItems = [];
-        const existingCookedItem = order.cookedItems.find(i => i.name === cookedSource!.name);
+        const existingCookedItem = order.cookedItems.find(i => i.name === (cookedSource as any).name);
         if (existingCookedItem) {
           existingCookedItem.quantity += cookQuantity;
         } else {
-          order.cookedItems.push({ name: cookedSource.name, quantity: cookQuantity });
+          order.cookedItems.push({ name: (cookedSource as any).name, quantity: cookQuantity });
+        }
+      } else {
+        // No matching orderedItem found — directly push by kitchen item name as fallback
+        if (!order.cookedItems) order.cookedItems = [];
+        const existing = order.cookedItems.find(i => i.name === item.itemName);
+        if (existing) {
+          existing.quantity += cookQuantity;
+        } else {
+          order.cookedItems.push({ name: item.itemName, quantity: cookQuantity });
         }
       }
 
       // Update order status if all items are cooked
-      const allCooked = order.orderedItems.every(orderedItem => {
+      const allCooked = orderedItemsArr.length > 0 && orderedItemsArr.every((orderedItem: any) => {
         const cooked = order.cookedItems?.find(c => c.name === orderedItem.name);
         return cooked && cooked.quantity >= orderedItem.quantity;
       });
