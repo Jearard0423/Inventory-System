@@ -13,6 +13,7 @@ import {
   markAsRead,
   markAllAsRead,
   deleteNotification,
+  startNotificationsListener,
   type Notification,
 } from "@/lib/notifications-store"
 import { formatDistanceToNow } from "date-fns"
@@ -29,6 +30,8 @@ export default function NotificationsPage() {
   useEffect(() => {
     const load = () => setNotifications(getNotifications())
     load()
+    // Start real-time Firebase listener so deletes/adds by other admins reflect instantly
+    startNotificationsListener()
     if (typeof window !== "undefined") {
       window.addEventListener("notifications-updated", load)
       return () => window.removeEventListener("notifications-updated", load)
@@ -166,7 +169,12 @@ export default function NotificationsPage() {
                           <div className="flex items-center gap-2 mt-1.5 text-[10px] sm:text-xs text-muted-foreground/70">
                             <Clock className="h-3 w-3 shrink-0" />
                             <span className="truncate">
-                              {formatDistanceToNow(new Date(notif.timestamp), { addSuffix: true })}
+                              {(() => {
+                              try {
+                                const d = new Date(notif.timestamp)
+                                return isNaN(d.getTime()) ? 'Unknown time' : formatDistanceToNow(d, { addSuffix: true })
+                              } catch { return 'Unknown time' }
+                            })()}
                             </span>
                             <span className="capitalize shrink-0">· {notif.type}</span>
                             {notif.data?.id && (

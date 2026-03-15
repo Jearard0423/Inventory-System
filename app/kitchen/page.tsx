@@ -43,7 +43,6 @@ const formatTimeForDisplay = (time24: string): string => {
 export default function KitchenPage() {
   const auth = useAuth()
   // Guard: prevents loadData from re-entering itself when Firebase write → onValue → event → loadData
-  const isLoadingRef = useRef(false)
   const kitchenFetchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [kitchenItems, setKitchenItems] = useState<KitchenItem[]>([])
   const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([])
@@ -92,8 +91,6 @@ export default function KitchenPage() {
   }
 
   const loadData = () => {
-    if (isLoadingRef.current) return  // prevent re-entrant call loop
-    isLoadingRef.current = true
     try {
     const allOrdersRaw = getCustomerOrders()
     const kItems = getKitchenItems()
@@ -187,8 +184,8 @@ export default function KitchenPage() {
       setTodayOrders(filtered)
     }
     console.log(`[Kitchen] loadData complete: ${allOrders.length} total orders → ${filtered.length} active orders for meal type "${filterMealTypeRef.current}"`)
-    } finally {
-      isLoadingRef.current = false
+    } catch (err) {
+      console.warn('[Kitchen] loadData error:', err)
     }
   }
 
@@ -458,7 +455,9 @@ export default function KitchenPage() {
   }
 
   const handleMarkAsCooked = (itemName: string, quantity: number = 1) => {
-    const itemsToCook = kitchenItems.filter(item =>
+    // Always read from the store (in-memory source of truth), not stale React state
+    const freshItems = getKitchenItems()
+    const itemsToCook = freshItems.filter(item =>
       item.status === "to-cook" && item.itemName === itemName
     )
     
@@ -492,7 +491,7 @@ export default function KitchenPage() {
   }
 
   const handleMarkAllAsCooked = () => {
-    const allItemsToCook = kitchenItems.filter(item => item.status === "to-cook")
+    const allItemsToCook = getKitchenItems().filter(item => item.status === "to-cook")
     
     if (allItemsToCook.length === 0) return
     
@@ -516,7 +515,8 @@ export default function KitchenPage() {
 
   const handleUndoCooked = (itemName: string, quantity: number = 1) => {
     // Search all customerOrders for cooked items (complete orders are excluded from todayOrders but we still want to undo them)
-    let cookedItemsForName = kitchenItems.filter(item =>
+    // Read fresh from store so we see the latest cooked status, not stale React state
+    let cookedItemsForName = getKitchenItems().filter(item =>
       item.status === "cooked" && item.itemName === itemName
     )
 

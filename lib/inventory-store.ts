@@ -1756,6 +1756,12 @@ export const increaseStock = (itemId: string, amount: number): boolean => {
 
 export const restoreStockForOrder = (order: { items: { id: string; name: string; quantity: number }[] }): boolean => {
   let success = true;
+
+  // Re-sync inventoryItems from localStorage before restoring so we work with latest values
+  try {
+    const raw = localStorage.getItem(INVENTORY_ITEMS_KEY);
+    if (raw) inventoryItems = JSON.parse(raw);
+  } catch { /* use in-memory fallback */ }
   
   // Restore both menu item stock, ingredient stock (for meals),
   // and raw stock based on RAW_STOCK_DEDUCTION_MAP (mirrors saveOrder logic)

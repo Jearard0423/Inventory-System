@@ -82,11 +82,13 @@ export const startNotificationsListener = async () => {
 
     fb.onValue(fb.ref(fb.database, FIREBASE_PATH), (snap: any) => {
       try {
-        if (!snap.exists()) return
-        const remote: Notification[] = Object.values(snap.val())
-        remote.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        // When snap doesn't exist all notifications were deleted — clear local
+        const remote: Notification[] = snap.exists() ? (Object.values(snap.val()) as Notification[]) : []
+        // Filter out any malformed entries (missing id or invalid timestamp)
+        const valid = remote.filter((r: any) => r?.id && r?.title && r?.timestamp && !isNaN(new Date(r.timestamp).getTime()))
+        valid.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
         const localMap = new Map(getNotifications().map(n => [n.id, n]))
-        const merged = remote.map(r => localMap.get(r.id)?.read ? { ...r, read: true } : r)
+        const merged = valid.map(r => localMap.get(r.id)?.read ? { ...r, read: true } : r)
         saveLocal(merged)
       } catch { /* ignore */ }
     })
