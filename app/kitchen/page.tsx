@@ -598,6 +598,9 @@ export default function KitchenPage() {
       return
     }
     window.dispatchEvent(new Event("delivery-updated"))
+    // Force immediate state refresh from in-memory store (no Firebase wait needed)
+    setKitchenItems(JSON.parse(JSON.stringify(getKitchenItems())))
+    setCustomerOrders(JSON.parse(JSON.stringify(getCustomerOrders())))
     loadData()
     
     // Show success dialog
@@ -610,7 +613,10 @@ export default function KitchenPage() {
   }
 
   const handleMarkAllAsCooked = () => {
-    const allItemsToCook = getKitchenItems().filter(item => item.status === "to-cook")
+    const allItemsToCook = getKitchenItems().filter(item => 
+      item.status === "to-cook" && 
+      Math.max(0, (item.totalOrdered || item.quantity || 1) - (item.totalCooked || 0)) > 0
+    )
     
     if (allItemsToCook.length === 0) return
     
@@ -636,14 +642,16 @@ export default function KitchenPage() {
   }
 
   const handleUndoCooked = (itemName: string, quantity: number = 1) => {
-    // Search all customerOrders for cooked items (complete orders are excluded from todayOrders but we still want to undo them)
-    // Read fresh from store so we see the latest cooked status, not stale React state
+    // Find ALL kitchen items for this name that have any cooked units
+    // (includes partial: status='to-cook' with totalCooked > 0)
     let cookedItemsForName = getKitchenItems().filter(item =>
-      item.status === "cooked" && item.itemName === itemName
+      item.itemName === itemName &&
+      (item.totalCooked || 0) > 0 &&
+      item.status !== 'served'
     )
 
-    // If no cooked items from incomplete orders found, don't fall back - prevent affecting delivered orders
     if (cookedItemsForName.length === 0) {
+      console.warn('[Kitchen] handleUndoCooked: no cooked items found for', itemName)
       return
     }
     
@@ -721,6 +729,9 @@ export default function KitchenPage() {
     const changedIds = itemsToUndo.map(i => i.item.orderId).filter(Boolean) as string[]
     updateCustomerOrders(updatedWithStatus, [...new Set(changedIds)])
     window.dispatchEvent(new Event("delivery-updated"))
+    // Force immediate state refresh
+    setKitchenItems(JSON.parse(JSON.stringify(getKitchenItems())))
+    setCustomerOrders(JSON.parse(JSON.stringify(getCustomerOrders())))
     loadData()
     
     // Reset quantity input
