@@ -423,18 +423,27 @@ export default function OrdersPage() {
     if (orderType === "today") {
       const ss = (order.status || '').toLowerCase()
       if (ss === 'cancelled' || ss === 'canceled' || ss === 'deleted' || ss === 'removed') return false
-      const custOrder = customerOrders.find(co => co.id === order.id)
+      // Also exclude if the order itself is marked delivered
+      if (ss === 'delivered' || ss === 'served') return false
+      const custOrder = customerOrders.find(co => co.id === order.id) ||
+        JSON.parse(localStorage.getItem('yellowbell_customer_orders') || '[]').find((co: any) => co.id === order.id)
       if (custOrder) {
         const cs = (custOrder.status || '').toLowerCase()
-        if (cs === 'delivered' || cs === 'served' || cs === 'cancelled' || cs === 'canceled') return false
+        if (cs === 'delivered' || cs === 'served' || cs === 'cancelled' || cs === 'canceled' || cs === 'complete') return false
       }
       return orderDate.toDateString() === todayDate.toDateString()
     } else if (orderType === "advanced") {
       return orderDate > todayDate
     } else {
-      // Default to today's orders only (exclude delivered)
-      const custOrder = customerOrders.find(co => co.id === order.id)
-      if (custOrder && custOrder.status === 'delivered') return false
+      // Default to today's orders only (exclude delivered/complete)
+      const ss2 = (order.status || '').toLowerCase()
+      if (ss2 === 'delivered' || ss2 === 'served') return false
+      const custOrder = customerOrders.find(co => co.id === order.id) ||
+        JSON.parse(localStorage.getItem('yellowbell_customer_orders') || '[]').find((co: any) => co.id === order.id)
+      if (custOrder) {
+        const cs = (custOrder.status || '').toLowerCase()
+        if (cs === 'delivered' || cs === 'served' || cs === 'complete') return false
+      }
       return orderDate.toDateString() === todayDate.toDateString()
     }
   }).sort((a, b) => {

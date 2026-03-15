@@ -276,7 +276,10 @@ export default function OrderHistoryPage() {
             {paginated.map(order => {
               const badge = statusBadge(order.status)
               const isExpanded = expandedId === order.id
-              const items = order.orderedItems || (order as any).items || []
+              const items = (order.orderedItems?.length ? order.orderedItems : null)
+                || ((order as any).items?.length ? (order as any).items : null)
+                || (order.cookedItems?.length ? order.cookedItems : null)
+                || []
 
               return (
                 <Card key={order.id} className={cn("overflow-hidden transition-shadow hover:shadow-md", isExpanded && "ring-1 ring-primary/20")}>
