@@ -65,14 +65,33 @@ export default function DeliveryPage() {
   const itemsPerPage = 5
 
   const loadData = () => {
-    const allOrders = getCustomerOrders()
-    const FINAL = new Set(['cancelled', 'canceled', 'delivered'])
+    // Read fresh from localStorage (not in-memory array) so deletions/deliveries from
+    // other devices are reflected immediately after Firebase onValue updates localStorage
+    const raw = typeof window !== 'undefined'
+      ? JSON.parse(localStorage.getItem('yellowbell_customer_orders') || '[]')
+      : []
+    // Also cross-check yellowbell_orders: if an order is 'delivered'/'cancelled' there, exclude it
+    const ordersPageRaw = typeof window !== 'undefined'
+      ? JSON.parse(localStorage.getItem('yellowbell_orders') || '[]')
+      : []
+    const finalInOrdersPage = new Set(
+      ordersPageRaw
+        .filter((o: any) => {
+          const s = (o.status || '').toLowerCase()
+          return s === 'delivered' || s === 'cancelled' || s === 'canceled' || s === 'completed'
+        })
+        .map((o: any) => o.id)
+    )
+    const allOrders = raw
+    const FINAL = new Set(['cancelled', 'canceled', 'delivered', 'served'])
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
-    const active = allOrders.filter(o => {
+    const active = allOrders.filter((o: any) => {
       const status = (o.status || '').toLowerCase()
       if (FINAL.has(status)) return false
+      // Also exclude if ordersPage marks it as delivered/cancelled
+      if (finalInOrdersPage.has(o.id)) return false
 
       // Determine the relevant date: use order.date (delivery date) if set, else createdAt
       const dateStr = (o as any).date || o.createdAt

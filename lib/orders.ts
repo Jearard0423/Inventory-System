@@ -8,7 +8,7 @@ export interface Order {
   total: number
   date: string
   createdAt?: string
-  status: "pending" | "completed"
+  status: "pending" | "completed" | "delivered" | "cancelled"
   paymentStatus: "paid" | "not-paid"
   paymentMethod?: "cash" | "gcash"
   gcashPhone?: string
@@ -28,8 +28,13 @@ export const getOrders = (): Order[] => {
   
   // Normalize statuses and add order numbers for old entries
   return orders.map((order: Order) => {
-    // treat anything not explicitly 'pending' as completed
-    const normalizedStatus = order.status === 'pending' ? 'pending' : 'completed'
+    // Preserve delivered/cancelled; only unknown values fall back to 'completed'
+    const s = (order.status || '').toLowerCase()
+    const normalizedStatus: any = 
+      s === 'pending' ? 'pending' :
+      (s === 'delivered' || s === 'served') ? 'delivered' :
+      (s === 'cancelled' || s === 'canceled' || s === 'deleted') ? 'cancelled' :
+      'completed'
 
     if (!order.orderNumber) {
       // Generate a simple order number for existing orders
