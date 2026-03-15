@@ -960,7 +960,9 @@ export const rebuildKitchenFromOrders = async (): Promise<void> => {
 
     const orders = Object.values(ordersSnap.val() as Record<string, any>)
     const FINAL = new Set(['delivered', 'served', 'cancelled', 'canceled', 'completed'])
-    const activeOrders = orders.filter((o: any) => !FINAL.has((o.status || '').toLowerCase()))
+    const activeOrders = orders.filter((o: any) =>
+      !FINAL.has((o.status || '').toLowerCase()) && !isStaleOrder(o)
+    )
 
     // Get existing kitchen items
     const existingKitchen: Record<string, any> = kitchenSnap.exists() ? kitchenSnap.val() : {}

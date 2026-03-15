@@ -68,14 +68,15 @@ export default function OrderHistoryPage() {
       return true
     })
 
-    // Also include delivered/complete orders from the live feed (in case archival was delayed)
-    const FINAL_LIVE = new Set(["complete", "completed", "delivered", "served", "ready"])
-    const liveFinalized = getCustomerOrders().filter(o => FINAL_LIVE.has((o.status || "").toLowerCase()))
-    const liveIds = new Set(liveFinalized.map(o => o.id))
+    // Include ALL customer orders from the live feed (active + finalized)
+    // Active orders show under the "Pending" tab, finalized under Completed/Delivered
+    const EXCLUDED = new Set(["cancelled", "canceled", "deleted", "removed"])
+    const liveOrders = getCustomerOrders().filter(o => !EXCLUDED.has((o.status || "").toLowerCase()))
+    const liveIds = new Set(liveOrders.map(o => o.id))
 
-    // Merge: live finalized first, then archived (excluding those already in live)
+    // Merge: live orders first, then archived (excluding those already in live)
     const merged = [
-      ...liveFinalized,
+      ...liveOrders,
       ...archived.filter(o => !liveIds.has(o.id))
     ]
     merged.sort((a, b) => new Date(b.createdAt || b.date || 0).getTime() - new Date(a.createdAt || a.date || 0).getTime())

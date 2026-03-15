@@ -232,7 +232,7 @@ export function NotificationBell() {
                               {notif.title}
                             </h4>
                             <span className="text-[10px] text-muted-foreground shrink-0">
-                              {new Date(notif.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                              {new Date(notif.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: true })}
                             </span>
                           </div>
                           <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5 leading-relaxed">{notif.message}</p>
