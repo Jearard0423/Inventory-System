@@ -507,16 +507,24 @@ export default function KitchenPage() {
       const timeB = (b as any).cookTime || '99:99'
       return timeA.localeCompare(timeB)
     })
-    
-    // Mark the specified number of items as cooked
-    const itemsToMark = itemsToCook.slice(0, Math.min(quantity, itemsToCook.length))
-    
+
+    // Each kitchen item can represent multiple units (totalOrdered > 1).
+    // Distribute the requested quantity across items, passing the right qty per item.
+    let remaining = quantity
     let anyMarked = false
-    itemsToMark.forEach(itemToMark => {
-      const ok = markItemAsCooked(itemToMark.id, 1, itemToMark.orderId)
-      if (ok) anyMarked = true
+    let markedCount = 0
+    for (const itemToMark of itemsToCook) {
+      if (remaining <= 0) break
+      // How many units can this kitchen item absorb?
+      const itemTotal = itemToMark.totalOrdered || itemToMark.quantity || 1
+      const alreadyCooked = itemToMark.totalCooked || 0
+      const canCook = Math.max(0, itemTotal - alreadyCooked)
+      const cookNow = Math.min(remaining, canCook)
+      if (cookNow <= 0) continue
+      const ok = markItemAsCooked(itemToMark.id, cookNow, itemToMark.orderId)
+      if (ok) { anyMarked = true; remaining -= cookNow; markedCount += cookNow }
       else console.warn('[Kitchen] markItemAsCooked failed for id:', itemToMark.id)
-    })
+    }
     if (!anyMarked) {
       console.warn('[Kitchen] No items were marked — kitchen items may be out of sync, re-fetching')
       fetchKitchenNow().catch(() => {}).finally(() => loadData())
@@ -527,7 +535,7 @@ export default function KitchenPage() {
     
     // Show success dialog
     setMarkedItemName(itemName)
-    setMarkedItemQuantity(itemsToMark.length)
+    setMarkedItemQuantity(markedCount)
     setMarkedItemDialogOpen(true)
     
     // Reset quantity input
@@ -539,9 +547,12 @@ export default function KitchenPage() {
     
     if (allItemsToCook.length === 0) return
     
-    // Mark all items as cooked
+    // Mark all items as cooked — pass full pending quantity per item
     allItemsToCook.forEach(itemToMark => {
-      markItemAsCooked(itemToMark.id, 1, itemToMark.orderId)
+      const itemTotal = itemToMark.totalOrdered || itemToMark.quantity || 1
+      const alreadyCooked = itemToMark.totalCooked || 0
+      const cookNow = Math.max(1, itemTotal - alreadyCooked)
+      markItemAsCooked(itemToMark.id, cookNow, itemToMark.orderId)
     })
     // `markItemAsCooked` already updated orders/kitchen state and persisted them.
     // Refresh local view instead of mutating orders here.
@@ -578,14 +589,24 @@ export default function KitchenPage() {
       return new Date(b.cookedAt).getTime() - new Date(a.cookedAt).getTime()
     })
     
-    const itemsToUndo = sortedItems.slice(0, Math.min(quantity, sortedItems.length))
-    
-    // Mark items as to-cook again
+    // Distribute undo quantity across items (each item may hold multiple units)
+    let remaining = quantity
+    const itemsToUndo: Array<{ item: typeof sortedItems[0]; undoQty: number }> = []
+    for (const item of sortedItems) {
+      if (remaining <= 0) break
+      const cooked = item.totalCooked || 0
+      const undoQty = Math.min(remaining, cooked)
+      if (undoQty <= 0) continue
+      itemsToUndo.push({ item, undoQty })
+      remaining -= undoQty
+    }
+
+    // Mark items as to-cook again with the correct undo quantity
     const items = getKitchenItems()
     const updated = items.map((item) => {
-      const itemToUndo = itemsToUndo.find(undoItem => undoItem.id === item.id)
-      if (itemToUndo) {
-        const newTotalCooked = Math.max(0, (item.totalCooked || 0) - (itemToUndo.quantity || 1))
+      const entry = itemsToUndo.find(e => e.item.id === item.id)
+      if (entry) {
+        const newTotalCooked = Math.max(0, (item.totalCooked || 0) - entry.undoQty)
         const newPending = (item.totalOrdered || 0) - newTotalCooked
         return { ...item, status: "to-cook" as const, cookedAt: undefined, totalCooked: newTotalCooked, pending: newPending }
       }
@@ -594,12 +615,11 @@ export default function KitchenPage() {
     updateKitchenItems(updated)
 
     // Update customer orders
-    // Use ALL customer orders (not just active) so 'complete' orders can be undone
     const orders = getCustomerOrders()
     const updatedOrders = orders.map((order) => {
-      // Only affect the specific order(s) that correspond to the kitchen items being undone
-      const orderItemsToUndo = itemsToUndo.filter(item => item.orderId === order.id)
-      if (orderItemsToUndo.length === 0) return order
+      const orderEntries = itemsToUndo.filter(e => e.item.orderId === order.id)
+      if (orderEntries.length === 0) return order
+      const totalUndoForOrder = orderEntries.reduce((s, e) => s + e.undoQty, 0)
 
       const cookedItemsArr = order.cookedItems || []
       return {
@@ -607,7 +627,7 @@ export default function KitchenPage() {
         cookedItems: cookedItemsArr
           .map((item) => {
             if (item.name === itemName) {
-              const newQuantity = item.quantity - orderItemsToUndo.length
+              const newQuantity = item.quantity - totalUndoForOrder
               return newQuantity > 0 ? { ...item, quantity: newQuantity } : null
             }
             return item
@@ -631,7 +651,7 @@ export default function KitchenPage() {
     })
 
     // Only sync the orders that actually changed
-    const changedIds = itemsToUndo.map(i => i.orderId).filter(Boolean) as string[]
+    const changedIds = itemsToUndo.map(i => i.item.orderId).filter(Boolean) as string[]
     updateCustomerOrders(updatedWithStatus, [...new Set(changedIds)])
     window.dispatchEvent(new Event("delivery-updated"))
     loadData()

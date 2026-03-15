@@ -93,10 +93,16 @@ export default function DashboardPage() {
     // Use createdAt (when order was placed) not date (delivery date which may differ)
     const createdDate = new Date(order.createdAt || order.date)
     createdDate.setHours(0, 0, 0, 0)
+    // Exclude cancelled/deleted orders
     if (CANCELLED_STATUSES.has((order.status || '').toLowerCase())) return false
-    if (order.status !== 'pending') return false
+    // Allow any non-cancelled status — order.status may be updated to 'complete'/'cooking'
+    // when kitchen marks items as done, so filtering by 'pending' only misses active orders
     const cust = getCustomerOrders().find(o => o.id === order.id)
-    if (cust && (CANCELLED_STATUSES.has((cust.status || '').toLowerCase()) || cust.status === 'delivered' || cust.status === 'complete')) return false
+    // Exclude if RTDB says it's delivered or cancelled
+    if (cust) {
+      const custStatus = (cust.status || '').toLowerCase()
+      if (CANCELLED_STATUSES.has(custStatus) || custStatus === 'delivered' || custStatus === 'served') return false
+    }
     return createdDate.toDateString() === today.toDateString()
   })
 
