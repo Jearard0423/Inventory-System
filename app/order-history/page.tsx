@@ -60,7 +60,7 @@ export default function OrderHistoryPage() {
     const ACTIVE_STATUSES = new Set(["incomplete", "pending", "cooking", "to-cook"])
 
     // getOrderHistory() is RTDB-replaced (not merged) — the authoritative archive
-    const archived = getOrderHistory().filter(o => {
+    const archived = getOrderHistory().filter(o => o != null && o.id != null).filter(o => {
       const s = (o.status || "").toLowerCase()
       // Exclude cancelled AND active orders from history
       if (CANCELLED.has(s)) return false
@@ -78,7 +78,7 @@ export default function OrderHistoryPage() {
       if (raw) (JSON.parse(raw) as any[]).forEach((o: any) => { if (o.id) ordersPageIds.add(o.id) })
     } catch {}
     const hasOrdersPage = ordersPageIds.size > 0
-    const liveOrders = getCustomerOrders().filter(o => {
+    const liveOrders = getCustomerOrders().filter(o => o != null && o.id != null).filter(o => {
       if (EXCLUDED.has((o.status || "").toLowerCase())) return false
       if (hasOrdersPage && !ordersPageIds.has(o.id)) return false
       return true
@@ -90,8 +90,9 @@ export default function OrderHistoryPage() {
       ...liveOrders,
       ...archived.filter(o => !liveIds.has(o.id))
     ]
-    merged.sort((a, b) => new Date(b.createdAt || b.date || 0).getTime() - new Date(a.createdAt || a.date || 0).getTime())
-    setAllOrders(merged)
+    const safeOrders = merged.filter(o => o != null && o.id != null)
+    safeOrders.sort((a, b) => new Date(b.createdAt || b.date || 0).getTime() - new Date(a.createdAt || a.date || 0).getTime())
+    setAllOrders(safeOrders)
     setIsLoading(false)
   }
 
@@ -151,7 +152,9 @@ export default function OrderHistoryPage() {
 
   useEffect(() => setCurrentPage(1), [filtered])
 
-  const paginated = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+  const paginated = filtered
+    .filter(o => o != null && o.id != null)  // guard against null/malformed Firebase entries
+    .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
   const totalPages = Math.ceil(filtered.length / itemsPerPage)
 
   // Tab counts
@@ -304,7 +307,7 @@ export default function OrderHistoryPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-start justify-between gap-2 flex-wrap">
                             <div>
-                              <span className="font-semibold text-sm">{order.orderNumber || order.id.slice(0, 8)}</span>
+                              <span className="font-semibold text-sm">{order.orderNumber || (order.id || '').slice(0, 8)}</span>
                               <span className="text-muted-foreground text-xs mx-1.5">·</span>
                               <span className="text-sm">{order.customerName}</span>
                             </div>
