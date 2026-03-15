@@ -701,6 +701,17 @@ if (typeof window !== 'undefined') {
 }
 
 export const markItemAsCooked = (itemId: string, quantity?: number, orderId?: string): boolean => {
+  // Re-sync from localStorage first in case RTDB listener updated it but in-memory is behind
+  try {
+    const raw = localStorage.getItem(KITCHEN_ITEMS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.some((i: any) => i.id === itemId)) {
+        kitchenItems = parsed;
+      }
+    }
+  } catch { /* use in-memory */ }
+
   const item = kitchenItems.find(item => item.id === itemId);
   if (!item) return false;
   

@@ -14,6 +14,7 @@ import {
   getCustomerOrders,
   updateCustomerOrders,
   updateKitchenItems,
+  setCustomerOrdersFromRTDB,
   archiveOrderToHistory,
   getOrderHistory,
   type KitchenItem,
@@ -247,19 +248,9 @@ export default function KitchenPage() {
       }, 150)
     }
     const handleUpdate = debounceReload
-    // firebase-kitchen-updated: apply items from detail directly to in-memory store,
-    // then reload. This avoids a race where loadData runs before inventory-store's own
-    // firebase-kitchen-updated listener has finished updating in-memory kitchenItems.
-    const handleFirebaseKitchen = (ev: Event) => {
-      const detail = (ev as CustomEvent).detail
-      if (detail && typeof detail === 'object') {
-        try {
-          const { updateKitchenItems: ukiDirect } = require('@/lib/inventory-store')
-          ukiDirect(Object.values(detail))
-        } catch { /* fallback: let inventory-store handle it */ }
-      }
-      debounceReload()
-    }
+    // firebase-kitchen-updated: inventory-store's own listener already updated in-memory
+    // kitchenItems when this event fired. Just debounce-reload — no need to write back.
+    const handleFirebaseKitchen = debounceReload
     // firebase-orders-updated: RTDB pushed fresh data — reload immediately
     // This ensures deleted orders disappear on all clients as soon as Firebase fires
     // firebase-orders-updated carries fresh orders in detail — just apply + debounce reload.
@@ -267,13 +258,18 @@ export default function KitchenPage() {
     const handleFirebaseOrders = (ev: Event) => {
       const detail = (ev as CustomEvent).detail
       if (detail?.orders && typeof window !== 'undefined') {
-        try { localStorage.setItem('yellowbell_customer_orders', JSON.stringify(detail.orders)) } catch {}
+        try {
+          // Update both localStorage AND in-memory store so getCustomerOrders() is
+          // immediately correct when loadData() runs — prevents ghost orders reappearing
+          localStorage.setItem('yellowbell_customer_orders', JSON.stringify(detail.orders))
+          setCustomerOrdersFromRTDB(detail.orders)
+        } catch {}
       }
       if (kitchenFetchDebounceRef.current) clearTimeout(kitchenFetchDebounceRef.current)
       kitchenFetchDebounceRef.current = setTimeout(() => {
         kitchenFetchDebounceRef.current = null
         loadData()
-      }, 300)
+      }, 150)
     }
 
     if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
@@ -645,7 +641,7 @@ export default function KitchenPage() {
   const currentOrders = sortedTodayOrders.slice(indexOfFirstOrder, indexOfLastOrder)
 
   const getMissingItems = (order: CustomerOrder) => {
-    const orderedItemsArr = order.orderedItems || []
+    const orderedItemsArr = (order.orderedItems?.length ? order.orderedItems : (order as any).items) || []
     const cookedItemsArr = order.cookedItems || []
     const missingItems = orderedItemsArr
       .map(orderedItem => {
@@ -687,7 +683,8 @@ export default function KitchenPage() {
     const missingItems = getMissingItems(order)
     const isComplete = order.status === "complete" || order.status === "ready"
     const cookedItemsArr = order.cookedItems || []
-    const orderedItemsArr = order.orderedItems || []
+    // orderedItems fallback: some RTDB orders store items under 'items' not 'orderedItems'
+    const orderedItemsArr = (order.orderedItems?.length ? order.orderedItems : (order as any).items) || []
     
     return (
       <div className="space-y-4">
