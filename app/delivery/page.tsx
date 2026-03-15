@@ -667,14 +667,21 @@ export default function DeliveryPage() {
                               Completed Items:
                             </h4>
                             <div className="flex flex-wrap gap-2">
-                              {(order.cookedItems ?? []).map((item, idx) => (
-                                <Badge 
-                                  key={idx} 
-                                  className="bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 border-green-300 dark:border-green-700"
-                                >
-                                  {item.quantity}x {item.name}
-                                </Badge>
-                              ))}
+                              {(() => {
+                                // Fallback: if cookedItems empty, show orderedItems (all were cooked)
+                                const cooked = order.cookedItems ?? []
+                                const display = cooked.length > 0
+                                  ? cooked
+                                  : ((order.orderedItems?.length ? order.orderedItems : (order as any).items) ?? []).map((i: any) => ({ name: i.name, quantity: i.quantity }))
+                                return display.map((item: any, idx: number) => (
+                                  <Badge
+                                    key={idx}
+                                    className="bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 border-green-300 dark:border-green-700"
+                                  >
+                                    {item.quantity}x {item.name}
+                                  </Badge>
+                                ))
+                              })()}
                             </div>
                           </div>
                         )}

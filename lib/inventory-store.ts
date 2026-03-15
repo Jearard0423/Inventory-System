@@ -1005,8 +1005,10 @@ export const getMissingItems = (orderIdOrOrder: string | CustomerOrder): Array<{
   
   const missingItems: Array<{ needed: number; name: string }> = [];
   
-  order.orderedItems.forEach(orderedItem => {
-    const cookedItem = order.cookedItems?.find(item => item.name === orderedItem.name);
+  // orderedItems fallback: some RTDB orders store items under 'items'
+  const orderedItemsArr = (order.orderedItems?.length ? order.orderedItems : (order as any).items) || [];
+  orderedItemsArr.forEach((orderedItem: any) => {
+    const cookedItem = order.cookedItems?.find((item: any) => item.name === orderedItem.name);
     if (!cookedItem || cookedItem.quantity < orderedItem.quantity) {
       const missingQty = orderedItem.quantity - (cookedItem?.quantity || 0);
       missingItems.push({ needed: missingQty, name: orderedItem.name });
