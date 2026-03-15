@@ -534,12 +534,13 @@ export const updateKitchenItems = (items: KitchenItem[]): void => {
     window.dispatchEvent(new Event('kitchen-updated'));
   }
   // Sync to Firebase RTDB so ALL admins see kitchen changes in real-time
+  // Use update (patch) not set (replace) to avoid race conditions between admins
   try {
     const { database } = require('./firebase');
-    const { ref, set } = require('firebase/database');
+    const { ref, update } = require('firebase/database');
     const kitchenMap: Record<string, any> = {};
     kitchenItems.forEach((item: KitchenItem) => { if (item.id) kitchenMap[item.id] = item; });
-    set(ref(database, 'inventories/kitchen'), kitchenMap).catch(() => {});
+    update(ref(database, 'inventories/kitchen'), kitchenMap).catch(() => {});
   } catch { /* non-critical */ }
 };
 
@@ -912,10 +913,10 @@ export const markOrderAsDelivered = (orderId: string): boolean => {
   } catch { /* non-critical */ }
   try {
     const { database } = require('./firebase');
-    const { ref, set } = require('firebase/database');
+    const { ref, update } = require('firebase/database');
     const kitchenMap: Record<string, any> = {};
     kitchenItems.forEach((item: KitchenItem) => { if (item.id) kitchenMap[item.id] = item; });
-    set(ref(database, 'inventories/kitchen'), kitchenMap).catch(() => {});
+    update(ref(database, 'inventories/kitchen'), kitchenMap).catch(() => {});
   } catch { /* non-critical */ }
 
   // Also update the regular orders list so Orders page moves it to history
@@ -971,10 +972,10 @@ export const markOrderAsUndelivered = (orderId: string): boolean => {
   } catch { /* non-critical */ }
   try {
     const { database } = require('./firebase');
-    const { ref, set } = require('firebase/database');
+    const { ref, update } = require('firebase/database');
     const kitchenMap: Record<string, any> = {};
     kitchenItems.forEach((item: KitchenItem) => { if (item.id) kitchenMap[item.id] = item; });
-    set(ref(database, 'inventories/kitchen'), kitchenMap).catch(() => {});
+    update(ref(database, 'inventories/kitchen'), kitchenMap).catch(() => {});
   } catch { /* non-critical */ }
   
   // Dispatch events for UI updates
@@ -1454,10 +1455,10 @@ export const saveOrder = (order: Omit<Order, 'id' | 'orderNumber' | 'createdAt'>
   // Sync kitchen items to Firebase so ALL admins see the new items in kitchen view
   try {
     const { database } = require('./firebase');
-    const { ref, set } = require('firebase/database');
+    const { ref, update } = require('firebase/database');
     const kitchenMap: Record<string, any> = {};
     kitchenItems.forEach((item: KitchenItem) => { if (item.id) kitchenMap[item.id] = item; });
-    set(ref(database, 'inventories/kitchen'), kitchenMap).catch(() => {});
+    update(ref(database, 'inventories/kitchen'), kitchenMap).catch(() => {});
   } catch { /* non-critical */ }
 
   // Also save to Firebase RTDB for persistence

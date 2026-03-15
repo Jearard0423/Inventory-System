@@ -90,18 +90,14 @@ export default function DashboardPage() {
 
   const CANCELLED_STATUSES = new Set(['cancelled','canceled','deleted','removed'])
   const todayOrders = orders.filter((order) => {
-    const orderDate = new Date(order.date)
-    orderDate.setHours(0, 0, 0, 0)
-    // exclude cancelled/deleted at orders-page level
+    // Use createdAt (when order was placed) not date (delivery date which may differ)
+    const createdDate = new Date(order.createdAt || order.date)
+    createdDate.setHours(0, 0, 0, 0)
     if (CANCELLED_STATUSES.has((order.status || '').toLowerCase())) return false
     if (order.status !== 'pending') return false
     const cust = getCustomerOrders().find(o => o.id === order.id)
-    // exclude if RTDB shows cancelled or delivered
     if (cust && (CANCELLED_STATUSES.has((cust.status || '').toLowerCase()) || cust.status === 'delivered' || cust.status === 'complete')) return false
-    // exclude if RTDB has no record of this order at all (it was deleted from RTDB)
-    // Note: if cust is undefined it means order was deleted from RTDB - exclude it
-    if (cust === undefined) return false
-    return orderDate.toDateString() === today.toDateString()
+    return createdDate.toDateString() === today.toDateString()
   })
 
   const tomorrow = new Date(today)

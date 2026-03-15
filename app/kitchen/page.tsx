@@ -120,8 +120,15 @@ export default function KitchenPage() {
     )
 
     // Only skip truly final orders from the in-memory list.
-    // Do NOT delete based on date here — RTDB's isStaleOrder handles permanent cleanup.
-    // Deleting non-today orders from localStorage caused them to vanish for all admins.
+    // Also skip orders that don't exist in yellowbell_orders (ordersPage) — these are ghost
+    // orders that were never properly placed (e.g. created by rebuildKitchenFromOrders).
+    const ordersPageIds = new Set<string>()
+    try {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem('yellowbell_orders') : null
+      if (raw) (JSON.parse(raw) as any[]).forEach((o: any) => { if (o.id) ordersPageIds.add(o.id) })
+    } catch { /* fallback: don't filter */ }
+    const hasOrdersPage = ordersPageIds.size > 0
+
     const recentOrders = allOrdersRaw.filter(order => {
       try {
         // Skip any order already archived as delivered/cancelled in history
@@ -132,6 +139,9 @@ export default function KitchenPage() {
           archiveOrderToHistory(order)
           return false
         }
+        // Skip ghost orders: exist in /inventories/orders but NOT in /ordersPage
+        // These were created by rebuildKitchenFromOrders and were never real customer orders
+        if (hasOrdersPage && !ordersPageIds.has(order.id)) return false
         return true
       } catch {
         return true
