@@ -711,8 +711,13 @@ export const markItemAsCooked = (itemId: string, quantity?: number, orderId?: st
   const cookQuantity = quantity || 1;
   item.totalCooked += cookQuantity;
   item.pending = Math.max(0, item.totalOrdered - item.totalCooked);
-  item.status = 'cooked';
-  item.cookedAt = new Date().toISOString();
+  // Only flip to 'cooked' when ALL units are done; otherwise stay 'to-cook' with updated pending
+  if (item.pending <= 0) {
+    item.status = 'cooked';
+    item.cookedAt = new Date().toISOString();
+  }
+  // Always record cookedAt on first cook
+  if (!item.cookedAt) item.cookedAt = new Date().toISOString();
   
   if (orderId) {
     const order = customerOrders.find(o => o.id === orderId);

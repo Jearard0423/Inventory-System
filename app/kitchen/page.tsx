@@ -457,9 +457,15 @@ export default function KitchenPage() {
       return a.customerName.localeCompare(b.customerName)
     })
     
-    // Group the sorted items (sum quantities)
+    // Group the sorted items
+    // For to-cook items: use pending count (not totalOrdered) so partial marks reflect correctly
+    // For cooked items: use totalCooked so partial marks show actual cooked amount
     sortedItems.forEach(item => {
-      const qty = item.quantity || 1
+      const isToCook = item.status === 'to-cook'
+      const qty = isToCook
+        ? (item.pending != null ? item.pending : (item.quantity || 1))
+        : (item.totalCooked != null && item.totalCooked > 0 ? item.totalCooked : (item.quantity || 1))
+      if (qty <= 0) return // skip items with nothing left to cook/show
       if (!grouped[item.itemName]) {
         grouped[item.itemName] = { count: 0, items: [], customers: [] }
       }
