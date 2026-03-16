@@ -464,13 +464,19 @@ export default function KitchenPage() {
   const toCookItems = kitchenItems
     .filter((item) => {
       if (item.status !== 'to-cook') return false
-      // Skip items with nothing left to cook (pending=0 means all units done)
-      const pending = item.pending ?? (item.totalOrdered - (item.totalCooked || 0))
+      // Skip items with nothing left to cook
+      const pending = item.pending != null ? item.pending : Math.max(0, (item.totalOrdered || 0) - (item.totalCooked || 0))
       if (pending <= 0) return false
-      const mealFilter = filterMealType
+      const mealFilter = filterMealTypeRef.current
       if (mealFilter === 'all') return true
+      // Check mealType on item OR fall through to the linked order
       const mt = ((item as any).mealType || '').toLowerCase()
-      return mt === mealFilter || mt === ''
+      if (mt && mt !== '') return mt === mealFilter
+      // Fall back: check the linked order's meal type
+      const order = todayOrders.find(o => o.id === item.orderId) || customerOrders.find(o => o.id === item.orderId)
+      if (!order) return true // no order found, show it anyway
+      const orderMt = (order.mealType || order.originalMealType || '').toLowerCase()
+      return orderMt === mealFilter || orderMt === ''
     })
     .sort((a, b) => {
       // Sort by cookTime so most urgent orders appear first

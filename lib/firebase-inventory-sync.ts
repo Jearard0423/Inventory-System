@@ -976,17 +976,43 @@ export const rebuildKitchenFromOrders = async (): Promise<void> => {
       existingByOrder.get(k.orderId)!.add(k.itemName || k.name || '')
     })
 
-    // Find active orders that have NO kitchen items yet at all
-    const missingOrders = activeOrders.filter((o: any) => !existingByOrder.has(o.id))
+    // Find active orders that need kitchen items built or rebuilt
+    const missingOrders = activeOrders.filter((o: any) => {
+      // No kitchen items at all → definitely need to build
+      if (!existingByOrder.has(o.id)) return true
+      // Check if existing kitchen items are valid (not all already cooked/served)
+      const existingForOrder = Object.values(existingKitchen).filter((k: any) => k.orderId === o.id)
+      const hasActiveToCook = existingForOrder.some((k: any) =>
+        k.status === 'to-cook' || (k.totalCooked || 0) < (k.totalOrdered || k.quantity || 1)
+      )
+      // Also check item count matches - old per-unit items have totalOrdered=1 each
+      // while new format has one item with totalOrdered=quantity
+      const orderedItems = o.orderedItems || o.items || []
+      const hasCorrectItemCount = orderedItems.every((oi: any) => {
+        const matching = existingForOrder.filter((k: any) => k.itemName === oi.name || k.name === oi.name)
+        // New format: 1 item with correct totalOrdered
+        const hasAggregated = matching.some((k: any) => (k.totalOrdered || 0) === oi.quantity)
+        return hasAggregated
+      })
+      // Rebuild if items are wrongly structured (old per-unit format)
+      if (!hasCorrectItemCount) return true
+      return false
+    })
     if (missingOrders.length === 0) {
-      console.log('[firebase-sync] rebuildKitchenFromOrders: all orders have kitchen items')
+      console.log('[firebase-sync] rebuildKitchenFromOrders: all orders have valid kitchen items')
       return
     }
 
     console.log(`[firebase-sync] rebuilding kitchen items for ${missingOrders.length} orders missing from /inventories/kitchen`)
 
-    // Build kitchen items for missing orders
-    const newKitchenItems: Record<string, any> = { ...existingKitchen }
+    // Build kitchen items for missing/invalid orders
+    // Start from existing kitchen items, but REMOVE stale entries for orders being rebuilt
+    const newKitchenItems: Record<string, any> = {}
+    const rebuildOrderIds = new Set(missingOrders.map((o: any) => o.id))
+    // Keep existing kitchen items for orders that are NOT being rebuilt
+    Object.entries(existingKitchen).forEach(([key, val]: [string, any]) => {
+      if (!rebuildOrderIds.has(val.orderId)) newKitchenItems[key] = val
+    })
     missingOrders.forEach((order: any) => {
       const items = order.orderedItems || order.items || []
       items.forEach((item: any) => {
