@@ -405,6 +405,15 @@ export default function NewOrderPage() {
       newErrors.orderItems = "Please add at least one item to the order"
     }
 
+    if (cookTime) {
+      const [h, m] = cookTime.split(':').map(Number)
+      const totalMins = h * 60 + m
+      // Block midnight (00:00) and times before 5:00 AM or after 11:30 PM
+      if (totalMins === 0 || totalMins < 5 * 60 || totalMins > 23 * 60 + 30) {
+        newErrors.cookTime = "Please set a valid delivery time between 5:00 AM and 11:30 PM"
+      }
+    }
+
     if (deliveryPhone.trim()) {
       const phoneRegex = /^(09|\+639)\d{9}$/
       if (!phoneRegex.test(deliveryPhone.replace(/[-\s]/g, ""))) {

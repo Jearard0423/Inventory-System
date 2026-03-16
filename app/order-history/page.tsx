@@ -62,9 +62,18 @@ export default function OrderHistoryPage() {
     // getOrderHistory() is RTDB-replaced (not merged) — the authoritative archive
     const archived = getOrderHistory().filter(o => o != null && o.id != null).filter(o => {
       const s = (o.status || "").toLowerCase()
-      // Exclude cancelled AND active orders from history
       if (CANCELLED.has(s)) return false
-      if (ACTIVE_STATUSES.has(s)) return false
+      // Allow incomplete/pending orders that are overdue (delivery date has passed)
+      // These should show in history as "Pending" so admins can track undelivered orders
+      if (ACTIVE_STATUSES.has(s)) {
+        const deliveryDate = (o as any).date
+          ? new Date((o as any).date)
+          : o.createdAt ? new Date(o.createdAt) : null
+        if (!deliveryDate) return true // no date = show it
+        const today = new Date(); today.setHours(0,0,0,0)
+        deliveryDate.setHours(0,0,0,0)
+        return deliveryDate < today // only show if delivery date has passed
+      }
       return true
     })
 

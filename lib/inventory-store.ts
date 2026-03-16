@@ -447,16 +447,24 @@ export const getOrderLimitMessage = (itemId: string, quantity: number): string |
   const menuItem = inventoryItems.find(it => it.id === itemId);
   if (!menuItem) return `Item not found`;
 
-  // check own stock first
+  // Own stock check first — if the menu item has prepared stock, use it directly
   if (menuItem.stock < quantity) {
     return `Only ${menuItem.stock} unit${menuItem.stock === 1 ? '' : 's'} of ${menuItem.name} in stock`;
   }
 
+  // If menu item has sufficient own stock, skip raw stock checks entirely.
+  // Raw stock is only needed when making more items from scratch (stock = 0).
+  // This means: 8x Roast Chicken in stock → orderable even if Whole Chicken raw = 0.
+  if (menuItem.stock >= quantity) return null;
+
+  // Only reach here if own stock is 0 (needs to be made from raw materials)
   // linked items ratios
   if (menuItem.linkedItems && menuItem.linkedItems.length > 0) {
     for (const link of menuItem.linkedItems) {
       const linked = inventoryItems.find(i => i.id === link.itemId);
-      if (!linked) return `Required raw item missing`;
+      if (!linked) continue; // skip missing linked items gracefully
+      // Only block if it's a raw-stock or ingredient link (not utensil/container)
+      if (linked.isUtensil || linked.isContainer) continue;
       const required = link.ratio * quantity;
       if ((linked.stock || 0) < required) {
         return `Only ${linked.stock} unit${linked.stock === 1 ? '' : 's'} of ${linked.name} available (need ${required})`;
@@ -464,14 +472,12 @@ export const getOrderLimitMessage = (itemId: string, quantity: number): string |
     }
   }
 
-  // raw deduction map
+  // raw deduction map — only relevant when making from scratch
   const rawDeduction = RAW_STOCK_DEDUCTION_MAP[menuItem.name];
   if (rawDeduction) {
     const raw = inventoryItems.find(i => i.name === rawDeduction.rawStock);
-    if (!raw) return `Required raw stock ${rawDeduction.rawStock} missing`;
-    const requiredRaw = rawDeduction.amount * quantity;
-    if ((raw.stock || 0) < requiredRaw) {
-      return `Only ${raw.stock} unit${raw.stock === 1 ? '' : 's'} of ${raw.name} available (need ${requiredRaw})`;
+    if (raw && (raw.stock || 0) < rawDeduction.amount * quantity) {
+      return `Only ${raw.stock} unit${raw.stock === 1 ? '' : 's'} of ${raw.name} available (need ${rawDeduction.amount * quantity})`;
     }
   }
 
@@ -1437,11 +1443,30 @@ export const saveOrder = (order: Omit<Order, 'id' | 'orderNumber' | 'createdAt'>
     // ensure we still reduce the ingredient when menu stock satisfied part of the order above.
     // (ingredient deduction for full orders where menu stock covered all units is not needed)
 
-    // Reduce container stock for all sold units (packaging used regardless of source)
-    reduceContainerForItem(orderedItem.name, orderedItem.quantity);
+    // Deduct linked utensils/containers explicitly configured on this menu item
+    let hasLinkedUtensil = false;
+    let hasLinkedContainer = false;
+    if (menuItem && menuItem.linkedItems && menuItem.linkedItems.length > 0) {
+      menuItem.linkedItems.forEach((link: { itemId: string; ratio: number }) => {
+        const linkedItem = inventoryItems.find(i => i.id === link.itemId);
+        if (!linkedItem) return;
+        if (linkedItem.isUtensil || linkedItem.isContainer) {
+          // Deduct linked utensil/container per quantity ordered
+          const qty = Math.ceil(link.ratio * orderedItem.quantity);
+          if (qty > 0 && linkedItem.stock >= qty) {
+            reduceStock(linkedItem.id, qty);
+            if (linkedItem.isUtensil) hasLinkedUtensil = true;
+            if (linkedItem.isContainer) hasLinkedContainer = true;
+          }
+        }
+      });
+    }
 
-    // Reduce utensils for applicable items (all meal/food categories except sisig and rice)
-    if (requiresUtensils(menuItem)) {
+    // Fall back to global container/utensil reduction only if not covered by linkedItems
+    if (!hasLinkedContainer) {
+      reduceContainerForItem(orderedItem.name, orderedItem.quantity);
+    }
+    if (!hasLinkedUtensil && requiresUtensils(menuItem)) {
       for (let i = 0; i < orderedItem.quantity; i++) {
         reduceUtensilsForMeal("meal");
       }

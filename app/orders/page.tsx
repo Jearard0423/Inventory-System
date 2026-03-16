@@ -482,24 +482,27 @@ export default function OrdersPage() {
   }
 
   const getMealTypeCounts = () => {
-    const targetDate = selectedDate || (mounted ? new Date() : new Date(0))
-    targetDate.setHours(0, 0, 0, 0)
-    
-    const dayOrders = orders.filter((order) => {
-      const orderDate = new Date(order.date)
-      orderDate.setHours(0, 0, 0, 0)
-      // Exclude delivered, completed and cancelled orders from meal type breakdown
+    // Clone to avoid mutating state
+    const base = selectedDate ? new Date(selectedDate) : (mounted ? new Date() : new Date(0))
+    const targetDate = new Date(base.getFullYear(), base.getMonth(), base.getDate())
+    const freshCust = (() => { try { return JSON.parse(localStorage.getItem('yellowbell_customer_orders') || '[]') } catch { return [] } })()
+
+    const dayOrders = orders.filter((order: any) => {
+      // Match by delivery date OR createdAt date (covers advanced orders)
+      const byDate = order.date ? new Date(new Date(order.date).getFullYear(), new Date(order.date).getMonth(), new Date(order.date).getDate()) : null
+      const byCreated = order.createdAt ? new Date(new Date(order.createdAt).getFullYear(), new Date(order.createdAt).getMonth(), new Date(order.createdAt).getDate()) : null
+      const matchesDate = (byDate && byDate.getTime() === targetDate.getTime()) ||
+                          (byCreated && byCreated.getTime() === targetDate.getTime())
+      if (!matchesDate) return false
+      // Exclude only truly final orders
       const ss = (order.status || '').toLowerCase()
-      if (ss === 'cancelled' || ss === 'canceled' || ss === 'deleted' || ss === 'removed') return false
-      if (ss === 'delivered' || ss === 'served' || ss === 'completed') return false
-      // Cross-check customerOrders for latest delivery status
-      const freshCust = JSON.parse(localStorage.getItem('yellowbell_customer_orders') || '[]')
+      if (ss === 'cancelled' || ss === 'canceled' || ss === 'deleted' || ss === 'delivered') return false
       const cust = freshCust.find((co: any) => co.id === order.id)
       if (cust) {
         const cs = (cust.status || '').toLowerCase()
-        if (cs === 'delivered' || cs === 'served' || cs === 'complete') return false
+        if (cs === 'delivered' || cs === 'cancelled') return false
       }
-      return orderDate.toDateString() === targetDate.toDateString()
+      return true
     })
 
     return {

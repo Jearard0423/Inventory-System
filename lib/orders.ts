@@ -255,6 +255,48 @@ export const updateOrder = (
     console.warn('[updateOrder] Firebase sync not available:', err)
   }
 
+  // Also update kitchen items so kitchen view reflects edits (mealType, cookTime, customerName, items)
+  try {
+    const { getKitchenItems, updateKitchenItems } = require('./inventory-store')
+    const kItems = getKitchenItems()
+    let changed = false
+    const updatedKitchen = kItems.map((ki: any) => {
+      if (ki.orderId !== orderId) return ki
+      const updates: any = {}
+      if (patch.customerName !== undefined) updates.customerName = patch.customerName
+      if (patch.cookTime !== undefined) updates.cookTime = patch.cookTime
+      if (patch.mealType !== undefined) updates.mealType = patch.mealType
+      if (patch.originalMealType !== undefined) updates.mealType = patch.originalMealType || patch.mealType
+      if (Object.keys(updates).length > 0) { changed = true; return { ...ki, ...updates } }
+      return ki
+    })
+    // If items changed, rebuild kitchen items for this order
+    if (patch.items && patch.items.length > 0) {
+      changed = true
+      const custOrders2 = JSON.parse(localStorage.getItem('yellowbell_customer_orders') || '[]')
+      const updatedOrder = custOrders2.find((o: any) => o.id === orderId)
+      // Remove old kitchen items for this order and add new ones
+      const withoutOld = updatedKitchen.filter((ki: any) => ki.orderId !== orderId)
+      const newItems = (patch.items as any[]).map((item: any) => {
+        const existingKi = updatedKitchen.find((ki: any) => ki.orderId === orderId && ki.itemName === item.name)
+        return existingKi
+          ? { ...existingKi, totalOrdered: item.quantity, quantity: item.quantity,
+              pending: Math.max(0, item.quantity - (existingKi.totalCooked || 0)),
+              status: existingKi.totalCooked >= item.quantity ? 'cooked' : 'to-cook' }
+          : { id: `${orderId}_${item.name}`.replace(/[^a-zA-Z0-9_]/g, '_'),
+              orderId, itemName: item.name, name: item.name,
+              customerName: updatedOrder?.customerName || '',
+              totalOrdered: item.quantity, totalCooked: 0,
+              pending: item.quantity, quantity: item.quantity,
+              status: 'to-cook', category: 'other',
+              mealType: patch.mealType || updatedOrder?.mealType || '',
+              cookTime: patch.cookTime || updatedOrder?.cookTime || '' }
+      })
+      updatedKitchen.splice(0, updatedKitchen.length, ...withoutOld, ...newItems)
+    }
+    if (changed) updateKitchenItems(updatedKitchen)
+  } catch { /* non-critical */ }
+
   window.dispatchEvent(new Event('orders-updated'))
   window.dispatchEvent(new Event('customer-orders-updated'))
 }

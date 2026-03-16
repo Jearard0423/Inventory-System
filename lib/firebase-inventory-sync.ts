@@ -157,7 +157,8 @@ const isStaleOrder = (o: any): boolean => {
     const phOffset = new Date().getTimezoneOffset() * 60000 + 8 * 3600000
     const phNow = Date.now() + phOffset
     const hoursPassedSinceDelivery = (phNow - deliveryDate.getTime()) / 3600000
-    return hoursPassedSinceDelivery > 28
+    // Keep overdue orders for 7 days so admins can still process/deliver them from kitchen
+    return hoursPassedSinceDelivery > 168
   }
   return false
 }

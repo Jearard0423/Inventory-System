@@ -55,14 +55,20 @@ export default function DashboardPage() {
 
   const getOrderCountForDate = (date: Date) => {
     const dateStr = formatDate(date)
-    // only count active/pending orders so calendar matches dashboard list
-    // when a customer order has been delivered we also ignore it even if yellowbell_orders is stale
     const customerOrders = getCustomerOrders()
     return orders.filter((order) => {
-      if (order.date !== dateStr) return false
-      if (order.status !== 'pending') return false
+      // Match by delivery date OR createdAt date
+      const matchesDate = order.date === dateStr ||
+        (order.createdAt && formatDate(new Date(order.createdAt)) === dateStr)
+      if (!matchesDate) return false
+      // Exclude delivered/cancelled
+      const ss = (order.status || '').toLowerCase()
+      if (ss === 'delivered' || ss === 'cancelled' || ss === 'canceled' || ss === 'completed') return false
       const cust = customerOrders.find(o => o.id === order.id)
-      if (cust && (cust.status === 'delivered' || cust.status === 'complete')) return false
+      if (cust) {
+        const cs = (cust.status || '').toLowerCase()
+        if (cs === 'delivered' || cs === 'complete' || cs === 'cancelled') return false
+      }
       return true
     }).length
   }

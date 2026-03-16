@@ -282,9 +282,15 @@ export default function KitchenPage() {
       }, 150)
     }
     const handleUpdate = debounceReload
-    // firebase-kitchen-updated: inventory-store's own listener already updated in-memory
-    // kitchenItems when this event fired. Just debounce-reload — no need to write back.
-    const handleFirebaseKitchen = debounceReload
+    // firebase-kitchen-updated: inventory-store's listener updated in-memory array.
+    // ALSO force React state update immediately so other admin sees changes right away.
+    const handleFirebaseKitchen = (ev: Event) => {
+      // Immediately sync React state from in-memory store (no async wait)
+      try {
+        setKitchenItems(JSON.parse(JSON.stringify(getKitchenItems())))
+      } catch {}
+      debounceReload()
+    }
     // firebase-orders-updated: RTDB pushed fresh data — reload immediately
     // This ensures deleted orders disappear on all clients as soon as Firebase fires
     // firebase-orders-updated carries fresh orders in detail — just apply + debounce reload.
@@ -529,8 +535,8 @@ export default function KitchenPage() {
   // Initialize quantity inputs with actual group counts (avoiding infinite loop)
   const getInitialQuantity = (itemName: string, isUndo: boolean = false) => {
     const key = isUndo ? `undo-${itemName}` : itemName
-    const group = isUndo ? groupedCookedItems[itemName] : groupedToCookItems[itemName]
-    return quantityInputs[key] || (group ? group.count.toString() : "1")
+    // Default to "1" so admins start at 1 and tap + to increase — not group.count
+    return quantityInputs[key] || "1"
   }
 
   const handleMarkAsCooked = (itemName: string, quantity: number = 1) => {
@@ -608,8 +614,8 @@ export default function KitchenPage() {
     setMarkedItemQuantity(markedCount)
     setMarkedItemDialogOpen(true)
     
-    // Reset quantity input
-    setQuantityInputs(prev => ({ ...prev, [itemName]: "" }))
+    // Reset to 1 for next action
+    setQuantityInputs(prev => ({ ...prev, [itemName]: "1" }))
   }
 
   const handleMarkAllAsCooked = () => {
@@ -734,8 +740,8 @@ export default function KitchenPage() {
     setCustomerOrders(JSON.parse(JSON.stringify(getCustomerOrders())))
     loadData()
     
-    // Reset quantity input
-    setQuantityInputs(prev => ({ ...prev, [itemName]: "" }))
+    // Reset to 1 for next action
+    setQuantityInputs(prev => ({ ...prev, [`undo-${itemName}`]: "1", [itemName]: "1" }))
   }
 
   const completeOrders   = customerOrders.filter(o => o.status === 'complete' || o.status === 'ready').length
@@ -1225,7 +1231,7 @@ export default function KitchenPage() {
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => {
-                                  const current = parseInt(getInitialQuantity(itemName)) || group.count;
+                                  const current = parseInt(getInitialQuantity(itemName)) || 1;
                                   const newQty = Math.max(1, current - 1);
                                   setQuantityInputs(prev => ({ ...prev, [itemName]: newQty.toString() }));
                                 }}
@@ -1250,7 +1256,7 @@ export default function KitchenPage() {
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => {
-                                  const current = parseInt(getInitialQuantity(itemName)) || group.count
+                                  const current = parseInt(getInitialQuantity(itemName)) || 1
                                   const newQty = Math.min(group.count, current + 1)
                                   setQuantityInputs(prev => ({ ...prev, [itemName]: newQty.toString() }))
                                 }}
@@ -1260,12 +1266,20 @@ export default function KitchenPage() {
                               </Button>
                             </div>
                             <Button
-                              onClick={() => handleMarkAsCooked(itemName, parseInt(getInitialQuantity(itemName)) || group.count)}
+                              onClick={() => {
+                                const qty = Math.min(
+                                  Math.max(1, parseInt(getInitialQuantity(itemName)) || 1),
+                                  group.count
+                                )
+                                handleMarkAsCooked(itemName, qty)
+                              }}
                               className="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 h-7 w-full"
                               size="sm"
                             >
                               <CheckCircle className="h-3 w-3 mr-1 flex-shrink-0" />
-                              <span className="whitespace-nowrap">Mark Done</span>
+                              <span className="whitespace-nowrap">
+                                Mark {Math.min(Math.max(1, parseInt(getInitialQuantity(itemName)) || 1), group.count)} Done
+                              </span>
                             </Button>
                           </div>
                         </div>
@@ -1342,7 +1356,7 @@ export default function KitchenPage() {
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => {
-                                  const current = parseInt(getInitialQuantity(itemName, true)) || group.count;
+                                  const current = parseInt(getInitialQuantity(itemName, true)) || 1;
                                   const newQty = Math.max(1, current - 1);
                                   setQuantityInputs(prev => ({ ...prev, [`undo-${itemName}`]: newQty.toString() }));
                                 }}
@@ -1367,7 +1381,7 @@ export default function KitchenPage() {
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => {
-                                  const current = parseInt(getInitialQuantity(itemName, true)) || group.count
+                                  const current = parseInt(getInitialQuantity(itemName, true)) || 1
                                   const newQty = Math.min(group.count, current + 1)
                                   setQuantityInputs(prev => ({ ...prev, [`undo-${itemName}`]: newQty.toString() }))
                                 }}
@@ -1377,7 +1391,10 @@ export default function KitchenPage() {
                               </Button>
                             </div>
                             <Button
-                              onClick={() => handleUndoCooked(itemName, parseInt(getInitialQuantity(itemName, true)) || group.count)}
+                              onClick={() => {
+                                const qty = Math.min(Math.max(1, parseInt(getInitialQuantity(itemName, true)) || 1), group.count)
+                                handleUndoCooked(itemName, qty)
+                              }}
                               className="bg-orange-600 hover:bg-orange-700 text-white text-xs px-2 py-1 h-7 w-full"
                               size="sm"
                             >

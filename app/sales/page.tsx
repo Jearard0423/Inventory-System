@@ -65,21 +65,38 @@ export default function SalesPage() {
 
   useEffect(() => {
     const loadOrders = () => {
-      // Merge localStorage orders with RTDB salesOrders so all devices stay in sync
+      // Merge: active orders + order history (delivered) + RTDB sales orders
+      const merged = new Map<string, any>()
+      // 1. Active orders from yellowbell_orders
       const localOrders = getOrders()
+      localOrders.forEach((o: any) => merged.set(o.id, o))
+      // 2. Order history (delivered/completed) for permanent revenue tracking
+      try {
+        const histRaw = localStorage.getItem("yellowbell_order_history")
+        if (histRaw) {
+          const hist: any[] = JSON.parse(histRaw)
+          hist.forEach(o => {
+            if (o?.id) {
+              // Convert CustomerOrder format to Order format for sales calculations
+              merged.set(o.id, {
+                ...o,
+                items: o.orderedItems || o.items || [],
+                status: o.status === 'delivered' ? 'delivered' : (o.status || 'completed'),
+                date: (o as any).date || o.createdAt?.split('T')[0] || '',
+              })
+            }
+          })
+        }
+      } catch {}
+      // 3. RTDB sales orders (cross-device sync)
       try {
         const rtdbRaw = localStorage.getItem("yellowbell_rtdb_sales_orders")
         if (rtdbRaw) {
-          const rtdbOrders: Order[] = JSON.parse(rtdbRaw)
-          // Merge: use id as key, RTDB version wins on conflict
-          const merged = new Map<string, Order>()
-          localOrders.forEach(o => merged.set(o.id, o))
-          rtdbOrders.forEach(o => merged.set(o.id, o))
-          setOrders(Array.from(merged.values()))
-          return
+          const rtdbOrders: any[] = JSON.parse(rtdbRaw)
+          rtdbOrders.forEach(o => { if (o?.id) merged.set(o.id, o) })
         }
       } catch {}
-      setOrders(localOrders)
+      setOrders(Array.from(merged.values()))
     }
     
     const loadExpenses = () => {
@@ -92,10 +109,14 @@ export default function SalesPage() {
     window.addEventListener("orders-updated", loadOrders)
     window.addEventListener("expenses-updated", loadExpenses)
     window.addEventListener("firebase-sales-updated", loadOrders)
+    window.addEventListener("customer-orders-updated", loadOrders)
+    window.addEventListener("delivery-updated", loadOrders)
     return () => {
       window.removeEventListener("orders-updated", loadOrders)
       window.removeEventListener("expenses-updated", loadExpenses)
       window.removeEventListener("firebase-sales-updated", loadOrders)
+      window.removeEventListener("customer-orders-updated", loadOrders)
+      window.removeEventListener("delivery-updated", loadOrders)
     }
   }, [])
 
