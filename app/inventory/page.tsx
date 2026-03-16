@@ -157,17 +157,23 @@ Limit details: ${breakdown}` : '')
       // deduct the raw stock proportionally (making food from raw materials)
       if (stockDelta > 0 && linkedItems.length > 0) {
         const currentItems = [...menuItems]
+        let anyChanged = false
         linkedItems.forEach(link => {
           const rawItem = currentItems.find(i => i.id === link.itemId)
-          if (rawItem) {
-            const rawToDeduct = stockDelta * link.ratio
-            rawItem.stock = Math.max(0, rawItem.stock - rawToDeduct)
-            rawItem.status = getStockStatus(rawItem.stock)
-          }
+          if (!rawItem) return
+          // Only deduct RAW STOCK items when adding finished product stock
+          // Utensils/containers are deducted per ORDER, not when restocking
+          if (rawItem.isUtensil || rawItem.isContainer || 
+              rawItem.category === 'utensil' || rawItem.category === 'container') return
+          const rawToDeduct = stockDelta * link.ratio
+          rawItem.stock = Math.max(0, rawItem.stock - rawToDeduct)
+          rawItem.status = getStockStatus(rawItem.stock)
+          anyChanged = true
         })
-        // Save raw stock changes
-        updateInventory(currentItems)
-        setMenuItems(currentItems)
+        if (anyChanged) {
+          updateInventory(currentItems)
+          setMenuItems(currentItems)
+        }
       }
 
       updatedItems = menuItems.map((item) =>
@@ -328,8 +334,13 @@ Limit details: ${breakdown}` : '')
     for (const link of links) {
       const linkedItem = menuItems.find(item => item.id === link.itemId);
       if (linkedItem) {
-        // Calculate how many units can be made with the available stock
-        // If linked item has 10 stock and ratio is 5, we can make 10/5 = 2 units
+        // Utensils and containers are consumed per ORDER, not per STOCK unit.
+        // They must never limit how many menu items you can have in stock.
+        // Only raw-stock type items limit stock (e.g. Whole Chicken limits Roast Chicken).
+        if (linkedItem.isUtensil || linkedItem.isContainer || 
+            linkedItem.category === 'utensil' || linkedItem.category === 'container') {
+          continue; // skip — utensils/containers don't limit stock levels
+        }
         const possibleUnits = Math.floor(linkedItem.stock / link.ratio);
         minPossibleUnits = Math.min(minPossibleUnits, possibleUnits);
       }
@@ -346,6 +357,10 @@ Limit details: ${breakdown}` : '')
     .map(link => {
       const raw = menuItems.find(i => i.id === link.itemId)
       if (!raw) return null
+      // Skip utensils/containers in the stock details — they don't limit stock
+      if (raw.isUtensil || raw.isContainer || raw.category === 'utensil' || raw.category === 'container') {
+        return `${raw.name}: linked (${link.ratio}x per order)`
+      }
       const possible = Math.floor(raw.stock / link.ratio)
       return `${raw.name}: ${raw.stock} available → ${possible} unit${possible === 1 ? '' : 's'}`
     })
