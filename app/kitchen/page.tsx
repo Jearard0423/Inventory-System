@@ -160,12 +160,11 @@ export default function KitchenPage() {
           archiveOrderToHistory(order)
           return false
         }
-        // Skip if yellowbell_orders marks it as delivered/cancelled
+        // Skip if yellowbell_orders explicitly marks it as delivered/cancelled
         if (freshYBFinal.has(order.id)) return false
-        // Skip ghost orders: not in ordersPage at all
-        if (freshYBIds.size > 0 && !freshYBIds.has(order.id)) return false
-        // Fallback: ordersPageIds check
-        if (hasOrdersPage && !ordersPageIds.has(order.id)) return false
+        // Only skip as ghost if ordersPage has >5 orders AND this order is definitely absent
+        // (use threshold to avoid false-positive during initial load when ordersPage may be empty)
+        if (freshYBIds.size > 5 && !freshYBIds.has(order.id)) return false
         return true
       } catch {
         return false
