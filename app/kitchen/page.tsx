@@ -282,12 +282,20 @@ export default function KitchenPage() {
       }, 150)
     }
     const handleUpdate = debounceReload
-    // firebase-kitchen-updated: inventory-store's listener updated in-memory array.
-    // ALSO force React state update immediately so other admin sees changes right away.
+    // firebase-kitchen-updated: inventory-store listener already updated in-memory + localStorage.
+    // Force React state update immediately so UI reflects other admin's actions right away.
     const handleFirebaseKitchen = (ev: Event) => {
-      // Immediately sync React state from in-memory store (no async wait)
       try {
-        setKitchenItems(JSON.parse(JSON.stringify(getKitchenItems())))
+        // Read directly from localStorage (most up-to-date from Firebase)
+        const fresh = JSON.parse(localStorage.getItem('yellowbell_kitchen_items') || '[]')
+        setKitchenItems(fresh)
+      } catch {
+        try { setKitchenItems(JSON.parse(JSON.stringify(getKitchenItems()))) } catch {}
+      }
+      // Also refresh customer orders state
+      try {
+        const freshOrders = JSON.parse(localStorage.getItem('yellowbell_customer_orders') || '[]')
+        if (freshOrders.length > 0) setCustomerOrders(freshOrders)
       } catch {}
       debounceReload()
     }
@@ -299,17 +307,18 @@ export default function KitchenPage() {
       const detail = (ev as CustomEvent).detail
       if (detail?.orders && typeof window !== 'undefined') {
         try {
-          // Update both localStorage AND in-memory store so getCustomerOrders() is
-          // immediately correct when loadData() runs — prevents ghost orders reappearing
           localStorage.setItem('yellowbell_customer_orders', JSON.stringify(detail.orders))
           setCustomerOrdersFromRTDB(detail.orders)
         } catch {}
       }
-      if (kitchenFetchDebounceRef.current) clearTimeout(kitchenFetchDebounceRef.current)
-      kitchenFetchDebounceRef.current = setTimeout(() => {
-        kitchenFetchDebounceRef.current = null
+      // Also refresh kitchen items so cookedItems on order matches kitchen state
+      // This fixes the lag where firebase-orders-updated fires before firebase-kitchen-updated
+      fetchKitchenNow().catch(() => {}).finally(() => {
+        if (typeof window !== 'undefined') {
+          try { setKitchenItems(JSON.parse(JSON.stringify(getKitchenItems()))) } catch {}
+        }
         loadData()
-      }, 150)
+      })
     }
 
     // Re-sync from RTDB when tab becomes visible (mobile browsers pause WebSocket when backgrounded)
@@ -540,11 +549,32 @@ export default function KitchenPage() {
   }
 
   const handleMarkAsCooked = (itemName: string, quantity: number = 1) => {
-    // Always read from the store (in-memory source of truth), not stale React state
-    const freshItems = getKitchenItems()
-    const itemsToCook = freshItems.filter(item =>
-      item.status === "to-cook" && item.itemName === itemName
-    )
+    // Read from localStorage (Firebase-fresh) to avoid stale React state race conditions
+    let freshItems: any[]
+    try {
+      const lsItems = JSON.parse(localStorage.getItem('yellowbell_kitchen_items') || '[]')
+      if (lsItems.length > 0) {
+        // Merge localStorage with in-memory: use max totalCooked so we always have freshest state
+        freshItems = lsItems.map((lsItem: any) => {
+          const memItem = getKitchenItems().find((k: any) => k.id === lsItem.id)
+          if (memItem && (memItem.totalCooked || 0) > (lsItem.totalCooked || 0)) return memItem
+          return lsItem
+        })
+        // Add any in-memory items not in localStorage yet (just created)
+        getKitchenItems().forEach((memItem: any) => {
+          if (!freshItems.find((k: any) => k.id === memItem.id)) freshItems.push(memItem)
+        })
+      } else {
+        freshItems = getKitchenItems()
+      }
+    } catch {
+      freshItems = getKitchenItems()
+    }
+    const itemsToCook = freshItems.filter((item: any) => {
+      if (item.itemName !== itemName) return false
+      const pending = (item.totalOrdered || item.quantity || 1) - (item.totalCooked || 0)
+      return pending > 0 // has something left to cook
+    })
     
     if (itemsToCook.length === 0 || quantity <= 0) return
     
@@ -648,13 +678,37 @@ export default function KitchenPage() {
   }
 
   const handleUndoCooked = (itemName: string, quantity: number = 1) => {
+    // Always sync kitchen state from localStorage (Firebase-fresh) before undoing
+    // This prevents operating on stale in-memory data when another admin already changed state
+    try {
+      const lsItems = JSON.parse(localStorage.getItem('yellowbell_kitchen_items') || '[]')
+      if (lsItems.length > 0) {
+        // Update in-memory kitchenItems with fresh localStorage values
+        const { updateKitchenItems: ukc } = require('@/lib/inventory-store') 
+        // We can't call updateKitchenItems here (would write back to Firebase)
+        // Instead just force React state refresh so we read fresh values
+        setKitchenItems(JSON.parse(JSON.stringify(lsItems)))
+      }
+    } catch {}
+
     // Find ALL kitchen items for this name that have any cooked units
     // (includes partial: status='to-cook' with totalCooked > 0)
-    let cookedItemsForName = getKitchenItems().filter(item =>
-      item.itemName === itemName &&
-      (item.totalCooked || 0) > 0 &&
-      item.status !== 'served'
-    )
+    // Read from localStorage directly for the freshest values
+    let cookedItemsForName: any[]
+    try {
+      const lsItems: any[] = JSON.parse(localStorage.getItem('yellowbell_kitchen_items') || '[]')
+      cookedItemsForName = lsItems.filter((item: any) =>
+        item.itemName === itemName &&
+        (item.totalCooked || 0) > 0 &&
+        item.status !== 'served'
+      )
+    } catch {
+      cookedItemsForName = getKitchenItems().filter(item =>
+        item.itemName === itemName &&
+        (item.totalCooked || 0) > 0 &&
+        item.status !== 'served'
+      )
+    }
 
     if (cookedItemsForName.length === 0) {
       console.warn('[Kitchen] handleUndoCooked: no cooked items found for', itemName)
@@ -695,38 +749,33 @@ export default function KitchenPage() {
     })
     updateKitchenItems(updated)
 
-    // Update customer orders
+    // Rebuild cookedItems from kitchen items (same idempotent approach as markItemAsCooked)
+    // This prevents double-count issues when Firebase fires between operations
+    const freshKitchenAfterUndo = getKitchenItems()
     const orders = getCustomerOrders()
-    const updatedOrders = orders.map((order) => {
-      const orderEntries = itemsToUndo.filter(e => e.item.orderId === order.id)
-      if (orderEntries.length === 0) return order
-      const totalUndoForOrder = orderEntries.reduce((s, e) => s + e.undoQty, 0)
-
-      const cookedItemsArr = order.cookedItems || []
-      return {
-        ...order,
-        cookedItems: cookedItemsArr
-          .map((item) => {
-            if (item.name === itemName) {
-              const newQuantity = item.quantity - totalUndoForOrder
-              return newQuantity > 0 ? { ...item, quantity: newQuantity } : null
-            }
-            return item
-          })
-          .filter(Boolean) as Array<{ name: string; quantity: number }>,
-      }
-    })
-
-    const updatedWithStatus = updatedOrders.map((order) => {
-      // keep delivered orders untouched so they don't reappear
+    const affectedOrderIds = new Set(itemsToUndo.map(e => e.item.orderId).filter(Boolean))
+    
+    const updatedWithStatus = orders.map((order) => {
+      if (!affectedOrderIds.has(order.id)) return order
       if (order.status === 'delivered') return order
-
-      const orderedItemsArr = order.orderedItems || []
-      const cookedItemsArr = order.cookedItems || []
+      
+      // Rebuild cookedItems from kitchen state
+      const kitchenForOrder = freshKitchenAfterUndo.filter(ki => ki.orderId === order.id)
+      const rebuiltCookedItems: Array<{ name: string; quantity: number }> = []
+      kitchenForOrder.forEach(ki => {
+        if ((ki.totalCooked || 0) > 0) {
+          const existing = rebuiltCookedItems.find(c => c.name === ki.itemName)
+          if (existing) existing.quantity += ki.totalCooked || 0
+          else rebuiltCookedItems.push({ name: ki.itemName, quantity: ki.totalCooked || 0 })
+        }
+      })
+      
+      const orderedItemsArr = (order.orderedItems?.length ? order.orderedItems : (order as any).items) || []
       const totalOrdered = orderedItemsArr.reduce((sum: number, item: any) => sum + item.quantity, 0)
-      const totalCooked = cookedItemsArr.reduce((sum, item) => sum + item.quantity, 0)
+      const totalCooked = rebuiltCookedItems.reduce((sum, item) => sum + item.quantity, 0)
       return {
         ...order,
+        cookedItems: rebuiltCookedItems,
         status: totalOrdered === totalCooked && totalOrdered > 0 ? ("complete" as const) : ("incomplete" as const),
       }
     })

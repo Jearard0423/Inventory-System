@@ -716,9 +716,27 @@ export const markItemAsCooked = (itemId: string, quantity?: number, orderId?: st
     console.warn('[inventory-store] markItemAsCooked: item not found in memory, id=', itemId);
     return false;
   }
-  
+
+  // Sync from localStorage first — Firebase keeps it fresh, so localStorage = source of truth
+  try {
+    const lsItems: KitchenItem[] = JSON.parse(localStorage.getItem(KITCHEN_ITEMS_KEY) || '[]');
+    const lsItem = lsItems.find(i => i.id === itemId);
+    if (lsItem) {
+      item.totalCooked = lsItem.totalCooked || 0;
+      item.totalOrdered = lsItem.totalOrdered || item.totalOrdered;
+      item.pending = lsItem.pending ?? item.pending;
+    }
+  } catch { /* use in-memory value */ }
+
   const cookQuantity = quantity || 1;
-  item.totalCooked += cookQuantity;
+  // Cap so we never exceed totalOrdered (prevents overflow)
+  const canCookNow = Math.max(0, (item.totalOrdered || 0) - (item.totalCooked || 0));
+  const actualCook = Math.min(cookQuantity, canCookNow);
+  if (actualCook <= 0) {
+    console.warn('[inventory-store] markItemAsCooked: nothing left to cook (totalCooked=%d totalOrdered=%d)', item.totalCooked, item.totalOrdered);
+    return false;
+  }
+  item.totalCooked += actualCook;
   item.pending = Math.max(0, item.totalOrdered - item.totalCooked);
   // Only flip to 'cooked' when ALL units are done; otherwise stay 'to-cook' with updated pending
   if (item.pending <= 0) {
@@ -745,24 +763,42 @@ export const markItemAsCooked = (itemId: string, quantity?: number, orderId?: st
         cookedSource = orderedItemsArr.find((i: any) => i.name === item.itemName);
       }
 
-      if (cookedSource) {
-        if (!order.cookedItems) order.cookedItems = [];
-        const existingCookedItem = order.cookedItems.find(i => i.name === (cookedSource as any).name);
-        if (existingCookedItem) {
-          existingCookedItem.quantity += cookQuantity;
-        } else {
-          order.cookedItems.push({ name: (cookedSource as any).name, quantity: cookQuantity });
-        }
-      } else {
-        // No matching orderedItem found — directly push by kitchen item name as fallback
-        if (!order.cookedItems) order.cookedItems = [];
-        const existing = order.cookedItems.find(i => i.name === item.itemName);
-        if (existing) {
-          existing.quantity += cookQuantity;
-        } else {
-          order.cookedItems.push({ name: item.itemName, quantity: cookQuantity });
-        }
+      // Rebuild cookedItems from localStorage kitchen items (Firebase-fresh source of truth)
+      // Reading from localStorage prevents stale in-memory values from double-counting
+      if (!order.cookedItems) order.cookedItems = [];
+      let freshKitchenForOrder: KitchenItem[]
+      try {
+        const lsAll: KitchenItem[] = JSON.parse(localStorage.getItem(KITCHEN_ITEMS_KEY) || '[]')
+        freshKitchenForOrder = lsAll.filter(ki => ki.orderId === orderId)
+        // Merge: for each item, use max(inMemory, localStorage) to get freshest totalCooked
+        freshKitchenForOrder = freshKitchenForOrder.map(lsKi => {
+          const memKi = kitchenItems.find(k => k.id === lsKi.id)
+          if (memKi) {
+            return { ...lsKi, totalCooked: Math.max(lsKi.totalCooked || 0, memKi.totalCooked || 0) }
+          }
+          return lsKi
+        })
+        // Also include any in-memory items not yet in localStorage (just marked)
+        kitchenItems.filter(k => k.orderId === orderId).forEach(memKi => {
+          if (!freshKitchenForOrder.find(k => k.id === memKi.id)) {
+            freshKitchenForOrder.push(memKi)
+          }
+        })
+      } catch {
+        freshKitchenForOrder = kitchenItems.filter(ki => ki.orderId === orderId)
       }
+      const rebuiltCookedItems: Array<{ name: string; quantity: number }> = [];
+      freshKitchenForOrder.forEach(ki => {
+        if ((ki.totalCooked || 0) > 0) {
+          const existing = rebuiltCookedItems.find(c => c.name === ki.itemName);
+          if (existing) {
+            existing.quantity += ki.totalCooked || 0;
+          } else {
+            rebuiltCookedItems.push({ name: ki.itemName, quantity: ki.totalCooked || 0 });
+          }
+        }
+      });
+      order.cookedItems = rebuiltCookedItems;
 
       // Update order status if all items are cooked
       const allCooked = orderedItemsArr.length > 0 && orderedItemsArr.every((orderedItem: any) => {
@@ -1033,9 +1069,17 @@ export const getMissingItems = (orderIdOrOrder: string | CustomerOrder): Array<{
   // orderedItems fallback: some RTDB orders store items under 'items'
   const orderedItemsArr = (order.orderedItems?.length ? order.orderedItems : (order as any).items) || [];
   orderedItemsArr.forEach((orderedItem: any) => {
+    // Cross-check with kitchenItems (totalCooked) for the most accurate real-time count
+    // Kitchen items are synced directly from Firebase so they're more up-to-date than cookedItems
+    const kitchenItem = kitchenItems.find(ki => ki.orderId === order.id && ki.itemName === orderedItem.name);
+    const cookedFromKitchen = kitchenItem ? Math.min(kitchenItem.totalCooked || 0, orderedItem.quantity) : null;
     const cookedItem = order.cookedItems?.find((item: any) => item.name === orderedItem.name);
-    if (!cookedItem || cookedItem.quantity < orderedItem.quantity) {
-      const missingQty = orderedItem.quantity - (cookedItem?.quantity || 0);
+    // Use whichever source is more up-to-date (higher value wins for cooked, lower for missing)
+    const cookedQty = cookedFromKitchen !== null 
+      ? Math.max(cookedFromKitchen, cookedItem?.quantity || 0)
+      : (cookedItem?.quantity || 0);
+    if (cookedQty < orderedItem.quantity) {
+      const missingQty = orderedItem.quantity - cookedQty;
       missingItems.push({ needed: missingQty, name: orderedItem.name });
     }
   });
@@ -1478,29 +1522,33 @@ export const saveOrder = (order: Omit<Order, 'id' | 'orderNumber' | 'createdAt'>
     window.dispatchEvent(new Event("inventory-updated"));
   }
 
-  // Update kitchen items: create one kitchen entry per unit ordered (so kitchen can mark individual units)
+  // Update kitchen items: ONE entry per item type per order (aggregated)
+  // Consistent with rebuildKitchenFromOrders — prevents duplicate IDs and double-counting
   newOrder.items.forEach(orderedItem => {
-    // Find the mapped orderedItem id generated in customerOrder
     const mappedOrderedItem = customerOrder.orderedItems.find(i => i.name === orderedItem.name);
-    for (let i = 0; i < orderedItem.quantity; i++) {
-      const kitchenItem = {
-        id: generateId(),
-        name: orderedItem.name,
-        totalOrdered: 1,
-        totalCooked: 0,
-        pending: 1,
-        category: 'other',
-        orderId: customerOrder.id,
-        orderedItemId: mappedOrderedItem?.id,
-        status: 'to-cook',
-        customerName: newOrder.customerName,
-        itemName: orderedItem.name,
-        mealType: newOrder.mealType || newOrder.originalMealType || '',
-        cookTime: newOrder.cookTime || '',
-        quantity: 1
-      } as KitchenItem;
-      kitchenItems.push(kitchenItem);
-    }
+    // Use a deterministic ID so rebuild never creates a duplicate
+    const kitchenId = `${customerOrder.id}_${orderedItem.name}`.replace(/[^a-zA-Z0-9_]/g, '_');
+    const kitchenItem: KitchenItem = {
+      id: kitchenId,
+      name: orderedItem.name,
+      totalOrdered: orderedItem.quantity,
+      totalCooked: 0,
+      pending: orderedItem.quantity,
+      quantity: orderedItem.quantity,
+      category: 'other',
+      orderId: customerOrder.id,
+      orderedItemId: mappedOrderedItem?.id,
+      status: 'to-cook',
+      customerName: newOrder.customerName,
+      itemName: orderedItem.name,
+      mealType: newOrder.mealType || newOrder.originalMealType || '',
+      cookTime: newOrder.cookTime || '',
+      date: (newOrder as any).date || '',
+    };
+    // Remove any existing entry for this order+item before adding (prevent duplicates)
+    const existingIdx = kitchenItems.findIndex(k => k.id === kitchenId);
+    if (existingIdx >= 0) kitchenItems[existingIdx] = kitchenItem;
+    else kitchenItems.push(kitchenItem);
   });
   
   // Save to localStorage

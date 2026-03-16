@@ -350,7 +350,11 @@ Limit details: ${breakdown}` : '')
   }
 
   const maxStockAllowed = calculateMaxStock(linkedItems);
-  const stockExceedsLimit = linkedItems.length > 0 && formData.stock > maxStockAllowed;
+  // Only show stock-limit error if stock was actually changed from the original value
+  // When just adding/removing links, don't block the save
+  const originalStock = editingItem?.stock ?? 0
+  const stockWasChanged = formData.stock !== originalStock
+  const stockExceedsLimit = linkedItems.length > 0 && stockWasChanged && formData.stock > maxStockAllowed;
 
   // helper to produce a human readable list of linked raw item status
   const linkedStatusDetails = linkedItems
